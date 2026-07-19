@@ -12,14 +12,14 @@
           "model": "grok-4.5",
           "temperature": 0.4,
           "reasoning": {
-            "effort": "high"
+            "effort": "medium"
           },
           "store": false
         },
         "request_profiles": {
           "observe": {
             "reasoning": {
-              "effort": "high"
+              "effort": "medium"
             },
             "max_output_tokens": 16384
           },
@@ -45,19 +45,19 @@
     "organs": {
       "execution": {
         "reasoning": {
-          "effort": "high"
+          "effort": "medium"
         },
         "max_output_tokens": 16384
       },
       "verification": {
         "reasoning": {
-          "effort": "high"
+          "effort": "medium"
         },
         "max_output_tokens": 16384
       },
       "recovery": {
         "reasoning": {
-          "effort": "high"
+          "effort": "medium"
         },
         "max_output_tokens": 16384
       }
