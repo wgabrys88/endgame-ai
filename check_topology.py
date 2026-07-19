@@ -1,4 +1,4 @@
-"""Topology coherence check for linear and fractal one-to-many edges.
+"""Topology coherence check for the single-successor wheel.
 
 `coherence_problems(w)` is the single source of truth for topology coherence,
 callable from the runtime and from the CLI verifier below. Run: python3 check_topology.py
@@ -12,15 +12,7 @@ import sys
 
 import core_wiring as wiring
 
-SENTINELS = {"halt", "wait"}
-
-
-def _targets(value) -> list[str]:
-    if isinstance(value, str):
-        return [value]
-    if isinstance(value, list):
-        return [target for target in value if isinstance(target, str)]
-    return []
+SENTINELS = {"halt"}
 
 
 def _contract_problems(w: dict) -> list[str]:
@@ -46,7 +38,6 @@ def coherence_problems(w: dict) -> list[str]:
     topo = w["topology"]
     edges = topo["edges"]
     nodes = set(topo["nodes"])
-    barriers = topo["barriers"]
     problems: list[str] = []
     problems.extend(_contract_problems(w))
 
@@ -56,47 +47,24 @@ def coherence_problems(w: dict) -> list[str]:
     for src, sigmap in edges.items():
         if src not in nodes:
             problems.append(f"edge source '{src}' not in topology.nodes")
-        for sig, value in sigmap.items():
-            targets = _targets(value)
-            if not targets or (isinstance(value, list) and len(targets) != len(value)):
-                problems.append(f"{src}.{sig} has no valid target(s): {value!r}")
-            for t in targets:
-                if t not in SENTINELS and t not in nodes:
-                    problems.append(f"{src}.{sig} -> '{t}' is not a known node")
-                if t in SENTINELS and sig != t:
-                    problems.append(
-                        f"{src}.{sig} targets terminal name '{t}' instead of emitting terminal signal '{t}'"
-                    )
+        for sig, target in sigmap.items():
+            if not isinstance(target, str) or not target:
+                problems.append(f"{src}.{sig} has no valid target: {target!r}")
+                continue
+            if target not in SENTINELS and target not in nodes:
+                problems.append(f"{src}.{sig} -> '{target}' is not a known node")
+            if target in SENTINELS and sig != target:
+                problems.append(
+                    f"{src}.{sig} targets terminal name '{target}' instead of emitting terminal signal '{target}'"
+                )
 
     node_dir = wiring.root_path(w["paths"]["nodes"])
-    node_defs = w.get("node_defs", {})
     for n in nodes:
         if n not in edges:
             problems.append(f"node '{n}' has no edges")
         base = n.split(":", 1)[0]
-        declarative = n in node_defs or base in node_defs
-        if declarative:
-            prompt_key = (node_defs.get(n) or node_defs[base])["prompt_key"]
-            if prompt_key not in w.get("prompts", {}):
-                problems.append(f"declarative node '{n}' prompt_key '{prompt_key}' has no prompt")
-        else:
-            if not (node_dir / f"{base}.py").is_file():
-                problems.append(f"node '{n}' has no plugin file {(node_dir / f'{base}.py')}")
-
-    for bnode, arity in barriers.items():
-        if bnode not in nodes:
-            problems.append(f"barrier '{bnode}' is not a topology node")
-        if not isinstance(arity, int) or isinstance(arity, bool) or arity < 2:
-            problems.append(f"barrier '{bnode}' arity must be an integer of at least 2, got {arity!r}")
-        incoming = sum(
-            1
-            for sigmap in edges.values()
-            for value in sigmap.values()
-            for target in _targets(value)
-            if target == bnode
-        )
-        if isinstance(arity, int) and not isinstance(arity, bool) and incoming < arity:
-            problems.append(f"barrier '{bnode}' arity {arity} exceeds its {incoming} incoming edges")
+        if not (node_dir / f"{base}.py").is_file():
+            problems.append(f"node '{n}' has no plugin file {(node_dir / f'{base}.py')}")
 
     seen: set[str] = set()
     stack = [topo["cycle_start"]]
@@ -105,8 +73,9 @@ def coherence_problems(w: dict) -> list[str]:
         if cur in seen or cur in SENTINELS:
             continue
         seen.add(cur)
-        for value in edges.get(cur, {}).values():
-            stack.extend(_targets(value))
+        for target in edges.get(cur, {}).values():
+            if isinstance(target, str) and target:
+                stack.append(target)
     unreachable = nodes - seen
     if unreachable:
         problems.append(f"unreachable nodes from '{topo['cycle_start']}': {sorted(unreachable)}")

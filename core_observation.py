@@ -127,12 +127,6 @@ def enum_windows(min_area: int = 2500) -> list[dict[str, Any]]:
         pass
     return out
 
-    try:
-        user32.EnumWindows(enum_proc(callback), 0)
-    except Exception:
-        pass
-    return out
-
 
 def _unwrap(v: Any) -> Any:
     return v.value if hasattr(v, "value") else v

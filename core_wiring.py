@@ -72,13 +72,10 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
     request_profiles = selected_transport.get("request_profiles", {})
     if not isinstance(request_profiles, dict) or not all(isinstance(name, str) and name and isinstance(body, dict) for name, body in request_profiles.items()):
         raise RuntimeError(f"wiring.model.transport_config.{transport}.request_profiles must map names to request objects")
-    node_profiles = cfg["model"].get("node_profiles", {})
-    if not isinstance(node_profiles, dict) or not all(isinstance(node, str) and node and isinstance(profile, str) and profile for node, profile in node_profiles.items()):
-        raise RuntimeError("wiring.model.node_profiles must map node names to request-profile names")
     for path in (
         "model.global", "model.organs",
         "observe_config.hover_cache", "observe_config.hover_cache.scan", "observe_config.hover_cache.budget",
-        "topology.edges", "topology.barriers",
+        "topology.edges",
     ):
         _require(cfg, path, dict)
     for path in (
@@ -103,44 +100,16 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
             raise RuntimeError(f"wiring.{path} must be a valid non-negative count")
     nodes = _require_list_str(cfg, "topology.nodes")
     edges = _require(cfg, "topology.edges", dict)
-    prompts = _require(cfg, "prompts", dict)
+    _require(cfg, "prompts", dict)
     _require(cfg, "shared_prompt_prefix", str)
     validate_record_contracts(cfg)
     if len(nodes) != len(set(nodes)):
         raise RuntimeError("wiring.topology.nodes contains duplicates")
     if cfg["topology"]["cycle_start"] not in nodes:
         raise RuntimeError("wiring.topology.cycle_start must name a topology node")
-    unknown_profile_nodes = sorted(set(node_profiles) - set(nodes))
-    if unknown_profile_nodes:
-        raise RuntimeError(f"wiring.model.node_profiles names unknown topology nodes: {unknown_profile_nodes}")
-    unknown_profiles = sorted(set(node_profiles.values()) - set(request_profiles))
-    if unknown_profiles:
-        raise RuntimeError(f"wiring.model.node_profiles names undefined request profiles: {unknown_profiles}")
     missing = [node for node in nodes if node not in edges]
     if missing:
         raise RuntimeError(f"wiring missing edges for nodes: {missing}")
-    validate_node_defs(cfg, prompts)
-
-
-def validate_node_defs(cfg: dict[str, Any], prompts: dict[str, Any]) -> None:
-    node_defs = cfg.get("node_defs", {})
-    if not isinstance(node_defs, dict):
-        raise RuntimeError("wiring.node_defs must be object")
-    for name, defn in node_defs.items():
-        if not isinstance(defn, dict):
-            raise RuntimeError(f"wiring.node_defs.{name} must be object")
-        for key in ("prompt_key", "expected_record_type", "signal_source", "build_payload", "evidence", "patch"):
-            if key not in defn:
-                raise RuntimeError(f"wiring.node_defs.{name} missing required key: {key}")
-        if defn["prompt_key"] not in prompts:
-            raise RuntimeError(f"wiring.node_defs.{name}.prompt_key names missing prompt {defn['prompt_key']!r}")
-        if not isinstance(defn["expected_record_type"], str) or not defn["expected_record_type"]:
-            raise RuntimeError(f"wiring.node_defs.{name}.expected_record_type must be non-empty string")
-        if not isinstance(defn["signal_source"], str) or not defn["signal_source"]:
-            raise RuntimeError(f"wiring.node_defs.{name}.signal_source must be non-empty string")
-        if "description" in defn and (not isinstance(defn["description"], str) or not defn["description"].strip()):
-            raise RuntimeError(f"wiring.node_defs.{name}.description must be a non-empty string")
-
 
 
 def validate_record_contracts(cfg: dict[str, Any]) -> None:

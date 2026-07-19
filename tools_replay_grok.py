@@ -34,8 +34,6 @@ import core_wiring as wiring
 import transport_xai as transport
 import tools_parse_requests as parse
 
-# record_type -> the node that emits it (for response_format emergent-signal resolution)
-_EMITTING_NODE = {"execution": "node_execute", "verification": "node_verify", "recovery": "node_recover"}
 _ROLE = {"ROLE_SYSTEM": "system", "ROLE_USER": "user", "ROLE_ASSISTANT": "assistant", "system": "system", "user": "user", "assistant": "assistant"}
 
 
@@ -90,8 +88,7 @@ def _apply_mutations(messages: list[dict[str, str]], args) -> list[dict[str, str
 
 def _send(messages: list[dict[str, str]], w: dict[str, Any], record_type: str) -> dict[str, Any]:
     _, cfg = wiring.get_transport_config(w)
-    node = _EMITTING_NODE.get(record_type)
-    response_format = brain._record_response_format(w, record_type, node) if record_type else None
+    response_format = brain._record_response_format(w, record_type) if record_type else None
     result = transport.call(messages, cfg, response_format=response_format)
     return _committed_record(result["content"])
 

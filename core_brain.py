@@ -65,47 +65,35 @@ def _commit_record(content: str, w: dict[str, Any], expected_record_type: str | 
 
 
 def _node_docstring(w: dict[str, Any], node: str) -> str:
-    """Read a node's input contract from its module docstring or declarative description."""
+    """Read a node's input contract from its module docstring."""
     import ast
     base = node.split(":", 1)[0]
     node_dir = wiring.root_path(w["paths"]["nodes"])
     path = node_dir / f"{base}.py"
-    if path.is_file():
-        doc = ast.get_docstring(ast.parse(path.read_text(encoding="utf-8")))
-        if not doc:
-            raise RuntimeError(f"node '{base}' declareth no input contract")
-        return doc.strip()
-    defn = w.get("node_defs", {}).get(node) or w.get("node_defs", {}).get(base)
-    if isinstance(defn, dict):
-        description = str(defn.get("description") or "").strip()
-        if description:
-            return description
-    raise RuntimeError(f"node '{node}' declareth no input contract")
+    if not path.is_file():
+        raise RuntimeError(f"node '{node}' declareth no input contract")
+    doc = ast.get_docstring(ast.parse(path.read_text(encoding="utf-8")))
+    if not doc:
+        raise RuntimeError(f"node '{base}' declareth no input contract")
+    return doc.strip()
 
 
-def downstream_contract(w: dict[str, Any], emitting_node: str | None, expected_record_type: str | None = None) -> str:
+def downstream_contract(w: dict[str, Any], emitting_node: str | None) -> str:
     """Inject each wired consumer's live input contract; no separate pins registry exists."""
     if not emitting_node:
         return ""
     edges = w.get("topology", {}).get("edges", {}).get(emitting_node, {})
     seen: list[tuple[str, str]] = []
-    for signal, value in edges.items():
+    for signal, target in edges.items():
         if signal == "error":
             continue
-        targets = [value] if isinstance(value, str) else (value if isinstance(value, list) else [])
-        for t in targets:
-            if isinstance(t, str) and t not in ("halt", "wait"):
-                seen.append((signal, t))
+        if isinstance(target, str) and target != "halt":
+            seen.append((signal, target))
     if not seen:
         return ""
     lines = ["DOWNSTREAM CONTRACT — thine output is wired (through the [topology]) unto these consumers; bring forth that which they await:"]
     for signal, succ in seen:
         lines.append(f"\n[on signal '{signal}' -> {succ}]\n{_node_docstring(w, succ)}")
-    if expected_record_type:
-        contract = w.get("record_contracts", {}).get(expected_record_type, {})
-        contract_keys = set(contract.get("required", [])) | set(contract.get("types", {})) | set(contract.get("enums", {}))
-        if "next_signal" in contract_keys:
-            lines.append("\nWhen thy record beareth next_signal, choose thou it from these wired routes.")
     return "\n".join(lines)
 
 
@@ -162,7 +150,7 @@ def resolve_profile(w: dict[str, Any], profile: str | None) -> dict[str, Any]:
     return dict(profiles[profile])
 
 
-def _record_response_format(w: dict[str, Any], record_type: str, emitting_node: str | None = None) -> dict[str, Any]:
+def _record_response_format(w: dict[str, Any], record_type: str) -> dict[str, Any]:
     contract = get_record_contract(w, record_type)
     data_properties = {key: {} for key in contract["required"]}
     for key, type_name in contract.get("types", {}).items():
@@ -173,9 +161,6 @@ def _record_response_format(w: dict[str, Any], record_type: str, emitting_node: 
         if limit_name:
             data_properties.setdefault(key, {})[limit_name] = 1
     enums = dict(contract["enums"])
-    emergent = bus.emergent_signals(w, emitting_node)
-    if emergent and "next_signal" in (set(contract["required"]) | set(contract.get("types", {})) | set(enums)):
-        enums = {**enums, "next_signal": emergent}
     for key, values in enums.items():
         data_properties.setdefault(key, {})["enum"] = list(values)
     return {
@@ -248,13 +233,9 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
     probe_text = bus.render_environment_probe(environment_probe)
     if probe_text:
         user_text = f"{user_text}\n\n{probe_text}"
-    response_format = _record_response_format(w, expected_record_type, emitting_node) if expected_record_type and _structured_outputs_enabled(cfg) else None
+    response_format = _record_response_format(w, expected_record_type) if expected_record_type and _structured_outputs_enabled(cfg) else None
     override = bus.deep_merge(bus.deep_merge(organ_tuning, resolve_profile(w, profile)), body_override or {})
-    stable_context_parts = []
-    downstream = downstream_contract(w, emitting_node, expected_record_type)
-    if downstream:
-        stable_context_parts.append(downstream)
-    stable_context = "\n\n".join(stable_context_parts)
+    stable_context = downstream_contract(w, emitting_node)
     pattern = str(cfg["reasoning_pattern"])
     if pattern in {"single_pass", "native"}:
         result = call(_messages(system_prompt, user_text, stable_context), w, response_format=response_format, body_override=override)

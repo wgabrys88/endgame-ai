@@ -197,13 +197,6 @@ def validate_signal(wiring: JsonDict, node: str, signal: str) -> None:
         raise TopologyContractError(f"node '{node}' emitted signal '{signal}' outside topology contract; allowed: {allowed}")
 
 
-def emergent_signals(wiring: JsonDict, node: str | None) -> list[str]:
-    """Return the live outgoing signal vocabulary, excluding reserved 'error'."""
-    if not node:
-        return []
-    return sorted(s for s in allowed_signals(wiring, node) if s != "error")
-
-
 def state_brief(state: JsonDict) -> JsonDict:
     """Present deed facts; the living word is extracted from here into the user tail."""
     current_deed = state.get("current_deed") or {}
