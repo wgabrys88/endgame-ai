@@ -69,10 +69,8 @@ def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], 
     max_depth = int(filt.get("max_depth", 10))
     max_children_per_window = int(filt.get("max_children_per_window", 120))
     max_llm_nodes = int(filt.get("max_llm_nodes", int(filt["max_elements"]) * 2))
-    # Windows are derived from the TRUE OS top-level owner (GetAncestor root) of the
-    # elements themselves and of any UIA window node — ONE identity space (OS hwnd) for
-    # both sides, so a window and its elements always align. Attribution by the rectangle
-    # that covers a pixel is abolished: it let a maximized window swallow the whole screen.
+    # Windows derived from each element's TRUE OS top-level owner (GetAncestor root) — one
+    # identity space for windows and elements, never rectangle-overlap.
     owner_hwnds: dict[int, dict[str, Any]] = {}
 
     def _register_window(owner: int, seed: dict[str, Any] | None = None) -> None:
@@ -106,9 +104,8 @@ def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], 
         root["children"].append(window)
         node_index[token] = {k: v for k, v in window.items() if k != "children"}
 
-    # An element belongs to the window that owns its handle; within that window it nests
-    # under the nearest ancestor that also survived filtering, walked via the true
-    # parent_runtime_id chain through the full raw scan — never guessed from geometry.
+    # An element nests under the nearest filter-surviving ancestor via its true
+    # parent_runtime_id chain, or else its owning window — never geometry.
     win_id_by_hwnd = {w["hwnd"]: w["id"] for w in sorted_windows}
     raw_by_rid: dict[tuple, dict[str, Any]] = {tuple(n["runtime_id"]): n for n in raw_nodes if n.get("runtime_id")}
     action_by_rid: dict[tuple, dict[str, Any]] = {}
@@ -140,9 +137,7 @@ def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], 
 
     for elem in action_elements.values():
         parent_id, parent_hwnd = _owning_window(elem)
-        # Breadth guard: cap how many elements one window may contribute, lest a list of
-        # hundreds of items bloat the tree past the LLM-node budget. Counted per owning
-        # window across BOTH nesting branches so the cap is real.
+        # Cap elements per window (both nesting branches) so a huge list cannot bloat the tree.
         if parent_hwnd is not None and counts.get(parent_hwnd, 0) >= max_children_per_window:
             continue
         anc = _rendered_parent(elem)

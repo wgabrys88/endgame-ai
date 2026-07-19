@@ -278,10 +278,7 @@ class UiaScanner:
         every node with the subtree root and destroy the real hierarchy."""
         nodes: list[dict[str, Any]] = []
         seen: set[str] = set()
-        # Bound recursion by the same wiring-owned perception depth used when the tree is
-        # built (filter.max_depth), so a pathologically deep accessibility tree cannot
-        # overflow the Python stack. Falls back to a generous ceiling when scanned without
-        # config (e.g. the expand primitive), which real UIA trees never approach.
+        # Cap recursion by explicit max_depth, else the wiring-owned filter.max_depth.
         try:
             if max_depth is not None:
                 depth_ceiling = depth + int(max_depth)
@@ -370,18 +367,13 @@ def resolve_hit_point(scanner: "UiaScanner", target_rid: list[int], rect: dict[s
         if el is None:
             return False
         rid = _to_runtime_id(_current(el, PID_RUNTIME_ID))
-        # The point landeth truly on the target, or on a descendant of it: a real hit.
         if _runtime_id_under(rid, target_rid):
             return True
-        # Or it landeth on an ANCESTOR that shareth the target's identity chain and can take
-        # keyboard focus: some surfaces (web contenteditables and the like) expose an element
-        # in the tree that owneth no hittable pixel of its own — every point within its rect
-        # resolveth to the focusable container that holdeth it. Clicking that container AT the
-        # target's place focuseth into the target, whence the keyboard may write. This is a
-        # true focus point, not an occlusion.
+        # A focusable ancestor sharing the target's id chain: clicking it focuses into the
+        # target (web contenteditables own no hittable pixel of their own).
         if _runtime_id_under(target_rid, rid) and _to_bool(_current(el, PID_KEYBOARD_FOCUSABLE)):
             return True
-        # cheap parent-walk (few hops) for providers whose child ids are not strict prefixes
+        # parent-walk for providers whose child ids are not strict prefixes
         try:
             walker = scanner.automation.RawViewWalker
             cur = el
@@ -503,10 +495,8 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
     build = _load_phase(phases["build"])
     gathered = scan.run(cfg, desktop)
     filtered = filt.run(gathered["nodes"], cfg, gathered["screen"])
-    # Prove a hittable click point for each actionable element before it is rendered: the
-    # rect centre of a wide field oft resolveth to the window beneath, not the field. Reuse
-    # the scan's proven grid hit-point where it hath one, else probe the rect. Governed by a
-    # wiring knob the body may itself rewrite; absent the knob, on by default.
+    # Prove a hittable click point per element before render: a wide field's rect centre oft
+    # resolveth to the window beneath. Knob resolve_clicks (default on) the body may rewrite.
     if cfg.get("resolve_clicks", True):
         scanner = UiaScanner(cfg, desktop)
         for elem in filtered["action_elements"].values():

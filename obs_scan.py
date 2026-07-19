@@ -11,9 +11,7 @@ from typing import Any
 import core_observation as obs
 
 user32 = ctypes.windll.user32
-# Declare the ABI explicitly: WindowFromPoint takes a POINT struct BY VALUE, which ctypes
-# marshals reliably only when argtypes is set (else it works by x64 register-packing luck,
-# and a silent miscall would stamp every element owner 0 and re-corrupt attribution).
+# WindowFromPoint takes POINT by value: argtypes MUST be set or it miscalls on some builds.
 user32.WindowFromPoint.argtypes = [wintypes.POINT]
 user32.WindowFromPoint.restype = wintypes.HWND
 user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
@@ -68,11 +66,7 @@ def run(config: dict[str, Any], desktop: Any) -> dict[str, Any]:
                     continue
             if root is None:
                 continue
-            # The OS's own hit-test names the true top-level window under this point,
-            # honouring z-order and window regions — the authoritative owner identity that
-            # UIA elements lack (most report hwnd 0). Every node harvested from this probe
-            # is stamped with it, so attribution is by identity, never by which rectangle
-            # covereth the pixel (which let a maximized window swallow the whole screen).
+            # Authoritative owner window by OS hit-test (UIA elements mostly report hwnd 0).
             try:
                 owner_hwnd = int(user32.GetAncestor(user32.WindowFromPoint(pt), 2) or 0)
             except Exception:
@@ -86,11 +80,7 @@ def run(config: dict[str, Any], desktop: Any) -> dict[str, Any]:
                 if obs.is_desktop_leakage(node):
                     continue
                 node.setdefault("owner_hwnd", owner_hwnd)
-                # The grid point that FOUND this root element is, by the OS's own hit-test, a
-                # point that truly resolves to it — a proven-hittable click point, unlike the
-                # rect centre (which for a wide field oft falleth on the window beneath). Stamp
-                # it on the root only; descendants (harvested from the cache, not point-hit)
-                # bear no such proof and are resolved later.
+                # The grid point that found this root is a proven-hittable click point for it.
                 if i == 0:
                     node.setdefault("hit_point", (int(x), int(y)))
                 prev = index.get(node["id"])
