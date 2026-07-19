@@ -11,6 +11,11 @@ from typing import Any
 import core_observation as obs
 
 user32 = ctypes.windll.user32
+# WindowFromPoint takes POINT by value: argtypes MUST be set or it miscalls on some builds.
+user32.WindowFromPoint.argtypes = [wintypes.POINT]
+user32.WindowFromPoint.restype = wintypes.HWND
+user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+user32.GetAncestor.restype = wintypes.HWND
 
 
 def run(config: dict[str, Any], desktop: Any) -> dict[str, Any]:
@@ -61,19 +66,32 @@ def run(config: dict[str, Any], desktop: Any) -> dict[str, Any]:
                     continue
             if root is None:
                 continue
+            # Authoritative owner window by OS hit-test (UIA elements mostly report hwnd 0).
+            try:
+                owner_hwnd = int(user32.GetAncestor(user32.WindowFromPoint(pt), 2) or 0)
+            except Exception:
+                owner_hwnd = 0
             hit_key, role = obs._hit_key_from_element(root)
             if hit_key in saturated or (hit_key in index and role not in obs.CONTAINER_ROLES):
                 continue
             nodes = scanner.harvest_subtree(root, max_subtree)
             added = 0
-            for node in nodes:
+            for i, node in enumerate(nodes):
                 if obs.is_desktop_leakage(node):
                     continue
+                node.setdefault("owner_hwnd", owner_hwnd)
+                # The grid point that found this root is a proven-hittable click point for it.
+                if i == 0:
+                    node.setdefault("hit_point", (int(x), int(y)))
                 prev = index.get(node["id"])
                 if prev is None:
                     index[node["id"]] = node
                     added += 1
                 else:
+                    if not prev.get("owner_hwnd") and owner_hwnd:
+                        prev["owner_hwnd"] = owner_hwnd
+                    if not prev.get("hit_point") and node.get("hit_point"):
+                        prev["hit_point"] = node["hit_point"]
                     for key in ("text_full", "value"):
                         if node[key] and (not prev[key] or len(node[key]) > len(prev[key])):
                             prev[key] = node[key]

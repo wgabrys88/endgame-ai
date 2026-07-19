@@ -6,11 +6,60 @@ rendered tree, node_index, action_index, desktop_tree_text, and counts that the
 observation artifact and downstream LLM nodes consume.
 """
 import time
+import ctypes
+from ctypes import wintypes
 from typing import Any
+
+user32 = ctypes.windll.user32
+_GA_ROOT = 2  # GetAncestor: the top-level owning window of any element handle
 
 # UIA WindowInteractionState: surface only states an actor must heed; a window
 # ready for interaction (2) needs no tag. Running(0) = still initializing/busy.
 _WINDOW_STATE_LABELS = {0: "busy", 1: "closing", 3: "modal-blocked", 4: "not-responding"}
+
+
+def _root_hwnd(hwnd: int) -> int:
+    """The top-level owning window of an element's handle, by IDENTITY — so an element
+    is attributed to the window that truly owns it, never to whatever rectangle covers
+    its pixel (which lets a maximized window swallow the whole screen)."""
+    if not hwnd:
+        return 0
+    try:
+        root = int(user32.GetAncestor(wintypes.HWND(hwnd), _GA_ROOT) or 0)
+        return root or hwnd
+    except Exception:
+        return hwnd
+
+
+def _window_text(hwnd: int) -> str:
+    try:
+        length = int(user32.GetWindowTextLengthW(wintypes.HWND(hwnd)))
+        if length <= 0:
+            return ""
+        buf = ctypes.create_unicode_buffer(length + 1)
+        user32.GetWindowTextW(wintypes.HWND(hwnd), buf, length + 1)
+        return buf.value or ""
+    except Exception:
+        return ""
+
+
+def _class_name(hwnd: int) -> str:
+    try:
+        buf = ctypes.create_unicode_buffer(256)
+        user32.GetClassNameW(wintypes.HWND(hwnd), buf, 256)
+        return buf.value or ""
+    except Exception:
+        return ""
+
+
+def _window_rect(hwnd: int) -> dict[str, int]:
+    try:
+        r = wintypes.RECT()
+        if user32.GetWindowRect(wintypes.HWND(hwnd), ctypes.byref(r)):
+            return {"left": int(r.left), "top": int(r.top), "right": int(r.right), "bottom": int(r.bottom)}
+    except Exception:
+        pass
+    return {"left": 0, "top": 0, "right": 0, "bottom": 0}
 
 
 def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], raw_nodes: list[dict[str, Any]], hwnd_to_z: dict[int, int], screen: dict[str, int], config: dict[str, Any]) -> dict[str, Any]:
@@ -20,17 +69,30 @@ def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], 
     max_depth = int(filt.get("max_depth", 10))
     max_children_per_window = int(filt.get("max_children_per_window", 120))
     max_llm_nodes = int(filt.get("max_llm_nodes", int(filt["max_elements"]) * 2))
-    windows: dict[int, dict[str, Any]] = {}
+    # Windows derived from each element's TRUE OS top-level owner (GetAncestor root) — one
+    # identity space for windows and elements, never rectangle-overlap.
+    owner_hwnds: dict[int, dict[str, Any]] = {}
+
+    def _register_window(owner: int, seed: dict[str, Any] | None = None) -> None:
+        if not owner or owner in owner_hwnds:
+            return
+        title = _window_text(owner) or (seed.get("name") if seed else "") or (seed.get("text_full") if seed else "") or f"Window_{owner}"
+        z_order = hwnd_to_z.get(owner, len(hwnd_to_z))
+        owner_hwnds[owner] = {
+            "hwnd": owner, "role": "Window", "name": title, "title": title,
+            "class_name": _class_name(owner) or (seed.get("class_name", "") if seed else ""),
+            "framework_id": seed.get("framework_id", "") if seed else "", "rect": _window_rect(owner),
+            "z_order": z_order, "active": z_order == 0, "children": [],
+            "interaction_state": seed.get("interaction_state") if seed else None,
+            "item_status": seed.get("item_status", "") if seed else "",
+        }
+
     for node in raw_nodes:
-        if node["role"] == "Window" and node["hwnd"] and node["hwnd"] not in windows:
-            title = node["name"] or node["text_full"] or f"Window_{node['hwnd']}"
-            z_order = hwnd_to_z.get(node["hwnd"], len(hwnd_to_z))
-            windows[node["hwnd"]] = {
-                "hwnd": node["hwnd"], "role": "Window", "name": title, "title": title,
-                "class_name": node["class_name"], "framework_id": node["framework_id"], "rect": node["rect"],
-                "z_order": z_order, "active": z_order == 0, "children": [],
-                "interaction_state": node.get("interaction_state"), "item_status": node.get("item_status", ""),
-            }
+        if node["role"] == "Window" and node["hwnd"]:
+            _register_window(_root_hwnd(node["hwnd"]), node)
+    for elem in action_elements.values():
+        _register_window(int(elem.get("owner_hwnd", 0) or 0))
+    windows = owner_hwnds
     sorted_windows = sorted(windows.values(), key=lambda w: w["z_order"])
     root = {"id": "W0", "role": "Screen", "name": "Screen", "title": "Desktop", "rect": {"left": 0, "top": 0, "right": screen["width"], "bottom": screen["height"]}, "fresh_scan": True, "observed_at": time.time(), "children": []}
     node_index: dict[str, dict[str, Any]] = {"W0": {k: v for k, v in root.items() if k != "children"}}
@@ -42,22 +104,50 @@ def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], 
         root["children"].append(window)
         node_index[token] = {k: v for k, v in window.items() if k != "children"}
 
-    def _rect_gap(r: dict[str, int], px: int, py: int) -> int:
-        dx = max(r.get("left", 0) - px, 0, px - r.get("right", 0))
-        dy = max(r.get("top", 0) - py, 0, py - r.get("bottom", 0))
-        return dx * dx + dy * dy
+    # An element nests under the nearest filter-surviving ancestor via its true
+    # parent_runtime_id chain, or else its owning window — never geometry.
+    win_id_by_hwnd = {w["hwnd"]: w["id"] for w in sorted_windows}
+    raw_by_rid: dict[tuple, dict[str, Any]] = {tuple(n["runtime_id"]): n for n in raw_nodes if n.get("runtime_id")}
+    action_by_rid: dict[tuple, dict[str, Any]] = {}
+    for elem in action_elements.values():
+        rid = tuple(elem.get("runtime_id") or [])
+        if rid:
+            action_by_rid[rid] = elem
+
+    def _owning_window(elem: dict[str, Any]) -> tuple[str, int | None]:
+        owner = int(elem.get("owner_hwnd", 0) or 0)
+        if owner in win_id_by_hwnd:
+            return win_id_by_hwnd[owner], owner
+        return "W0", None
+
+    def _rendered_parent(elem: dict[str, Any]) -> dict[str, Any] | None:
+        rid = tuple(elem.get("runtime_id") or [])
+        seen: set[tuple] = set()
+        cur = raw_by_rid.get(rid)
+        while cur is not None:
+            prid = tuple(cur.get("parent_runtime_id") or [])
+            if not prid or prid in seen:
+                break
+            seen.add(prid)
+            anc = action_by_rid.get(prid)
+            if anc is not None and anc is not elem:
+                return anc
+            cur = raw_by_rid.get(prid)
+        return None
 
     for elem in action_elements.values():
-        parent_hwnd = next((w["hwnd"] for w in sorted_windows if w["rect"].get("left", 0) <= elem["px"] <= w["rect"].get("right", 0) and w["rect"].get("top", 0) <= elem["py"] <= w["rect"].get("bottom", 0)), None)
-        if parent_hwnd is None and sorted_windows:
-            nearest = min(sorted_windows, key=lambda w: _rect_gap(w["rect"], elem["px"], elem["py"]))
-            parent_hwnd = nearest["hwnd"]
-        parent_id = next((w["id"] for w in sorted_windows if w["hwnd"] == parent_hwnd), "W0") if parent_hwnd is not None else "W0"
-        if parent_hwnd is not None and parent_id != "W0" and counts.get(parent_hwnd, 0) >= max_children_per_window:
+        parent_id, parent_hwnd = _owning_window(elem)
+        # Cap elements per window (both nesting branches) so a huge list cannot bloat the tree.
+        if parent_hwnd is not None and counts.get(parent_hwnd, 0) >= max_children_per_window:
             continue
-        elem["parent_id"] = parent_id
-        (root["children"] if parent_id == "W0" or parent_hwnd is None else windows[parent_hwnd]["children"]).append(elem)
-        if parent_hwnd is not None and parent_id != "W0":
+        anc = _rendered_parent(elem)
+        if anc is not None and anc.get("id") is not None:
+            elem["parent_id"] = anc["id"]
+            anc.setdefault("children", []).append(elem)
+        else:
+            elem["parent_id"] = parent_id
+            (windows[parent_hwnd]["children"] if parent_hwnd in windows else root["children"]).append(elem)
+        if parent_hwnd is not None:
             counts[parent_hwnd] = counts.get(parent_hwnd, 0) + 1
         node_index[elem["id"]] = {k: v for k, v in elem.items() if k != "children"}
 
@@ -126,6 +216,9 @@ def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], 
         item_status = str(node.get("item_status") or "").strip()
         if item_status:
             parts.append(f"[status:{clean(item_status)}]")
+        occluded = str(node.get("occluded_by") or "").strip()
+        if occluded:
+            parts.append(f"[occluded-by:{clean(occluded)}]")
         hint = text_hints.get(node.get("id", ""), "")
         hint_total = 0
         if hint and clean(hint) not in name_prev:

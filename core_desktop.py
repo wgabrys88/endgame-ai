@@ -62,8 +62,10 @@ class Desktop:
         hc = self.config.get("hover_cache", {})
         budget = hc.get("budget", {})
         cb = int(char_budget if char_budget is not None else budget["expand_char_budget"])
+        focal_depth = int(budget.get("expand_focal_depth", 0) or 0)
+        band_px = int(budget.get("expand_band_px", 150) or 150)
         items = elements if isinstance(elements, list) else [elements]
-        return expand_elements(self, items, char_budget=cb)
+        return expand_elements(self, items, char_budget=cb, focal_depth=focal_depth, band_px=band_px)
 
     def click(self, x: int, y: int, hwnd: int = 0) -> dict[str, Any]:
         width, height = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
@@ -75,11 +77,15 @@ class Desktop:
         user32.mouse_event(0x0004, 0, 0, 0, 0)
         return {"ok": True, "action": "click", "x": x, "y": y, "hwnd": hwnd, "screen": {"width": width, "height": height}}
 
-    def type_text(self, text: str) -> dict[str, Any]:
+    def set_clipboard(self, text: str) -> dict[str, Any]:
         command = ["powershell.exe", "-NoProfile", "-Command", "Set-Clipboard -Value ([Console]::In.ReadToEnd())"]
         completed = subprocess.run(command, input=str(text), text=True, capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
         if completed.returncode != 0:
             raise RuntimeError(f"clipboard write failed: {(completed.stderr or completed.stdout).strip()}")
+        return {"ok": True, "action": "set_clipboard", "chars": len(str(text))}
+
+    def type_text(self, text: str) -> dict[str, Any]:
+        self.set_clipboard(text)
         pasted = self.hotkey("ctrl", "v")
         if pasted.get("ok") is not True:
             raise RuntimeError(f"paste failed: {pasted}")

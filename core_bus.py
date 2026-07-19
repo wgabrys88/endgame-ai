@@ -129,6 +129,23 @@ def render_interpretation_table(goal: str, interps: JsonDict | None) -> str:
     return "\n".join(lines)
 
 
+def render_proven_ledger(ledger: list | None) -> str:
+    """WHAT STANDETH PROVEN DONE — the independently-witnessed effects, deterministically
+    recorded by the witness on each confirmation (never authored by the actor, so it
+    cannot be a goal-echo). A faculty reads this to know what already standeth achieved
+    upon the world, and MUST NOT redo it. This is the memory of the organism's own
+    successes that the free-text rows cannot carry."""
+    entries = [str(e).strip() for e in (ledger or []) if str(e).strip()]
+    if not entries:
+        return ("WHAT STANDETH PROVEN DONE (witnessed effects upon the world): none yet. "
+                "No deed hath yet been independently confirmed.")
+    body = "\n".join(f"  - {e}" for e in entries)
+    return ("WHAT STANDETH PROVEN DONE (witnessed effects upon the world, recorded by the "
+            "witness itself — not thy testimony but proven fact; DO NOT redo any of these, "
+            "and if the whole of what remaineth is already herein, strike the ROOT goal "
+            "directly):\n" + body)
+
+
 def with_interpretation(interps: JsonDict | None, faculty: str, sentence: str) -> JsonDict:
     """Return a copy of the interpretation table with one faculty's row rewritten."""
     merged = dict(interps or {})
@@ -176,6 +193,7 @@ def state_brief(state: JsonDict) -> JsonDict:
     current_deed = state.get("current_deed") or {}
     return {
         "goal_interpretations": dict(state.get("goal_interpretations") or {}),
+        "proven_ledger": list(state.get("proven_ledger") or []),
         "latest_counsel": state.get("latest_counsel") or "",
         "current_deed": {"description": current_deed.get("description", "")},
         "failure_streak": state.get("failure_streak", {}),

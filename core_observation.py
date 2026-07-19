@@ -271,34 +271,51 @@ class UiaScanner:
         except Exception:
             return None
 
-    def harvest_subtree(self, root_element: Any, max_nodes: int | None = None, parent_runtime_id: list[int] | None = None, depth: int = 0) -> list[dict[str, Any]]:
+    def harvest_subtree(self, root_element: Any, max_nodes: int | None = None, parent_runtime_id: list[int] | None = None, depth: int = 0, max_depth: int | None = None) -> list[dict[str, Any]]:
+        """Walk the cached subtree preserving TRUE parent identity and depth. The cache is
+        built with Subtree scope, so GetCachedChildren recurses from that one cached read
+        with no further live [UIA] calls — unlike a flat descendant list, which would tag
+        every node with the subtree root and destroy the real hierarchy."""
         nodes: list[dict[str, Any]] = []
         seen: set[str] = set()
-
-        def add(el: Any, parent: list[int], d: int) -> dict[str, Any] | None:
-            if max_nodes is not None and len(nodes) >= max_nodes:
-                return None
-            node = self.element_to_raw(el, parent, d)
-            if node is None or node["id"] in seen:
-                return None
-            seen.add(node["id"])
-            nodes.append(node)
-            return node
-
-        root_node = add(root_element, parent_runtime_id or [], depth)
-        if not root_node:
-            return nodes
+        # Cap recursion by explicit max_depth, else the wiring-owned filter.max_depth.
         try:
-            arr = root_element.FindAllBuildCache(TreeScope_Descendants, self.automation.CreateTrueCondition(), self._cache())
-            for i in range(int(getattr(arr, "Length", 0)) if arr is not None else 0):
+            if max_depth is not None:
+                depth_ceiling = depth + int(max_depth)
+            else:
+                depth_ceiling = int(((self.cfg or {}).get("filter") or {}).get("max_depth", 40)) + depth + 5
+        except Exception:
+            depth_ceiling = depth + 45
+        try:
+            root_element = root_element.BuildUpdatedCache(self._cache(TreeScope_Subtree))
+        except Exception:
+            pass
+
+        def visit(el: Any, parent_rid: list[int], d: int) -> None:
+            if (max_nodes is not None and len(nodes) >= max_nodes) or d >= depth_ceiling:
+                return
+            node = self.element_to_raw(el, parent_rid, d)
+            child_parent_rid, child_depth = parent_rid, d
+            if node is not None and node["id"] not in seen:
+                seen.add(node["id"])
+                nodes.append(node)
+                child_parent_rid, child_depth = node["runtime_id"], d + 1
+            elif node is not None:
+                return
+            try:
+                kids = el.GetCachedChildren()
+                count = int(getattr(kids, "Length", 0)) if kids is not None else 0
+            except (ValueError, Exception):
+                kids, count = None, 0
+            for i in range(count):
                 if max_nodes is not None and len(nodes) >= max_nodes:
                     break
                 try:
-                    add(arr.GetElement(i), root_node["runtime_id"], depth + 1)
+                    visit(kids.GetElement(i), child_parent_rid, child_depth)
                 except Exception:
                     continue
-        except Exception:
-            pass
+
+        visit(root_element, parent_runtime_id or [], depth)
         return nodes
 
 
@@ -320,12 +337,96 @@ def _load_phase(module_name: str):
     return mod
 
 
-def expand(desktop: Any, ids_or_points: list[Any], char_budget: int) -> dict[str, Any]:
+def _runtime_id_under(hit_rid: list[int], target_rid: list[int]) -> bool:
+    """True if the hit element IS the target or a descendant of it, judged by RuntimeId:
+    an exact match, or the target's id being a prefix of the hit's (UIA ids are hierarchical)."""
+    if not hit_rid or not target_rid:
+        return False
+    if hit_rid == target_rid:
+        return True
+    return len(hit_rid) > len(target_rid) and hit_rid[: len(target_rid)] == target_rid
+
+
+def resolve_hit_point(scanner: "UiaScanner", target_rid: list[int], rect: dict[str, int], known: tuple | None = None) -> tuple[tuple[int, int] | None, str]:
+    """Find a screen point that the OS hit-test resolves to the target element (or a
+    descendant), so a click landeth on the thing itself and not the window beneath it.
+    A wide field's rect centre oft falleth on dead chrome; this proveth the point instead.
+
+    Returns ((x, y), "") on success, or (None, occluder) naming what covereth the centre when
+    no point within the rect resolveth. `known` is a proven point from the scan grid, tried first."""
+    left, top, right, bottom = rect.get("left", 0), rect.get("top", 0), rect.get("right", 0), rect.get("bottom", 0)
+    w, h = right - left, bottom - top
+    if not target_rid or w <= 0 or h <= 0:
+        return (None, "")
+
+    def hit_ok_at(px: int, py: int) -> bool:
+        try:
+            el = scanner.automation.ElementFromPoint(wintypes.POINT(int(px), int(py)))
+        except Exception:
+            return False
+        if el is None:
+            return False
+        rid = _to_runtime_id(_current(el, PID_RUNTIME_ID))
+        if _runtime_id_under(rid, target_rid):
+            return True
+        # A focusable ancestor sharing the target's id chain: clicking it focuses into the
+        # target (web contenteditables own no hittable pixel of their own).
+        if _runtime_id_under(target_rid, rid) and _to_bool(_current(el, PID_KEYBOARD_FOCUSABLE)):
+            return True
+        # parent-walk for providers whose child ids are not strict prefixes
+        try:
+            walker = scanner.automation.RawViewWalker
+            cur = el
+            for _ in range(6):
+                cur = walker.GetParentElement(cur)
+                if cur is None:
+                    break
+                if _runtime_id_under(_to_runtime_id(_current(cur, PID_RUNTIME_ID)), target_rid):
+                    return True
+        except Exception:
+            pass
+        return False
+
+    cx, cy = (left + right) // 2, (top + bottom) // 2
+    trials: list[tuple[int, int]] = []
+    if known and len(known) == 2:
+        trials.append((int(known[0]), int(known[1])))
+    trials.append((cx, cy))
+    # a spread within the rect: quarters and inset edges (left-inset suits text fields)
+    for fx in (0.25, 0.5, 0.75):
+        for fy in (0.25, 0.5, 0.75):
+            trials.append((int(left + w * fx), int(top + h * fy)))
+    seen: set[tuple[int, int]] = set()
+    for px, py in trials:
+        if (px, py) in seen or not (left <= px < right and top <= py < bottom):
+            continue
+        seen.add((px, py))
+        if hit_ok_at(px, py):
+            return ((px, py), "")
+    # nothing resolved — name the occluder at the centre for loud, honest report
+    occluder = "unknown"
+    try:
+        el = scanner.automation.ElementFromPoint(wintypes.POINT(cx, cy))
+        if el is not None:
+            occluder = f"{control_type_name(_to_int(_current(el, PID_CONTROL_TYPE)))}|{_to_str(_current(el, PID_NAME))[:40]!r}"
+    except Exception:
+        pass
+    return (None, occluder)
+
+
+def expand(desktop: Any, ids_or_points: list[Any], char_budget: int, focal_depth: int = 0, band_px: int = 150) -> dict[str, Any]:
     """Targeted deeper look at named elements: re-acquire each at its screen point and
-    harvest its full subtree, returning the WHOLE untruncated text, value, and every child
+    harvest its subtree, returning the WHOLE untruncated text, value, and every child
     (including non-interactive), which the shallow tree omitteth. This is a fresh independent
     look, not memory: it readeth the live [UIA] now. `ids_or_points` are entries of the current
     action_index (each bearing px/py) or explicit {'px':x,'py':y} points.
+
+    GRADUATED DEPTH: the FIRST element thou namest is the focal point and is harvested
+    deepest; each later element is harvested shallower the farther its place lieth from the
+    focal, by the pixel distance between their centres — depth = max(1, focal_depth - dist//band_px).
+    Thus a deep web tree spendeth its depth where thou lookest, not on every neighbour. When
+    [focal_depth] is 0 (the default), all are harvested to full depth as of old. Order thy
+    elements so that what thou needest deepest cometh first.
 
     No text is ever cut short. The shallow tree already nameth each element's true size in
     chars, so thou knowest the cost ere thou askest. Shouldst the sum of what thou askest
@@ -334,17 +435,28 @@ def expand(desktop: Any, ids_or_points: list[Any], char_budget: int) -> dict[str
     from ctypes import wintypes
     scanner = UiaScanner({}, desktop)
     harvested_by_key: dict[str, list[dict[str, Any]]] = {}
+    focal_pt: tuple[int, int] | None = None
     for i, item in enumerate(ids_or_points):
         node = item if isinstance(item, dict) else {}
         px, py = node.get("px"), node.get("py")
         key = str(node.get("short_id") or node.get("id") or i)
         if px is None or py is None:
             raise RuntimeError(f"expand: element '{key}' bears no screen point to expand")
-        pt = wintypes.POINT(int(px), int(py))
+        px, py = int(px), int(py)
+        # Graduated depth: focal (first) deepest; neighbours shallower with pixel distance.
+        elem_depth: int | None = None
+        if focal_depth and focal_depth > 0:
+            if focal_pt is None:
+                focal_pt = (px, py)
+                elem_depth = focal_depth
+            else:
+                dist = ((px - focal_pt[0]) ** 2 + (py - focal_pt[1]) ** 2) ** 0.5
+                elem_depth = max(1, focal_depth - int(dist // max(1, band_px)))
+        pt = wintypes.POINT(px, py)
         root_el = scanner.automation.ElementFromPointBuildCache(pt, scanner._cache())
         if root_el is None:
             raise RuntimeError(f"expand: no element at point ({px}, {py}) for '{key}'")
-        harvested_by_key[key] = scanner.harvest_subtree(root_el)
+        harvested_by_key[key] = scanner.harvest_subtree(root_el, max_depth=elem_depth)
 
     def _chars(harvested: list[dict[str, Any]]) -> int:
         if not harvested:
@@ -383,6 +495,19 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
     build = _load_phase(phases["build"])
     gathered = scan.run(cfg, desktop)
     filtered = filt.run(gathered["nodes"], cfg, gathered["screen"])
+    # Prove a hittable click point per element before render: a wide field's rect centre oft
+    # resolveth to the window beneath. Knob resolve_clicks (default on) the body may rewrite.
+    if cfg.get("resolve_clicks", True):
+        scanner = UiaScanner(cfg, desktop)
+        for elem in filtered["action_elements"].values():
+            rid = elem.get("runtime_id") or []
+            if not rid:
+                continue
+            point, occluder = resolve_hit_point(scanner, rid, elem.get("rect", {}), elem.get("hit_point"))
+            if point is not None:
+                elem["px"], elem["py"] = point
+            elif occluder:
+                elem["occluded_by"] = occluder
     mapped = build.run(
         filtered["action_elements"],
         filtered["text_hints"],

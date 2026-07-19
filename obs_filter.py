@@ -33,6 +33,10 @@ def run(raw_nodes: list[dict[str, Any]], config: dict[str, Any], screen: dict[st
         if require_interactive and not action:
             continue
         label = node["text_full"] or node["name"] or ""
+        # Drop nameless NON-write clickables as noise; keep nameless writables (an edit
+        # field's label is oft a sibling Text, e.g. "Headline*" beside an unnamed input).
+        if action and action != "write" and not (node["name"] or node["text_full"] or node["value"] or node["automation_id"]):
+            continue
         if label and label != (node["name"] or ""):
             text_hints[node["id"]] = label
         if action:
@@ -49,6 +53,7 @@ def run(raw_nodes: list[dict[str, Any]], config: dict[str, Any], screen: dict[st
                 "action": action, "px": node["px"], "py": node["py"], "hwnd": hwnd, "rect": node["rect"],
                 "enabled": node["enabled"], "automation_id": node["automation_id"], "class_name": node["class_name"],
                 "runtime_id": node["runtime_id"], "depth": node["depth"], "focused": node["focused"],
+                "owner_hwnd": node.get("owner_hwnd", 0), "hit_point": node.get("hit_point"),
             }
     return {
         "action_elements": action_elements,
