@@ -2,6 +2,7 @@ import ctypes
 import importlib
 import os
 import subprocess
+from ctypes import wintypes
 from typing import Any
 
 import comtypes
@@ -12,6 +13,35 @@ user32 = ctypes.windll.user32
 DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = ctypes.c_void_p(-4)
 if not user32.SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2):
     raise ctypes.WinError()
+
+# SendInput + KEYEVENTF_UNICODE: the true keystroke road for arbitrary text. It
+# injects each UTF-16 code unit as a trusted OS key event, which the host turns
+# into a WM_CHAR the focused control accepts — including rich web editors that
+# ignore a programmatic paste. This is the character-synthesis primitive the
+# hand lacked; clipboard paste remains a separate, genuinely different road.
+KEYEVENTF_KEYUP = 0x0002
+KEYEVENTF_UNICODE = 0x0004
+_ULONG_PTR = ctypes.c_size_t
+
+
+class _KEYBDINPUT(ctypes.Structure):
+    _fields_ = [("wVk", wintypes.WORD), ("wScan", wintypes.WORD), ("dwFlags", wintypes.DWORD), ("time", wintypes.DWORD), ("dwExtraInfo", _ULONG_PTR)]
+
+
+class _MOUSEINPUT(ctypes.Structure):
+    _fields_ = [("dx", wintypes.LONG), ("dy", wintypes.LONG), ("mouseData", wintypes.DWORD), ("dwFlags", wintypes.DWORD), ("time", wintypes.DWORD), ("dwExtraInfo", _ULONG_PTR)]
+
+
+class _INPUTUNION(ctypes.Union):
+    _fields_ = [("ki", _KEYBDINPUT), ("mi", _MOUSEINPUT)]
+
+
+class _INPUT(ctypes.Structure):
+    _fields_ = [("type", wintypes.DWORD), ("u", _INPUTUNION)]
+
+
+user32.SendInput.argtypes = (wintypes.UINT, ctypes.POINTER(_INPUT), ctypes.c_int)
+user32.SendInput.restype = wintypes.UINT
 
 
 def _load_uia_module() -> Any:
@@ -78,18 +108,34 @@ class Desktop:
         return {"ok": True, "action": "click", "x": x, "y": y, "hwnd": hwnd, "screen": {"width": width, "height": height}}
 
     def set_clipboard(self, text: str) -> dict[str, Any]:
-        command = ["powershell.exe", "-NoProfile", "-Command", "Set-Clipboard -Value ([Console]::In.ReadToEnd())"]
-        completed = subprocess.run(command, input=str(text), text=True, capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+        command = ["powershell.exe", "-NoProfile", "-Command", "$in=[Console]::In.ReadToEnd(); Set-Clipboard -Value $in"]
+        completed = subprocess.run(command, input=str(text).encode("utf-8"), capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
         if completed.returncode != 0:
-            raise RuntimeError(f"clipboard write failed: {(completed.stderr or completed.stdout).strip()}")
+            raise RuntimeError(f"clipboard write failed: {(completed.stderr or completed.stdout).decode('utf-8', 'replace').strip()}")
         return {"ok": True, "action": "set_clipboard", "chars": len(str(text))}
 
     def type_text(self, text: str) -> dict[str, Any]:
+        s = str(text)
+        code_units = list(s.encode("utf-16-le"))
+        events = []
+        for i in range(0, len(code_units), 2):
+            unit = code_units[i] | (code_units[i + 1] << 8)
+            for flags in (KEYEVENTF_UNICODE, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP):
+                events.append(_INPUT(type=1, u=_INPUTUNION(ki=_KEYBDINPUT(wVk=0, wScan=unit, dwFlags=flags, time=0, dwExtraInfo=0))))
+        if not events:
+            return {"ok": True, "action": "type_text", "chars": 0}
+        arr = (_INPUT * len(events))(*events)
+        sent = user32.SendInput(len(events), arr, ctypes.sizeof(_INPUT))
+        if sent != len(events):
+            raise ctypes.WinError(ctypes.get_last_error())
+        return {"ok": True, "action": "type_text", "chars": len(s)}
+
+    def paste_clipboard(self, text: str) -> dict[str, Any]:
         self.set_clipboard(text)
         pasted = self.hotkey("ctrl", "v")
         if pasted.get("ok") is not True:
             raise RuntimeError(f"paste failed: {pasted}")
-        return {"ok": True, "action": "type_text", "chars": len(str(text))}
+        return {"ok": True, "action": "paste_clipboard", "chars": len(str(text))}
 
     def press_key(self, key: str) -> dict[str, Any]:
         vk = KEY_MAP.get(str(key).strip().lower())
@@ -151,7 +197,3 @@ def get_desktop(config: dict[str, Any] | None = None) -> Desktop:
     if _desktop_instance is None:
         _desktop_instance = Desktop(config)
     return _desktop_instance
-
-
-def observe(config: dict[str, Any] | None = None) -> dict[str, Any]:
-    return get_desktop(config).observe(config)
