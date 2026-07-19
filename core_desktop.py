@@ -75,11 +75,15 @@ class Desktop:
         user32.mouse_event(0x0004, 0, 0, 0, 0)
         return {"ok": True, "action": "click", "x": x, "y": y, "hwnd": hwnd, "screen": {"width": width, "height": height}}
 
-    def type_text(self, text: str) -> dict[str, Any]:
+    def set_clipboard(self, text: str) -> dict[str, Any]:
         command = ["powershell.exe", "-NoProfile", "-Command", "Set-Clipboard -Value ([Console]::In.ReadToEnd())"]
         completed = subprocess.run(command, input=str(text), text=True, capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
         if completed.returncode != 0:
             raise RuntimeError(f"clipboard write failed: {(completed.stderr or completed.stdout).strip()}")
+        return {"ok": True, "action": "set_clipboard", "chars": len(str(text))}
+
+    def type_text(self, text: str) -> dict[str, Any]:
+        self.set_clipboard(text)
         pasted = self.hotkey("ctrl", "v")
         if pasted.get("ok") is not True:
             raise RuntimeError(f"paste failed: {pasted}")
