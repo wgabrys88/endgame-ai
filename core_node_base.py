@@ -3,6 +3,7 @@ from typing import Any
 
 import core_bus as bus
 import core_brain as brain
+import core_nodes as nodes
 import core_wiring as wiring
 
 JsonDict = dict[str, Any]
@@ -17,7 +18,7 @@ class BaseNode(ABC):
         return {
             "goal": ctx.get("goal", ""),
             "state": bus.state_brief(st),
-            "observation": bus.observation_brief(st),
+            "environment": bus.environment_brief(st),
         }
 
     def signal_from_data(self, data: JsonDict, ctx: JsonDict) -> str:
@@ -28,6 +29,7 @@ class BaseNode(ABC):
 
     def think(self, ctx: JsonDict) -> bus.Record:
         w = ctx["wiring"]
+        nodes.explore(ctx)
         prompt = wiring.prompt(w, self.prompt_key)
         think_kwargs: JsonDict = {"expected_record_type": self.expected_record_type, "emitting_node": ctx.get("node")}
         payload = self.build_payload(ctx)

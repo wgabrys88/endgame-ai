@@ -1,6 +1,4 @@
 from dataclasses import dataclass
-import json
-import re
 import time
 from typing import Any
 
@@ -92,16 +90,21 @@ def with_interpretation(interps: JsonDict | None, faculty: str, sentence: str) -
     return merged
 
 
-def render_environment_probe(probe: JsonDict | None, templates: JsonDict) -> str:
-    probe = probe or {}
-    if not probe:
-        return ""
-    lines = [templates["standing_host_header"]]
-    for key, value in probe.items():
-        if isinstance(value, list):
-            value = ", ".join(str(v) for v in value)
-        lines.append(f"[{key}] {value}")
-    return "\n".join(lines)
+def render_environment(environment: JsonDict | None, templates: JsonDict) -> str:
+    environment = environment or {}
+    tree = str(environment.get("desktop_tree_text") or "").strip()
+    host = environment.get("host") or {}
+    blocks: list[str] = []
+    if tree:
+        blocks.append(templates["environment_screen_header"] + "\n" + tree)
+    if host:
+        lines = [templates["standing_host_header"]]
+        for key, value in host.items():
+            if isinstance(value, list):
+                value = ", ".join(str(v) for v in value)
+            lines.append(f"[{key}] {value}")
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks)
 
 
 def coerce_node_output(node: str, result: Any) -> tuple[str, JsonDict]:
@@ -142,35 +145,10 @@ def state_brief(state: JsonDict) -> JsonDict:
     }
 
 
-def framed_elements(state: JsonDict) -> JsonDict:
-    action_index = state.get("action_index") or {}
-    if not isinstance(action_index, dict):
-        return {}
-    tree_text = str(state.get("desktop_tree_text") or "")
-    visible_ids = {line.strip().split(" ", 1)[0] for line in tree_text.splitlines() if line.strip()}
-    frame_text = json.dumps(state.get("action_frame") or {}, ensure_ascii=False, default=str)
-    framed_ids = set(re.findall(r"\b(?:e|W)\d+\b", frame_text))
-    detail_fields = ("name", "role", "action", "rect", "automation_id", "class_name")
-    mapped: JsonDict = {}
-    for node_id, node in action_index.items():
-        if not isinstance(node, dict) or str(node_id) not in visible_ids:
-            continue
-        if str(node_id) in framed_ids:
-            mapped[str(node_id)] = {key: node[key] for key in detail_fields if key in node}
-    return mapped
-
-
-def observation_brief(state: JsonDict) -> JsonDict:
-    artifact = state.get("observation_artifact") or {}
+def environment_brief(state: JsonDict) -> JsonDict:
     return {
-        "provenance": (
-            "independent world state: the settled desktop as an outside eye beheld it, "
-            "produced by the OS and applications, not authored by the actor."
-        ),
         "desktop_tree_text": state.get("desktop_tree_text", ""),
-        "framed_elements": framed_elements(state),
-        "observed_at": state.get("observed_at"),
-        "screen": artifact.get("screen", {}) if isinstance(artifact, dict) else {},
+        "host": state.get("host_facts") or {},
     }
 
 
@@ -181,7 +159,7 @@ def execution_evidence(state: JsonDict) -> JsonDict:
         "provenance": (
             "actor-authored record: what code the executor authored and enacted, by its own account. "
             "This is the actor's testimony about what it did, not proof of world-effect. "
-            "Independent world state is carried separately in the observation field."
+            "Independent world state is carried separately in the environment."
         ),
     }
 

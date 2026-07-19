@@ -1,4 +1,4 @@
-"""[node_recover] — Thou receivest the denied deed, its evidence and [failure_streak], and the fresh observation."""
+"""[node_recover] — Thou receivest the denied deed, its evidence and [failure_streak], and the fresh [environment]."""
 import core_bus as bus
 from core_node_base import BaseNode
 
@@ -25,7 +25,7 @@ class RecoverNode(BaseNode):
             "deed": {"description": deed.get("description", state["goal"])},
             "state": bus.state_brief(state),
             "evidence": self._evidence_payload,
-            "observation": bus.observation_brief(state),
+            "environment": bus.environment_brief(state),
         }
 
     def signal_from_data(self, data, ctx):

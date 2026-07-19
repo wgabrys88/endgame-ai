@@ -316,50 +316,6 @@ class UiaScanner:
         return nodes
 
 
-def expand(desktop: Any, ids_or_points: list[Any], char_budget: int | None = None) -> dict[str, Any]:
-    from ctypes import wintypes
-    scanner = UiaScanner({}, desktop)
-    harvested_by_key: dict[str, list[dict[str, Any]]] = {}
-    for i, item in enumerate(ids_or_points):
-        node = item if isinstance(item, dict) else {}
-        px, py = node.get("px"), node.get("py")
-        key = str(node.get("short_id") or node.get("id") or i)
-        if px is None or py is None:
-            raise RuntimeError(f"expand: element '{key}' bears no screen point to expand")
-        px, py = int(px), int(py)
-        pt = wintypes.POINT(px, py)
-        root_el = scanner.automation.ElementFromPointBuildCache(pt, scanner._cache())
-        if root_el is None:
-            raise RuntimeError(f"expand: no element at point ({px}, {py}) for '{key}'")
-        harvested_by_key[key] = scanner.harvest_subtree(root_el)
-
-    def _chars(harvested: list[dict[str, Any]]) -> int:
-        if not harvested:
-            return 0
-        head = harvested[0]
-        total = len(head.get("text_full", "") or "") + len(head.get("value", "") or "")
-        total += sum(len(n.get("text_full", "") or "") for n in harvested[1:])
-        return total
-
-    sizes = {key: _chars(h) for key, h in harvested_by_key.items()}
-    grand_total = sum(sizes.values())
-    if char_budget is not None and grand_total > char_budget:
-        detail = ", ".join(f"{k}={v} chars" for k, v in sizes.items())
-        raise RuntimeError(f"expand: requested {grand_total} chars exceedeth budget {char_budget} ({detail}); ask for fewer or other elements")
-
-    results: dict[str, Any] = {}
-    for key, harvested in harvested_by_key.items():
-        results[key] = {
-            "text_full": harvested[0].get("text_full", "") if harvested else "",
-            "value": harvested[0].get("value", "") if harvested else "",
-            "children": [
-                {"role": n["role"], "name": n["name"], "action": n["action"], "text": n.get("text_full") or ""}
-                for n in harvested[1:]
-            ],
-        }
-    return results
-
-
 def _probe_points(rect: dict[str, int], step_px: int) -> list[tuple[int, int]]:
     left, top = rect["left"], rect["top"]
     w, h = max(1, rect["right"] - left), max(1, rect["bottom"] - top)
@@ -380,12 +336,8 @@ def _probe_points(rect: dict[str, int], step_px: int) -> list[tuple[int, int]]:
 
 def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any]:
     cfg = dict(config or {})
-    if not cfg.get("enabled", True):
-        raise RuntimeError("observation is disabled")
-    scan = cfg.get("scan", {})
-    step_px = int(scan.get("step_px", 64))
-    max_subtree = int(scan.get("max_subtree_nodes_per_point", 2000))
-    line_preview_chars = int(cfg.get("budget", {}).get("line_preview_chars", 120))
+    step_px = int(cfg.get("step_px", 64))
+    max_subtree = int(cfg.get("max_subtree_nodes_per_point", 2000))
     sw, sh = int(user32.GetSystemMetrics(0)), int(user32.GetSystemMetrics(1))
     screen = {"width": sw, "height": sh}
 
@@ -429,7 +381,7 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
         win["elements"] = list(kept.values())
         windows_out.append(win)
 
-    result = _render(windows_out, screen, line_preview_chars)
+    result = _render(windows_out, screen)
     observed_at = time.time()
     return {
         "observed_at": observed_at,
@@ -440,13 +392,9 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
     }
 
 
-def _render(windows: list[dict[str, Any]], screen: dict[str, int], line_preview_chars: int) -> dict[str, Any]:
+def _render(windows: list[dict[str, Any]], screen: dict[str, int]) -> dict[str, Any]:
     def clean(v: Any) -> str:
         return " ".join(str(v or "").replace("\r", " ").replace("\n", " ").split())
-
-    def preview(text: str) -> tuple[str, int]:
-        c = clean(text)
-        return (c[:line_preview_chars], len(c)) if len(c) > line_preview_chars else (c, 0)
 
     action_index: dict[str, dict[str, Any]] = {}
     screen_elements: list[dict[str, Any]] = []
@@ -495,13 +443,10 @@ def _render(windows: list[dict[str, Any]], screen: dict[str, int], line_preview_
             sid = f"e{counter['n']}"
             e["short_id"] = sid
             action = str(e.get("action", "")) if e.get("enabled") is not False else ""
-            name_prev, name_total = preview(e.get("name", "") or "")
             parts = [p for p in (
-                sid, str(e.get("role", "")), name_prev,
+                sid, str(e.get("role", "")), clean(e.get("name", "") or ""),
                 f"[{action}]" if action else "",
             ) if p]
-            if name_total:
-                parts.append(f"({name_total} chars)")
             lines.append("  " * indent + " ".join(parts))
             action_index[sid] = {**{k: v for k, v in e.items() if k != "children"}, "short_id": sid}
             for child in action_children.get(id(e), []):

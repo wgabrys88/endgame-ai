@@ -73,14 +73,7 @@ class Desktop:
 
     def observe(self, config: dict[str, Any] | None = None) -> dict[str, Any]:
         from core_observation import observe as observe_desktop
-        cfg = config or {}
-        hc = cfg.get("hover_cache", self.config.get("hover_cache", {}))
-        return observe_desktop(self, hc)
-
-    def expand(self, elements: Any, char_budget: int | None = None) -> dict[str, Any]:
-        from core_observation import expand as expand_elements
-        items = elements if isinstance(elements, list) else [elements]
-        return expand_elements(self, items, char_budget=char_budget)
+        return observe_desktop(self, config or self.config)
 
     def click(self, x: int, y: int, hwnd: int = 0) -> dict[str, Any]:
         width, height = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)

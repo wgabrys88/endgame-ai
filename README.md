@@ -32,25 +32,24 @@ survives a turn. What is not narrated forward is forgotten by design.
 
 ---
 
-## True topology (verified against wiring.json — 8 node instances)
+## True topology (verified against wiring.json — 4 nodes)
 
-`node_observe` is ONE module instanced three ways (`:act` / `:verify` / `:recover`), run afresh before
-each thinking faculty so none reasons on a stale view. `node_probe` is a distinct node that beholds
-the HOST (not the screen) between the act-observation and the executor.
+There is no separate perception node. Exploration — Python gathering the fresh environment (the live
+screen tree AND the host facts) — is intrinsic to every thinking faculty: `core_node_base.think()`
+calls `core_nodes.explore(ctx)` immediately before every brain call, so no faculty ever reasons on a
+stale view, and there is nothing to route through or instance. An LLM node without fresh environment
+is worthless, so exploration is not optional, not conditional, and not a node — it is what being a
+thinking faculty means.
 
 ```
-node_guidance      --attend-->        node_observe:act
-node_observe:act    --observed-->     node_probe
-node_probe          --probed-->       node_execute
-node_execute        --done-->         node_observe:verify
-node_execute        --deed_denied-->  node_observe:recover
-node_observe:verify --observed-->     node_verify
-node_observe:recover --observed-->    node_recover
-node_recover        --recovered-->    node_guidance
-node_verify         --deed_confirmed->node_guidance
-node_verify         --deed_denied-->  node_observe:recover
-node_verify         --unwitnessed-->  node_observe:verify
-node_verify         --halt-->         (life ends)
+node_guidance  --attend-->          node_execute
+node_execute   --done-->            node_verify
+node_execute   --deed_denied-->     node_recover
+node_verify    --deed_confirmed-->  node_guidance
+node_verify    --deed_denied-->     node_recover
+node_verify    --unwitnessed-->     node_verify
+node_verify    --halt-->            (life ends)
+node_recover   --recovered-->       node_guidance
 ```
 
 `cycle_start = node_guidance`. The wheel turns until `node_verify` emits `halt`, the body raises
@@ -74,11 +73,15 @@ node's downstream consumer is read from the topology and its module docstring is
 emitter's prompt as the DOWNSTREAM CONTRACT (`core_brain.downstream_contract` / `_node_docstring`).
 Prompts are therefore built dynamically from wiring + topology.
 
-The model-facing text is: `shared_prompt_prefix` + node prompt + `downstream_contract` (the static
-system message), then the volatile per-turn tail as the user message. That tail is, in order: the
-observation brief, the proven ledger, the goal-interpretation table (the living word), and the
-STANDING HOST (`node_probe`'s host facts), each rendered by a `core_bus` function from text held in
-`wiring.prompt_templates`.
+**The model-facing message, ordered for KV-cache reuse.** The system message is
+`shared_prompt_prefix` + node prompt + `downstream_contract` (static). The user message is assembled
+in `core_brain.think()` from **stable-first, volatile-last** blocks so the longest possible prefix
+stays cacheable across turns: first the organism's own memory (the state brief, the proven ledger,
+the living word), then LAST the single environment block — the live screen tree followed by the
+standing host facts, rendered by `core_bus.render_environment` from `wiring.prompt_templates`. That
+whole environment block is cut by ONE deterministic value, `exploration.max_environment_chars`
+(default 4000): Python assembles the world, Python trims it, Python inserts it. The model only
+receives what Python decided to show, and spends its whole budget on the deed itself.
 
 ---
 
@@ -86,20 +89,15 @@ STANDING HOST (`node_probe`'s host facts), each rendered by a `core_bus` functio
 
 - **node_guidance** (`cycle_start`) — pure Python, NO model call: reads and clears an external
   operator-counsel file (a one-way human-to-organism mailbox), placing any counsel into state as
-  `latest_counsel`, then emits `attend`. It does not read the goal or living word and sets no intent.
-- **node_observe** (`act` / `verify` / `recover`) — pure Python, NO model call (~10 lines): calls
-  `desktop.observe()` and emits the fresh desktop tree. Blind and fast by design; it must never be
-  made goal-aware.
-- **node_probe** — pure Python, NO model call: beholds the HOST — platform, screen, shell tools,
-  open windows (visible top-level titles), installed apps — and lays them at the tail of the
-  executor's user message so the actor builds on what stands rather than rediscovering the machine.
-- **node_execute** — the actor. From the living word, the fresh observation, the standing host, and
-  any `action_frame`, it authors ONE Python script and enacts it (`exec` in a capability namespace).
-  The language is the only tool; there is no tool menu. A script that raises routes to recovery
-  (`deed_denied`), never kills the life.
-- **node_verify** — the witness. Authors READ-ONLY code proving a system OTHER than the actor
-  produced the effect. Judges by independent effect, never the actor's testimony. Sets
-  `deed_confirmed` / `deed_denied` / `unwitnessed` / `halt`.
+  `latest_counsel`, then emits `attend`. It does not explore (it makes no brain call) and sets no
+  intent.
+- **node_execute** — the actor. Before it thinks, Python explores; from the living word, the fresh
+  environment, and any `action_frame`, it authors ONE Python script and enacts it (`exec` in a
+  capability namespace). The language is the only tool; there is no tool menu. A script that raises
+  routes to recovery (`deed_denied`), never kills the life.
+- **node_verify** — the witness. Before it thinks, Python explores; it authors READ-ONLY code
+  proving a system OTHER than the actor produced the effect. Judges by independent effect, never the
+  actor's testimony. Sets `deed_confirmed` / `deed_denied` / `unwitnessed` / `halt`.
 - **node_recover** — when a deed is denied, distils the lesson and frames the next attempt
   (`action_frame`), commanding recovery to change the KIND of road, not retry the failed one.
 
@@ -118,7 +116,7 @@ the world it judges. Testimony — any value the actor computed, printed, read b
 this life — is void as proof, being the same hand speaking of itself. Truth of "X is done" is
 established only by a party that did not and could not do X. This is enforced in code, not just prose:
 `build_capability_runtime(ctx)` gives the actor the full `desktop` hand; `build_capability_runtime(ctx,
-read_only=True)` gives the witness only `observe`/`expand` + stdlib reads — no `desktop`, no
+read_only=True)` gives the witness only `observe` + stdlib reads — no `desktop`, no
 `consult_model` (so it borrows no other mouth). The `proven_ledger` is appended ONLY by `node_verify`,
 never by the actor. The law is stated once in `shared_prompt_prefix` and merely applied downstream.
 
@@ -166,19 +164,19 @@ The output the LLM reads is a shallow tree, one line per interactive element (sh
 and `[action]` where the element affords one; a window line carries `[active]`), with NO pixel
 coordinates in the text (the body reads px,py from the `action_index` by short_id; a coordinate on the
 line is a dead token that only tempts the actor to nail a stale pixel). The organism reads a flat 2D
-plane of windows and their reachable elements. Elements deepen on demand via `expand()`, a fresh
-independent look that harvests a subtree whole; an optional `char_budget` fails hard if a request is a
-glutton, else all is harvested.
+plane of windows and their reachable elements — full element text flows into the tree, no per-line
+truncation and no on-demand deepening, because the whole environment block is bounded once at
+injection time.
 
-**What the LLM receives vs what stays Python-side.** `core_bus.observation_brief` sends the model
-ONLY `desktop_tree_text` + framed-element detail (the elements named by an `action_frame`) (+ small
-metadata). The full `action_index` (keyed
+**What the LLM receives vs what stays Python-side.** `core_bus.environment_brief` gathers
+`desktop_tree_text` + the host facts; `core_bus.render_environment` renders them as one block, cut
+once by `exploration.max_environment_chars`. The full `action_index` (keyed
 by short_id, carrying px,py,rect,runtime_id and every UIA field) lives in the executor's Python
 namespace, NEVER in the prompt. So the true model-facing budget is one quantity: the char length of
-`desktop_tree_text`. Any budget belongs at injection-time, not during scan (scan is free Python vs one
-model call). Classification of what is actionable is by role sets (`CLICK/WRITE/READ/SCROLL_ROLES`)
-in `action_for_role`; a non-actionable role yields `""` and is dropped at the render gate, so no
-explicit junk/container list is needed.
+the rendered environment block. That budget belongs at injection-time, not during scan (scan is free
+Python vs one model call). Classification of what is actionable is by role sets
+(`CLICK/WRITE/READ/SCROLL_ROLES`) in `action_for_role`; a non-actionable role yields `""` and is
+dropped at the render gate, so no explicit junk/container list is needed.
 
 **The scriptural register is a deliberate steering technique, not ornament.** KJV commandment prose
 pulls the model out of the chatty, confabulation-prone assistant basin into a high-fidelity,
@@ -196,7 +194,7 @@ organism cannot itself rewrite through the wiring — never cage it.
 `wiring.json` stays INERT DATA (self-editable by the organism, JSON, LF line endings). It is NOT
 converted to executable config: a syntax error in a `.py` config would brick the organism and make
 self-rewrite and validation harder. `core_wiring.load_wiring()` validates structure AND coherence
-(topology reachable, 8 node instances, single-target edges, three record contracts, six
+(topology reachable, four nodes, single-target edges, three record contracts, seven
 prompt_templates) and raises on either.
 
 ---
@@ -211,7 +209,7 @@ Two true text-entry roads, deliberately distinct:
   content a keystroke cannot bear).
 
 Also: `click(x,y)`, `press_key`, `hotkey`, `scroll`, `set_clipboard`, `open_url(browser, url)`,
-`observe()`, `expand()`. The actor targets by short_id from the `action_index` and reads px,py there
+`observe()`. The actor targets by short_id from the `action_index` and reads px,py there
 — it does not hardcode coordinates.
 
 ---
@@ -380,15 +378,16 @@ Operator-originated design seeds, evaluated against live code but deliberately d
 1. **Environment in the living word (self-narration)** — JUDGED GOOD, staged as a prompt phase (needs
    a live run to prove). The living word carries goal rows only; the atemporal organism should ALSO
    narrate ENVIRONMENTAL state/change across wakings ("I am verifier, only Notepad visible, a process
-   hurting CPU — that changes everything"). The fresh observation gives the static per-turn snapshot;
-   the value is narrating CHANGE across wakings. Faculty-prompt work, not a body change. `node_probe`
-   already lays standing host facts at the executor tail — a partial down-payment on this.
+   hurting CPU — that changes everything"). The fresh environment gives the static per-turn snapshot;
+   the value is narrating CHANGE across wakings. Faculty-prompt work, not a body change. The
+   exploration block already lays the standing host facts beside the screen tree — a partial
+   down-payment on this.
 
-2. **Goal-river steering the observer's `expand()` + "which window is the work in"** — HELD on the
-   task-agnostic law. `node_observe` is pure Python with NO model call; making it goal-aware breaks
-   the blind-observer design. Steering already lives right: `expand()` is called BY the executor;
-   the window `[active]` marker + `node_probe` open-windows answer "which window." Revisit only if a
-   live run shows the executor repeatedly expanding the wrong thing.
+2. **Goal-river steering exploration + "which window is the work in"** — HELD on the
+   task-agnostic law. Exploration is pure Python with NO model call; making it goal-aware breaks
+   the blind-observer design. Steering already lives right: the window `[active]` marker + the
+   standing host open-windows answer "which window." Revisit only if a live run shows the executor
+   repeatedly acting on the wrong window.
 
 3. **Tab-jump observer (experimental alt-topology)** — DEFERRED by the operator's own caution.
    Holding Tab jumps across interactive web elements, but Tab CAN generate actions and an observer

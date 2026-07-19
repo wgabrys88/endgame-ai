@@ -61,7 +61,7 @@ def _require_list_str(obj: dict[str, Any], path: str) -> list[str]:
 
 
 def validate_wiring(cfg: dict[str, Any]) -> None:
-    for key in ("schema", "model", "paths", "observe_config", "topology", "prompts", "shared_prompt_prefix", "record_contracts"):
+    for key in ("schema", "model", "paths", "exploration", "topology", "prompts", "shared_prompt_prefix", "record_contracts"):
         if key not in cfg:
             raise RuntimeError(f"wiring missing required key: {key}")
     _obj(cfg, "model")
@@ -77,7 +77,7 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
         raise RuntimeError(f"wiring.model.transport_config.{transport}.request_profiles must map names to request objects")
     for path in (
         "model.global", "model.organs",
-        "observe_config.hover_cache", "observe_config.hover_cache.scan", "observe_config.hover_cache.budget",
+        "exploration",
         "topology.edges",
     ):
         _require(cfg, path, dict)
@@ -88,26 +88,23 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
         "topology.cycle_start",
     ):
         _require(cfg, path, str)
-    for path in (
-        "observe_config.hover_cache.enabled",
-    ):
-        _require(cfg, path, bool)
     numeric_paths = (
-        "observe_config.hover_cache.scan.step_px",
-        "observe_config.hover_cache.scan.max_subtree_nodes_per_point",
-        "observe_config.hover_cache.budget.line_preview_chars",
+        "exploration.step_px",
+        "exploration.max_subtree_nodes_per_point",
+        "exploration.max_environment_chars",
     )
     for path in numeric_paths:
         value = _require(cfg, path, int)
-        if isinstance(value, bool) or value < 0 or (path.endswith(("step_px", "max_subtree_nodes_per_point")) and value == 0):
-            raise RuntimeError(f"wiring.{path} must be a valid non-negative count")
+        if isinstance(value, bool) or value <= 0:
+            raise RuntimeError(f"wiring.{path} must be a positive count")
     nodes = _require_list_str(cfg, "topology.nodes")
     edges = _require(cfg, "topology.edges", dict)
     _require(cfg, "prompts", dict)
     _require(cfg, "shared_prompt_prefix", str)
     templates = _require(cfg, "prompt_templates", dict)
     for key in ("living_word_header", "living_word_goal_row", "living_word_empty_row",
-                "proven_ledger_empty", "proven_ledger_header", "standing_host_header"):
+                "proven_ledger_empty", "proven_ledger_header", "standing_host_header",
+                "environment_screen_header"):
         if not isinstance(templates.get(key), str) or not templates[key].strip():
             raise RuntimeError(f"wiring.prompt_templates.{key} must be a non-empty string")
     validate_record_contracts(cfg)

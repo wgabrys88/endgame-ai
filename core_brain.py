@@ -95,34 +95,6 @@ def _organ_tuning(w: dict[str, Any], record_type: str | None) -> dict[str, Any]:
     return dict(organ) if isinstance(organ, dict) else {}
 
 
-def _normalize_observation(obj: Any) -> dict[str, Any] | None:
-    if not isinstance(obj, dict) or not obj.get("desktop_tree_text"):
-        return None
-    fields = (
-        "desktop_tree_text", "framed_elements", "observed_at", "screen",
-    )
-    return {key: obj[key] for key in fields if key in obj}
-
-
-def _observation_payload(w: dict[str, Any], payload: dict[str, Any] | None = None) -> dict[str, Any]:
-    if payload:
-        candidates = [payload.get("observation")]
-        evidence = payload.get("evidence")
-        if isinstance(evidence, dict):
-            candidates.append(evidence.get("observation"))
-        for candidate in candidates:
-            normalized = _normalize_observation(candidate)
-            if normalized is not None:
-                return normalized
-    raise RuntimeError("observation missing: observe node must run before any brain call")
-
-
-def _with_observation(payload: dict[str, Any], w: dict[str, Any]) -> dict[str, Any]:
-    enriched = dict(payload)
-    enriched["observation"] = _observation_payload(w, enriched)
-    return enriched
-
-
 def _structured_outputs_enabled(cfg: dict[str, Any]) -> bool:
     structured = cfg.get("structured_outputs")
     return bool(structured.get("enabled", False)) if isinstance(structured, dict) else bool(structured)
@@ -203,18 +175,17 @@ def extract_json_object(text: str) -> dict[str, Any] | None:
 def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, expected_record_type: str | None = None, emitting_node: str | None = None, body_override: dict[str, Any] | None = None) -> dict[str, Any]:
     _, cfg = wiring.get_transport_config(w)
     organ_tuning = _organ_tuning(w, expected_record_type)
-    payload = _with_observation(payload, w)
     goal = str(payload.pop("goal") or "") if "goal" in payload else ""
-    environment_probe = payload.pop("environment_probe", None)
+    environment = payload.pop("environment", None)
     brief = payload.get("state")
     interps = brief.pop("goal_interpretations", None) if isinstance(brief, dict) else None
     ledger = brief.pop("proven_ledger", None) if isinstance(brief, dict) else None
-    user_text = json.dumps(payload, ensure_ascii=False, default=str)
     templates = w["prompt_templates"]
-    user_text = f"{user_text}\n\n{bus.render_proven_ledger(ledger, templates)}\n\n{bus.render_interpretation_table(goal, interps, templates)}"
-    probe_text = bus.render_environment_probe(environment_probe, templates)
-    if probe_text:
-        user_text = f"{user_text}\n\n{probe_text}"
+    memory_text = json.dumps(payload, ensure_ascii=False, default=str)
+    memory_text = f"{memory_text}\n\n{bus.render_proven_ledger(ledger, templates)}\n\n{bus.render_interpretation_table(goal, interps, templates)}"
+    environment_text = bus.render_environment(environment, templates)
+    max_chars = int(w["exploration"]["max_environment_chars"])
+    user_text = f"{memory_text}\n\n{environment_text[:max_chars]}"
     response_format = _record_response_format(w, expected_record_type) if expected_record_type and _structured_outputs_enabled(cfg) else None
     override = bus.deep_merge(organ_tuning, body_override or {})
     stable_context = downstream_contract(w, emitting_node)

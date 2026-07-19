@@ -1,4 +1,4 @@
-"""[node_verify] — Thou receivest the [goal], the last [deed] (its description and hour of action), the [state] brief, and one fresh observation."""
+"""[node_verify] — Thou receivest the [goal], the last [deed] (its description and hour of action), the [state] brief, and the fresh [environment]."""
 import traceback
 
 import core_bus as bus
@@ -18,12 +18,11 @@ class VerifyNode(BaseNode):
     def build_payload(self, ctx):
         state = ctx["state"]
         desc = self._deed(ctx)
-        observation = bus.observation_brief(state)
         return {
             "goal": state["goal"],
             "deed": {"description": desc, "acted_at": state.get("last_action_at")},
             "state": bus.state_brief(state),
-            "observation": observation,
+            "environment": bus.environment_brief(state),
         }
 
     def run(self, ctx):
