@@ -23,7 +23,7 @@ class RecoverNode(BaseNode):
         return {
             "goal": state["goal"],
             "deed": {"description": deed.get("description", state["goal"])},
-            "focus": bus.state_brief(state),
+            "state": bus.state_brief(state),
             "evidence": self._evidence_payload,
             "observation": bus.observation_brief(state),
         }

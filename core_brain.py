@@ -99,7 +99,7 @@ def _normalize_observation(obj: Any) -> dict[str, Any] | None:
     if not isinstance(obj, dict) or not obj.get("desktop_tree_text"):
         return None
     fields = (
-        "desktop_tree_text", "focused_elements", "observed_at", "screen",
+        "desktop_tree_text", "framed_elements", "observed_at", "screen",
     )
     return {key: obj[key] for key in fields if key in obj}
 
@@ -206,9 +206,9 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
     payload = _with_observation(payload, w)
     goal = str(payload.pop("goal") or "") if "goal" in payload else ""
     environment_probe = payload.pop("environment_probe", None)
-    focus = payload.get("focus")
-    interps = focus.pop("goal_interpretations", None) if isinstance(focus, dict) else None
-    ledger = focus.pop("proven_ledger", None) if isinstance(focus, dict) else None
+    brief = payload.get("state")
+    interps = brief.pop("goal_interpretations", None) if isinstance(brief, dict) else None
+    ledger = brief.pop("proven_ledger", None) if isinstance(brief, dict) else None
     user_text = json.dumps(payload, ensure_ascii=False, default=str)
     templates = w["prompt_templates"]
     user_text = f"{user_text}\n\n{bus.render_proven_ledger(ledger, templates)}\n\n{bus.render_interpretation_table(goal, interps, templates)}"

@@ -163,14 +163,17 @@ untitled windows — context menus, dropdowns, tooltips, system-error dialogs, a
 are seen; a minimum-area floor drops 1x1/sliver junk.
 
 The output the LLM reads is a shallow tree, one line per interactive element (short_id, role, name,
-`[active]`/`[focused]`/`[action]`/`[disabled]`), with NO pixel coordinates in the text (the body
+`[active]`/`[action]`/`[disabled]`), with NO pixel coordinates in the text (the body
 reads px,py from the `action_index` by short_id; a coordinate on the line is a dead token that only
 tempts the actor to nail a stale pixel). Elements deepen on demand via `expand()`, a fresh
 independent look that harvests a subtree whole; an optional `char_budget` fails hard if a request is a
-glutton, else all is harvested.
+glutton, else all is harvested. There is no keyboard-input-target state anywhere — the organism sees a
+flat 2D plane of windows and elements, not an input-state machine; a `[disabled]` marker and window
+`[active]` are the only element states, and the desktop-icons window is dropped, not scanned.
 
 **What the LLM receives vs what stays Python-side.** `core_bus.observation_brief` sends the model
-ONLY `desktop_tree_text` + focused-element detail (+ small metadata). The full `action_index` (keyed
+ONLY `desktop_tree_text` + framed-element detail (the elements named by an `action_frame`) (+ small
+metadata). The full `action_index` (keyed
 by short_id, carrying px,py,rect,runtime_id and every UIA field) lives in the executor's Python
 namespace, NEVER in the prompt. So the true model-facing budget is one quantity: the char length of
 `desktop_tree_text`. Any budget belongs at injection-time, not during scan (scan is free Python vs one
@@ -385,8 +388,8 @@ Operator-originated design seeds, evaluated against live code but deliberately d
 2. **Goal-river steering the observer's `expand()` + "which window is the work in"** — HELD on the
    task-agnostic law. `node_observe` is pure Python with NO model call; making it goal-aware breaks
    the blind-observer design. Steering already lives right: `expand()` is called BY the executor;
-   `[active]`/`[focused]` + `node_probe` open-windows answer "which window." Revisit only if a live
-   run shows the executor repeatedly expanding the wrong thing.
+   the window `[active]` marker + `node_probe` open-windows answer "which window." Revisit only if a
+   live run shows the executor repeatedly expanding the wrong thing.
 
 3. **Tab-jump observer (experimental alt-topology)** — DEFERRED by the operator's own caution.
    Holding Tab jumps across interactive web elements, but Tab CAN generate actions and an observer

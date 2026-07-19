@@ -142,7 +142,7 @@ def state_brief(state: JsonDict) -> JsonDict:
     }
 
 
-def focused_elements(state: JsonDict) -> JsonDict:
+def framed_elements(state: JsonDict) -> JsonDict:
     action_index = state.get("action_index") or {}
     if not isinstance(action_index, dict):
         return {}
@@ -155,7 +155,7 @@ def focused_elements(state: JsonDict) -> JsonDict:
     for node_id, node in action_index.items():
         if not isinstance(node, dict) or str(node_id) not in visible_ids:
             continue
-        if node.get("focused") or str(node_id) in framed_ids:
+        if str(node_id) in framed_ids:
             mapped[str(node_id)] = {key: node[key] for key in detail_fields if key in node}
     return mapped
 
@@ -168,7 +168,7 @@ def observation_brief(state: JsonDict) -> JsonDict:
             "produced by the OS and applications, not authored by the actor."
         ),
         "desktop_tree_text": state.get("desktop_tree_text", ""),
-        "focused_elements": focused_elements(state),
+        "framed_elements": framed_elements(state),
         "observed_at": state.get("observed_at"),
         "screen": artifact.get("screen", {}) if isinstance(artifact, dict) else {},
     }

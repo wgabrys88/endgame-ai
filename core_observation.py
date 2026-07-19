@@ -36,14 +36,12 @@ PID_ENABLED = _const("UIA_IsEnabledPropertyId")
 PID_OFFSCREEN = _const("UIA_IsOffscreenPropertyId")
 PID_HWND = _const("UIA_NativeWindowHandlePropertyId")
 PID_FRAMEWORK = _const("UIA_FrameworkIdPropertyId")
-PID_HAS_KEYBOARD_FOCUS = _const("UIA_HasKeyboardFocusPropertyId")
-PID_KEYBOARD_FOCUSABLE = _const("UIA_IsKeyboardFocusablePropertyId")
 PID_CONTENT_ELEMENT = _const("UIA_IsContentElementPropertyId")
 PID_WINDOW_INTERACTION_STATE = _const("UIA_WindowWindowInteractionStatePropertyId")
 PID_ITEM_STATUS = _const("UIA_ItemStatusPropertyId")
 SCAN_PROPERTY_IDS = [
     PID_RUNTIME_ID, PID_BOUNDING_RECT, PID_CONTROL_TYPE, PID_NAME, PID_AUTOMATION_ID, PID_CLASS_NAME,
-    PID_ENABLED, PID_OFFSCREEN, PID_HWND, PID_FRAMEWORK, PID_HAS_KEYBOARD_FOCUS, PID_KEYBOARD_FOCUSABLE, PID_CONTENT_ELEMENT,
+    PID_ENABLED, PID_OFFSCREEN, PID_HWND, PID_FRAMEWORK, PID_CONTENT_ELEMENT,
     PID_WINDOW_INTERACTION_STATE, PID_ITEM_STATUS,
 ]
 
@@ -273,8 +271,6 @@ class UiaScanner:
                 "pattern_values": pattern_values,
                 "depth": depth,
                 "parent_runtime_id": parent_runtime_id or [],
-                "focused": _to_bool(_cached(element, PID_HAS_KEYBOARD_FOCUS)) or _to_bool(_current(element, PID_HAS_KEYBOARD_FOCUS)),
-                "is_keyboard_focusable": _to_bool(_cached(element, PID_KEYBOARD_FOCUSABLE)) or _to_bool(_current(element, PID_KEYBOARD_FOCUSABLE)),
                 "is_content_element": _to_bool(_cached(element, PID_CONTENT_ELEMENT)) or _to_bool(_current(element, PID_CONTENT_ELEMENT)),
                 "interaction_state": (lambda v: _to_int(v) if _unwrap(v) is not None else None)(_cached(element, PID_WINDOW_INTERACTION_STATE)) if role == "Window" else None,
                 "item_status": _to_str(_cached(element, PID_ITEM_STATUS)),
@@ -503,7 +499,6 @@ def _render(windows: list[dict[str, Any]], screen: dict[str, int], line_preview_
             name_prev, name_total = preview(e.get("name", "") or "")
             parts = [p for p in (
                 sid, str(e.get("role", "")), name_prev,
-                "[focused]" if e.get("focused") else "",
                 f"[{action}]" if action and not disabled else "",
                 "[disabled]" if disabled else "",
             ) if p]
