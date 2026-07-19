@@ -22,7 +22,6 @@ def run(raw_nodes: list[dict[str, Any]], config: dict[str, Any], screen: dict[st
     filt = config["filter"]
     max_elements = int(filt["max_elements"])
     max_per_window = int(filt["max_per_window"])
-    require_interactive = bool(filt["require_interactive"])
     sw, sh = int(screen.get("width", 0) or 0), int(screen.get("height", 0) or 0)
 
     def _owner(node: dict[str, Any]) -> int:
@@ -43,7 +42,7 @@ def run(raw_nodes: list[dict[str, Any]], config: dict[str, Any], screen: dict[st
     nature_rules: list[tuple[str, Any]] = [
         ("offscreen", lambda n: n["offscreen"]),
         ("junk_role", lambda n: n["role"] in obs.JUNK_ROLES),
-        ("not_interactive", lambda n: require_interactive and not n["action"]),
+        ("not_interactive", lambda n: not n["action"]),
         ("nameless_clickable", _nameless_clickable),
     ]
 
@@ -60,13 +59,12 @@ def run(raw_nodes: list[dict[str, Any]], config: dict[str, Any], screen: dict[st
         if reason:
             eliminated[node["id"]] = reason
             continue
-        # A label borne in a sibling's text is hung upon the thing as a hint, whether or
-        # not it survive the budget — an unnamed input is oft known only thus.
+        # Past the rules of nature, every thing beareth an action. A label borne in its own
+        # text (differing from its name) is hung upon it as a hint whether or not it survive
+        # the budget — an unnamed input is oft known only thus.
         label = node["text_full"] or node["name"] or ""
         if label and label != (node["name"] or ""):
             text_hints[node["id"]] = label
-        if not node["action"]:
-            continue  # survived its nature but doth nothing; hinted only, never a target
         if _off_bounds(node):
             eliminated[node["id"]] = "offscreen_bounds"
             continue

@@ -86,16 +86,10 @@
       "filter": {
         "max_elements": 500,
         "max_per_window": 120,
-        "require_interactive": true,
-        "max_depth": 10,
-        "max_children_per_window": 120,
-        "max_llm_nodes": 1000
+        "max_depth": 10
       },
       "budget": {
-        "line_preview_chars": 120,
-        "expand_char_budget": 200000,
-        "expand_focal_depth": 0,
-        "expand_band_px": 150
+        "line_preview_chars": 120
       }
     }
   },

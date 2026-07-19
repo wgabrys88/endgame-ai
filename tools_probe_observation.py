@@ -209,13 +209,12 @@ def _test_expand(cfg, desktop, result, sample_n):
             picks.append(e)
         if len(picks) >= sample_n:
             break
-    budget = int(cfg["budget"]["expand_char_budget"])
     scanner = obs.UiaScanner({}, desktop)
     details, silent_trunc, ghost_children, failures = [], 0, 0, 0
     for e in picks:
         key = e.get("short_id") or e.get("id")
         try:
-            res = desktop.expand([{"px": e["px"], "py": e["py"], "short_id": key}], char_budget=budget)
+            res = desktop.expand([{"px": e["px"], "py": e["py"], "short_id": key}])
         except Exception as exc:
             failures += 1
             details.append({"short_id": key, "error": str(exc)[:200]})

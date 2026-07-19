@@ -67,8 +67,6 @@ def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], 
     budget = config["budget"]
     line_preview_chars = int(budget["line_preview_chars"])
     max_depth = int(filt.get("max_depth", 10))
-    max_children_per_window = int(filt.get("max_children_per_window", 120))
-    max_llm_nodes = int(filt.get("max_llm_nodes", int(filt["max_elements"]) * 2))
     # Windows derived from each element's TRUE OS top-level owner (GetAncestor root) — one
     # identity space for windows and elements, never rectangle-overlap.
     owner_hwnds: dict[int, dict[str, Any]] = {}
@@ -96,7 +94,6 @@ def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], 
     sorted_windows = sorted(windows.values(), key=lambda w: w["z_order"])
     root = {"id": "W0", "role": "Screen", "name": "Screen", "title": "Desktop", "rect": {"left": 0, "top": 0, "right": screen["width"], "bottom": screen["height"]}, "fresh_scan": True, "observed_at": time.time(), "children": []}
     node_index: dict[str, dict[str, Any]] = {"W0": {k: v for k, v in root.items() if k != "children"}}
-    counts = {w["hwnd"]: 0 for w in sorted_windows}
     for window in sorted_windows:
         token = f"W{len(root['children']) + 1}"
         window["id"] = token
@@ -137,9 +134,8 @@ def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], 
 
     for elem in action_elements.values():
         parent_id, parent_hwnd = _owning_window(elem)
-        # Cap elements per window (both nesting branches) so a huge list cannot bloat the tree.
-        if parent_hwnd is not None and counts.get(parent_hwnd, 0) >= max_children_per_window:
-            continue
+        # The single per-window cap already fell in obs_filter (keyed on the true owner);
+        # build trusteth that winnowing and structureth every survivor without re-capping.
         anc = _rendered_parent(elem)
         if anc is not None and anc.get("id") is not None:
             elem["parent_id"] = anc["id"]
@@ -147,8 +143,6 @@ def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], 
         else:
             elem["parent_id"] = parent_id
             (windows[parent_hwnd]["children"] if parent_hwnd in windows else root["children"]).append(elem)
-        if parent_hwnd is not None:
-            counts[parent_hwnd] = counts.get(parent_hwnd, 0) + 1
         node_index[elem["id"]] = {k: v for k, v in elem.items() if k != "children"}
 
     def area(r: dict[str, int]) -> int:
@@ -199,12 +193,8 @@ def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], 
         return cleaned, 0
 
     lines = ["W0 Screen Desktop"]
-    rendered = 1
 
     def render(node: dict[str, Any], indent: int = 1) -> None:
-        nonlocal rendered
-        if rendered >= max_llm_nodes:
-            return
         sid, role, action = node.get("short_id", node.get("id", "")), str(node.get("role", "")), str(node.get("action", ""))
         name_prev, name_total = preview(node.get("name", "") or node.get("title", ""))
         # No pixel point in the text: the actor targeteth by short_id and readeth px,py from
@@ -230,7 +220,6 @@ def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], 
         if held:
             parts.append(f"({held} chars)")
         lines.append("  " * indent + " ".join(parts))
-        rendered += 1
         for child in node.get("children", []):
             if isinstance(child, dict):
                 render(child, indent + 1)

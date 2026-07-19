@@ -93,7 +93,6 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
         _require(cfg, path, str)
     for path in (
         "observe_config.hover_cache.enabled",
-        "observe_config.hover_cache.filter.require_interactive",
     ):
         _require(cfg, path, bool)
     numeric_paths = (
@@ -103,14 +102,11 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
         "observe_config.hover_cache.filter.max_elements",
         "observe_config.hover_cache.filter.max_per_window",
         "observe_config.hover_cache.filter.max_depth",
-        "observe_config.hover_cache.filter.max_children_per_window",
-        "observe_config.hover_cache.filter.max_llm_nodes",
         "observe_config.hover_cache.budget.line_preview_chars",
-        "observe_config.hover_cache.budget.expand_char_budget",
     )
     for path in numeric_paths:
         value = _require(cfg, path, int)
-        if isinstance(value, bool) or value < 0 or (path.endswith(("step_px", "max_subtree_nodes_per_point", "max_total_nodes", "max_elements", "max_per_window", "max_depth", "max_children_per_window", "max_llm_nodes", "expand_char_budget")) and value == 0):
+        if isinstance(value, bool) or value < 0 or (path.endswith(("step_px", "max_subtree_nodes_per_point", "max_total_nodes", "max_elements", "max_per_window", "max_depth")) and value == 0):
             raise RuntimeError(f"wiring.{path} must be a valid non-negative count")
     nodes = _require_list_str(cfg, "topology.nodes")
     edges = _require(cfg, "topology.edges", dict)

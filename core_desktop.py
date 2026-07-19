@@ -89,13 +89,8 @@ class Desktop:
 
     def expand(self, elements: Any, char_budget: int | None = None) -> dict[str, Any]:
         from core_observation import expand as expand_elements
-        hc = self.config.get("hover_cache", {})
-        budget = hc.get("budget", {})
-        cb = int(char_budget if char_budget is not None else budget["expand_char_budget"])
-        focal_depth = int(budget.get("expand_focal_depth", 0) or 0)
-        band_px = int(budget.get("expand_band_px", 150) or 150)
         items = elements if isinstance(elements, list) else [elements]
-        return expand_elements(self, items, char_budget=cb, focal_depth=focal_depth, band_px=band_px)
+        return expand_elements(self, items, char_budget=char_budget)
 
     def click(self, x: int, y: int, hwnd: int = 0) -> dict[str, Any]:
         width, height = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)

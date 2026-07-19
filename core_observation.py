@@ -414,28 +414,20 @@ def resolve_hit_point(scanner: "UiaScanner", target_rid: list[int], rect: dict[s
     return (None, occluder)
 
 
-def expand(desktop: Any, ids_or_points: list[Any], char_budget: int, focal_depth: int = 0, band_px: int = 150) -> dict[str, Any]:
+def expand(desktop: Any, ids_or_points: list[Any], char_budget: int | None = None) -> dict[str, Any]:
     """Targeted deeper look at named elements: re-acquire each at its screen point and
     harvest its subtree, returning the WHOLE untruncated text, value, and every child
     (including non-interactive), which the shallow tree omitteth. This is a fresh independent
     look, not memory: it readeth the live [UIA] now. `ids_or_points` are entries of the current
     action_index (each bearing px/py) or explicit {'px':x,'py':y} points.
 
-    GRADUATED DEPTH: the FIRST element thou namest is the focal point and is harvested
-    deepest; each later element is harvested shallower the farther its place lieth from the
-    focal, by the pixel distance between their centres — depth = max(1, focal_depth - dist//band_px).
-    Thus a deep web tree spendeth its depth where thou lookest, not on every neighbour. When
-    [focal_depth] is 0 (the default), all are harvested to full depth as of old. Order thy
-    elements so that what thou needest deepest cometh first.
-
     No text is ever cut short. The shallow tree already nameth each element's true size in
-    chars, so thou knowest the cost ere thou askest. Shouldst the sum of what thou askest
-    exceed [char_budget], this faileth hard and nameth each element's size—ask again for fewer
-    or other elements."""
+    chars, so thou knowest the cost ere thou askest. When a [char_budget] is given and the sum
+    of what thou askest exceedeth it, this faileth hard and nameth each element's size—ask
+    again for fewer or other elements. Given none, all thou namest is harvested whole."""
     from ctypes import wintypes
     scanner = UiaScanner({}, desktop)
     harvested_by_key: dict[str, list[dict[str, Any]]] = {}
-    focal_pt: tuple[int, int] | None = None
     for i, item in enumerate(ids_or_points):
         node = item if isinstance(item, dict) else {}
         px, py = node.get("px"), node.get("py")
@@ -443,20 +435,11 @@ def expand(desktop: Any, ids_or_points: list[Any], char_budget: int, focal_depth
         if px is None or py is None:
             raise RuntimeError(f"expand: element '{key}' bears no screen point to expand")
         px, py = int(px), int(py)
-        # Graduated depth: focal (first) deepest; neighbours shallower with pixel distance.
-        elem_depth: int | None = None
-        if focal_depth and focal_depth > 0:
-            if focal_pt is None:
-                focal_pt = (px, py)
-                elem_depth = focal_depth
-            else:
-                dist = ((px - focal_pt[0]) ** 2 + (py - focal_pt[1]) ** 2) ** 0.5
-                elem_depth = max(1, focal_depth - int(dist // max(1, band_px)))
         pt = wintypes.POINT(px, py)
         root_el = scanner.automation.ElementFromPointBuildCache(pt, scanner._cache())
         if root_el is None:
             raise RuntimeError(f"expand: no element at point ({px}, {py}) for '{key}'")
-        harvested_by_key[key] = scanner.harvest_subtree(root_el, max_depth=elem_depth)
+        harvested_by_key[key] = scanner.harvest_subtree(root_el)
 
     def _chars(harvested: list[dict[str, Any]]) -> int:
         if not harvested:
@@ -468,7 +451,7 @@ def expand(desktop: Any, ids_or_points: list[Any], char_budget: int, focal_depth
 
     sizes = {key: _chars(h) for key, h in harvested_by_key.items()}
     grand_total = sum(sizes.values())
-    if grand_total > char_budget:
+    if char_budget is not None and grand_total > char_budget:
         detail = ", ".join(f"{k}={v} chars" for k, v in sizes.items())
         raise RuntimeError(f"expand: requested {grand_total} chars exceedeth budget {char_budget} ({detail}); ask for fewer or other elements")
 
