@@ -207,9 +207,11 @@ def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], 
             return
         sid, role, action = node.get("short_id", node.get("id", "")), str(node.get("role", "")), str(node.get("action", ""))
         name_prev, name_total = preview(node.get("name", "") or node.get("title", ""))
-        point = f"@{node['px']},{node['py']}" if node.get("px") is not None and node.get("py") is not None else ""
+        # No pixel point in the text: the actor targeteth by short_id and readeth px,py from
+        # the action_index — a coordinate on the line is a dead token that only tempteth the
+        # actor to nail a stale pixel into click(), against the law to reacquire each turn.
         is_disabled = node.get("enabled") is False
-        parts = [p for p in (sid, role, name_prev, point, "[active]" if node.get("active") else "", "[focused]" if node.get("focused") else "", f"[{action}]" if action and not is_disabled else "", "[disabled]" if is_disabled else "") if p]
+        parts = [p for p in (sid, role, name_prev, "[active]" if node.get("active") else "", "[focused]" if node.get("focused") else "", f"[{action}]" if action and not is_disabled else "", "[disabled]" if is_disabled else "") if p]
         state_label = _WINDOW_STATE_LABELS.get(node.get("interaction_state"))
         if state_label:
             parts.append(f"[{state_label}]")

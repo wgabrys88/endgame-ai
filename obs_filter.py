@@ -42,15 +42,21 @@ def run(raw_nodes: list[dict[str, Any]], config: dict[str, Any], screen: dict[st
         if action:
             if not _on_screen(node):
                 continue
-            hwnd = node["hwnd"]
-            if hwnd_counts.get(hwnd, 0) >= max_per_window:
+            # Cap per TRUE owning window (the GetAncestor root the scan already resolved),
+            # never per bare hwnd: most elements report hwnd 0, so a bare-hwnd cap collapses
+            # into ONE global bucket in which a single busy window starves every other
+            # window — taskbar, tray, other apps — out of the tree. owner_hwnd is the
+            # identity; fall back to bare hwnd only where no owner was resolved.
+            owner = int(node.get("owner_hwnd", 0) or 0) or int(node["hwnd"] or 0)
+            if owner and hwnd_counts.get(owner, 0) >= max_per_window:
                 continue
             if len(action_elements) >= max_elements:
                 continue
-            hwnd_counts[hwnd] = hwnd_counts.get(hwnd, 0) + 1
+            if owner:
+                hwnd_counts[owner] = hwnd_counts.get(owner, 0) + 1
             action_elements[node["id"]] = {
                 "id": node["id"], "short_id": "", "name": label or node["name"], "role": node["role"],
-                "action": action, "px": node["px"], "py": node["py"], "hwnd": hwnd, "rect": node["rect"],
+                "action": action, "px": node["px"], "py": node["py"], "hwnd": node["hwnd"], "rect": node["rect"],
                 "enabled": node["enabled"], "automation_id": node["automation_id"], "class_name": node["class_name"],
                 "runtime_id": node["runtime_id"], "depth": node["depth"], "focused": node["focused"],
                 "owner_hwnd": node.get("owner_hwnd", 0), "hit_point": node.get("hit_point"),
