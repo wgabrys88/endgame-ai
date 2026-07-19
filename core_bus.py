@@ -153,6 +153,22 @@ def with_interpretation(interps: JsonDict | None, faculty: str, sentence: str) -
     return merged
 
 
+def render_environment_probe(probe: JsonDict | None) -> str:
+    """THE STANDING HOST — the machine's own facts (place, tongue, tools, dwelling apps),
+    gathered fresh each turn by node_probe and laid at the tail of the user message so the
+    executor knoweth what already standeth and reinventeth it not. Rides the volatile tail;
+    costs no prefix cache."""
+    probe = probe or {}
+    if not probe:
+        return ""
+    lines = ["THE STANDING HOST — what the machine itself beareth this turn; build upon it, rediscover it not:"]
+    for key, value in probe.items():
+        if isinstance(value, list):
+            value = ", ".join(str(v) for v in value)
+        lines.append(f"[{key}] {value}")
+    return "\n".join(lines)
+
+
 def coerce_node_output(node: str, result: Any) -> NodeOutput:
     if isinstance(result, NodeOutput):
         return result
