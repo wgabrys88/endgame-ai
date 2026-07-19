@@ -485,7 +485,7 @@ def expand(desktop: Any, ids_or_points: list[Any], char_budget: int, focal_depth
     return results
 
 
-def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any]:
+def observe(desktop: Any, config: dict[str, Any] | None = None, trace: Any = None) -> dict[str, Any]:
     cfg = dict(config or {})
     if not cfg["enabled"]:
         raise RuntimeError("hover_cache observation is disabled")
@@ -493,8 +493,14 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
     scan = _load_phase(phases["scan"])
     filt = _load_phase(phases["filter"])
     build = _load_phase(phases["build"])
+    # An optional observability seam: a trace(phase_name, payload) callback fired after each
+    # phase so an outside instrument may witness the pipeline without reimplementing it.
+    # None by default — zero behaviour change for the organism.
+    _t = trace if callable(trace) else (lambda *a, **k: None)
     gathered = scan.run(cfg, desktop)
+    _t("scan", gathered)
     filtered = filt.run(gathered["nodes"], cfg, gathered["screen"])
+    _t("filter", filtered)
     # Prove a hittable click point per element before render: a wide field's rect centre oft
     # resolveth to the window beneath. Knob resolve_clicks (default on) the body may rewrite.
     if cfg.get("resolve_clicks", True):
@@ -508,6 +514,7 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
                 elem["px"], elem["py"] = point
             elif occluder:
                 elem["occluded_by"] = occluder
+        _t("resolve", filtered)
     mapped = build.run(
         filtered["action_elements"],
         filtered["text_hints"],
@@ -516,6 +523,7 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
         gathered["screen"],
         cfg,
     )
+    _t("build", mapped)
     observed_at = time.time()
     artifact = {
         "observed_at": observed_at,

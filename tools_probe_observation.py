@@ -34,20 +34,80 @@ def _desktop(cfg):
     return core_desktop.get_desktop({"hover_cache": cfg})
 
 
-def _run_phases(cfg, desktop):
-    """Invoke each phase in isolation, timing every one, returning the raw stage outputs."""
-    import obs_scan, obs_filter, obs_build
-    t0 = time.time()
-    scanned = obs_scan.run(cfg, desktop)
-    t1 = time.time()
-    filtered = obs_filter.run(scanned["nodes"], cfg, scanned["screen"])
-    t2 = time.time()
-    built = obs_build.run(filtered["action_elements"], filtered["text_hints"], scanned["nodes"], filtered["hwnd_to_z"], scanned["screen"], cfg)
-    t3 = time.time()
-    return {
-        "scanned": scanned, "filtered": filtered, "built": built,
-        "timing_ms": {"scan": round((t1 - t0) * 1000), "filter": round((t2 - t1) * 1000), "build": round((t3 - t2) * 1000), "total": round((t3 - t0) * 1000)},
+def _dump(logdir, name, obj):
+    import os
+    os.makedirs(logdir, exist_ok=True)
+    path = os.path.join(logdir, name)
+    with open(path, "w", encoding="utf-8") as f:
+        if isinstance(obj, str):
+            f.write(obj)
+        else:
+            json.dump(obj, f, ensure_ascii=False, indent=2, default=str)
+    return path
+
+
+def _run_pipeline(cfg, desktop, logdir):
+    """Run the REAL organism observation path (core_observation.observe, including the
+    resolve_clicks step) via its trace seam, logging each phase to disk. Nothing here
+    reimplements the pipeline — a fix always lands in the original code, never the harness."""
+    import core_observation as obs
+    timing = {}
+    marks = {"last": time.time()}
+    written = []
+
+    def trace(phase, payload):
+        now = time.time()
+        timing[phase] = round((now - marks["last"]) * 1000)
+        marks["last"] = now
+        if phase == "scan":
+            snap = {"screen": payload["screen"], "node_count": len(payload["nodes"]), "nodes": payload["nodes"]}
+        elif phase in ("filter", "resolve"):
+            snap = {"action_element_count": len(payload["action_elements"]), "text_hints": payload["text_hints"], "action_elements": payload["action_elements"]}
+        elif phase == "build":
+            snap = payload
+        else:
+            snap = payload
+        written.append(_dump(logdir, f"phase_{len(written)+1}_{phase}.json", snap))
+
+    marks["last"] = time.time()
+    result = obs.observe(desktop, cfg, trace=trace)
+    timing["total"] = round((time.time() - marks["last"]) * 1000) if not timing else sum(v for k, v in timing.items() if k != "total")
+    return result, timing, written
+
+
+def _injection(cfg, desktop, result, logdir):
+    """Reproduce the EXACT text the executor receives, by reusing the original renderers
+    (bus.observation_brief / state_brief / render_* and core_wiring.prompt) — not by
+    reimplementing them. This is the single log that shows precisely what the pipeline
+    feeds the LLM: the observation injection as node_execute -> core_brain.think builds it."""
+    import core_bus as bus
+    w = wiring.load_wiring()
+    # State exactly as node_observe writes it, plus a probe row as node_probe would add.
+    import node_probe
+    probe = node_probe.run({"wiring": w, "state": {}, "goal": ""}).patch["environment_probe"]
+    state = {
+        "observed_at": result.get("observed_at"),
+        "desktop_tree_text": result.get("desktop_tree_text", ""),
+        "action_index": result.get("action_index", {}),
+        "screen_elements": result.get("screen_elements", []),
+        "observation_artifact": result.get("observation_artifact", {}),
     }
+    # The observation injection, verbatim, via the original function the executor path uses.
+    observation = bus.observation_brief(state)
+    # The full user-message tail the executor sees, assembled with the same renderers
+    # core_brain.think uses (ledger + living word + standing host), so the operator sees
+    # exactly what reaches the model.
+    tail = "\n\n".join([
+        bus.render_proven_ledger([]),
+        bus.render_interpretation_table("<goal is injected here at run time>", {}),
+        bus.render_environment_probe(probe),
+    ])
+    system_prompt = wiring.prompt(w, "node_execute")
+    _dump(logdir, "injection_observation.json", observation)
+    _dump(logdir, "injection_desktop_tree_text.txt", observation.get("desktop_tree_text", ""))
+    _dump(logdir, "injection_user_tail.txt", tail)
+    _dump(logdir, "injection_system_prompt.txt", system_prompt)
+    return observation
 
 
 def _numbering(tree_text):
@@ -65,22 +125,24 @@ def _numbering(tree_text):
     }
 
 
-def _metrics(stages):
-    scanned, filtered, built = stages["scanned"], stages["filtered"], stages["built"]
-    tree = built["desktop_tree_text"]
-    action_index = built["action_index"]
-    raw = scanned["nodes"]
-    depths = Counter(int(n.get("depth", 0)) for n in raw if not n.get("offscreen"))
+def _metrics(result, phase_snaps, timing):
+    """phase_snaps: {phase_name: written_path}. We read counts from the real observe()
+    result and the scan snapshot rather than reimplementing anything."""
+    tree = result.get("desktop_tree_text", "")
+    action_index = result.get("action_index", {})
+    raw = result.get("screen_elements", [])
+    artifact = result.get("observation_artifact", {})
+    scan_count = artifact.get("desktop_tree", {}).get("element_count")
+    depths = Counter(int(e.get("depth", 0)) for e in action_index.values())
     anon = sum(1 for e in action_index.values() if not str(e.get("name", "")).strip())
     occluded = sum(1 for e in action_index.values() if e.get("occluded_by"))
     per_window = Counter(e.get("hwnd", 0) for e in action_index.values())
     numbering = _numbering(tree)
     n_actions = max(1, len(action_index))
     return {
-        "scan_node_count": len(raw),
-        "filter_element_count": len(filtered["action_elements"]),
-        "build_element_count": built["element_count"],
-        "build_window_count": built["window_count"],
+        "scan_visible_element_count": len(raw),
+        "build_element_count": len(action_index),
+        "build_window_count": artifact.get("desktop_tree", {}).get("window_count", 0),
         "tree_line_count": tree.count("\n") + 1,
         "tree_char_total": len(tree),
         "per_window_max": max(per_window.values()) if per_window else 0,
@@ -93,12 +155,12 @@ def _metrics(stages):
         "max_depth_observed": max(depths) if depths else 0,
         "depth_distribution": dict(sorted(depths.items())),
         "action_distribution": dict(Counter(e.get("action", "") for e in action_index.values())),
-        "timing_ms": stages["timing_ms"],
+        "timing_ms": timing,
     }
 
 
 _BARS = {
-    "scan_node_count": lambda v: "FAIL" if v == 0 else ("WARN" if v < 10 or v > 10000 else "PASS"),
+    "scan_visible_element_count": lambda v: "FAIL" if v == 0 else ("WARN" if v < 10 else "PASS"),
     "build_element_count": lambda v: "FAIL" if v == 0 else ("WARN" if v < 5 or v > 480 else "PASS"),
     "build_window_count": lambda v: "FAIL" if v == 0 else "PASS",
     "tree_line_count": lambda v: "FAIL" if v <= 1 else ("WARN" if v == 2 else "PASS"),
@@ -126,11 +188,11 @@ def _grade(metrics):
     return failures, warnings
 
 
-def _test_expand(cfg, desktop, stages, sample_n):
+def _test_expand(cfg, desktop, result, sample_n):
     """Exercise expand() on a spread of elements and detect SILENT TRUNCATION by comparing
     the returned text against a fresh independent live re-harvest at the same point."""
     import core_observation as obs
-    action_index = stages["built"]["action_index"]
+    action_index = result.get("action_index", {})
     elems = list(action_index.values())
     writes = [e for e in elems if e.get("action") == "write"]
     deep = sorted([e for e in elems if int(e.get("depth", 0)) > 1], key=lambda e: -int(e.get("depth", 0)))
@@ -187,15 +249,17 @@ def _fixtures_down():
     subprocess.run(["powershell.exe", "-NoProfile", "-Command", "Stop-Process -Name notepad,calc -Force -ErrorAction SilentlyContinue"], check=False)
 
 
-def one_run(cfg, phase, expand_samples):
+def one_run(cfg, phase, expand_samples, logdir):
     desktop = _desktop(cfg)
-    stages = _run_phases(cfg, desktop)
-    metrics = _metrics(stages)
+    result, timing, phase_logs = _run_pipeline(cfg, desktop, logdir)
+    injection = _injection(cfg, desktop, result, logdir)
+    metrics = _metrics(result, phase_logs, timing)
     failures, warnings = _grade(metrics)
-    report = {"timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"), "metrics": metrics}
+    report = {"timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"), "logdir": logdir, "metrics": metrics, "phase_logs": phase_logs}
     if phase in ("all", "expand"):
-        expand_report = _test_expand(cfg, desktop, stages, expand_samples)
+        expand_report = _test_expand(cfg, desktop, result, expand_samples)
         report["expand"] = expand_report
+        _dump(logdir, "phase_expand.json", expand_report)
         if expand_report["failures"]:
             warnings.append(f"expand_failures={expand_report['failures']}")
         if expand_report["silent_truncation"]:
@@ -205,6 +269,7 @@ def one_run(cfg, phase, expand_samples):
     report["failures"] = failures
     report["warnings"] = warnings
     report["verdict"] = "FAIL" if failures else ("DEGRADED" if warnings else "PASS")
+    _dump(logdir, "report.json", report)
     return report
 
 
@@ -219,6 +284,7 @@ def main(argv=None):
     ap.add_argument("--expand-samples", type=int, default=10)
     ap.add_argument("--loops", type=int, default=1)
     ap.add_argument("--delay", type=float, default=2.0)
+    ap.add_argument("--logdir", default="obs_logs", help="directory for per-phase and injection logs")
     ap.add_argument("--csv", default=None, help="append one flat row per run to this CSV for trend tracking")
     ap.add_argument("--output", default=None, help="write full JSON report here (default stdout)")
     args = ap.parse_args(argv)
@@ -229,9 +295,10 @@ def main(argv=None):
     reports = []
     try:
         for i in range(max(1, args.loops)):
-            report = one_run(cfg, args.phase, args.expand_samples)
+            logdir = args.logdir if args.loops == 1 else f"{args.logdir}/run_{i+1}"
+            report = one_run(cfg, args.phase, args.expand_samples, logdir)
             reports.append(report)
-            print(json.dumps(report, ensure_ascii=False, default=str))
+            print(json.dumps({k: report[k] for k in ("timestamp", "verdict", "logdir", "failures", "warnings", "metrics")}, ensure_ascii=False, default=str))
             if args.csv:
                 _append_csv(args.csv, report)
             if i + 1 < args.loops:
@@ -258,7 +325,7 @@ def _append_csv(path, report):
     m = report["metrics"]
     row = {
         "timestamp": report["timestamp"], "verdict": report["verdict"],
-        "scan_node_count": m["scan_node_count"], "build_element_count": m["build_element_count"],
+        "scan_visible_element_count": m["scan_visible_element_count"], "build_element_count": m["build_element_count"],
         "build_window_count": m["build_window_count"], "tree_line_count": m["tree_line_count"],
         "tree_char_total": m["tree_char_total"], "anonymous_ratio": m["anonymous_ratio"],
         "occluded_ratio": m["occluded_ratio"], "max_depth_observed": m["max_depth_observed"],
