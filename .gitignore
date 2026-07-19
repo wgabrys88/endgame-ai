@@ -12,17 +12,9 @@
 !core_observation.py
 !core_organism.py
 !core_wiring.py
-!core_loader.py
-!check_topology.py
 !core_node_base.py
 !node_guidance.py
 !node_execute.py
-!node_observe.py
-!node_probe.py
 !node_recover.py
 !node_verify.py
 !transport_xai.py
-!tools_parse_requests.py
-!tools_probe_observation.py
-!tools_replay_grok.py
-!capture_run.py

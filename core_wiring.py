@@ -1,7 +1,11 @@
+import importlib.util
 import pathlib
-from typing import Any
+import re
+from typing import Any, NamedTuple
 
 ROOT = pathlib.Path(__file__).parent.resolve()
+
+SENTINELS = {"halt"}
 
 
 def root_path(value: str | None, default: str = "") -> pathlib.Path:
@@ -15,8 +19,7 @@ def load_wiring(path: str | None = None) -> dict[str, Any]:
     source_path = root_path(path, "wiring.json").resolve()
     cfg = load_json(source_path)
     validate_wiring(cfg)
-    import check_topology
-    problems = check_topology.coherence_problems(cfg)
+    problems = coherence_problems(cfg)
     if problems:
         raise RuntimeError(f"wiring topology is incoherent: {problems}")
     cfg["_source_path"] = str(source_path)
@@ -58,7 +61,7 @@ def _require_list_str(obj: dict[str, Any], path: str) -> list[str]:
 
 
 def validate_wiring(cfg: dict[str, Any]) -> None:
-    for key in ("schema", "model", "paths", "observe_config", "topology", "prompts", "shared_prompt_prefix", "record_contracts"):
+    for key in ("schema", "model", "paths", "exploration", "topology", "prompts", "shared_prompt_prefix", "record_contracts"):
         if key not in cfg:
             raise RuntimeError(f"wiring missing required key: {key}")
     _obj(cfg, "model")
@@ -72,13 +75,10 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
     request_profiles = selected_transport.get("request_profiles", {})
     if not isinstance(request_profiles, dict) or not all(isinstance(name, str) and name and isinstance(body, dict) for name, body in request_profiles.items()):
         raise RuntimeError(f"wiring.model.transport_config.{transport}.request_profiles must map names to request objects")
-    node_profiles = cfg["model"].get("node_profiles", {})
-    if not isinstance(node_profiles, dict) or not all(isinstance(node, str) and node and isinstance(profile, str) and profile for node, profile in node_profiles.items()):
-        raise RuntimeError("wiring.model.node_profiles must map node names to request-profile names")
     for path in (
         "model.global", "model.organs",
-        "observe_config.hover_cache", "observe_config.hover_cache.scan", "observe_config.hover_cache.budget",
-        "topology.edges", "topology.barriers",
+        "exploration",
+        "topology.edges",
     ):
         _require(cfg, path, dict)
     for path in (
@@ -88,59 +88,33 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
         "topology.cycle_start",
     ):
         _require(cfg, path, str)
-    for path in (
-        "observe_config.hover_cache.enabled",
-    ):
-        _require(cfg, path, bool)
     numeric_paths = (
-        "observe_config.hover_cache.scan.step_px",
-        "observe_config.hover_cache.scan.max_subtree_nodes_per_point",
-        "observe_config.hover_cache.budget.line_preview_chars",
+        "exploration.step_px",
+        "exploration.max_subtree_nodes_per_point",
+        "exploration.max_environment_chars",
     )
     for path in numeric_paths:
         value = _require(cfg, path, int)
-        if isinstance(value, bool) or value < 0 or (path.endswith(("step_px", "max_subtree_nodes_per_point")) and value == 0):
-            raise RuntimeError(f"wiring.{path} must be a valid non-negative count")
+        if isinstance(value, bool) or value <= 0:
+            raise RuntimeError(f"wiring.{path} must be a positive count")
     nodes = _require_list_str(cfg, "topology.nodes")
     edges = _require(cfg, "topology.edges", dict)
-    prompts = _require(cfg, "prompts", dict)
+    _require(cfg, "prompts", dict)
     _require(cfg, "shared_prompt_prefix", str)
+    templates = _require(cfg, "prompt_templates", dict)
+    for key in ("living_word_header", "living_word_goal_row", "living_word_empty_row",
+                "proven_ledger_empty", "proven_ledger_header", "standing_host_header",
+                "environment_screen_header"):
+        if not isinstance(templates.get(key), str) or not templates[key].strip():
+            raise RuntimeError(f"wiring.prompt_templates.{key} must be a non-empty string")
     validate_record_contracts(cfg)
     if len(nodes) != len(set(nodes)):
         raise RuntimeError("wiring.topology.nodes contains duplicates")
     if cfg["topology"]["cycle_start"] not in nodes:
         raise RuntimeError("wiring.topology.cycle_start must name a topology node")
-    unknown_profile_nodes = sorted(set(node_profiles) - set(nodes))
-    if unknown_profile_nodes:
-        raise RuntimeError(f"wiring.model.node_profiles names unknown topology nodes: {unknown_profile_nodes}")
-    unknown_profiles = sorted(set(node_profiles.values()) - set(request_profiles))
-    if unknown_profiles:
-        raise RuntimeError(f"wiring.model.node_profiles names undefined request profiles: {unknown_profiles}")
     missing = [node for node in nodes if node not in edges]
     if missing:
         raise RuntimeError(f"wiring missing edges for nodes: {missing}")
-    validate_node_defs(cfg, prompts)
-
-
-def validate_node_defs(cfg: dict[str, Any], prompts: dict[str, Any]) -> None:
-    node_defs = cfg.get("node_defs", {})
-    if not isinstance(node_defs, dict):
-        raise RuntimeError("wiring.node_defs must be object")
-    for name, defn in node_defs.items():
-        if not isinstance(defn, dict):
-            raise RuntimeError(f"wiring.node_defs.{name} must be object")
-        for key in ("prompt_key", "expected_record_type", "signal_source", "build_payload", "evidence", "patch"):
-            if key not in defn:
-                raise RuntimeError(f"wiring.node_defs.{name} missing required key: {key}")
-        if defn["prompt_key"] not in prompts:
-            raise RuntimeError(f"wiring.node_defs.{name}.prompt_key names missing prompt {defn['prompt_key']!r}")
-        if not isinstance(defn["expected_record_type"], str) or not defn["expected_record_type"]:
-            raise RuntimeError(f"wiring.node_defs.{name}.expected_record_type must be non-empty string")
-        if not isinstance(defn["signal_source"], str) or not defn["signal_source"]:
-            raise RuntimeError(f"wiring.node_defs.{name}.signal_source must be non-empty string")
-        if "description" in defn and (not isinstance(defn["description"], str) or not defn["description"].strip()):
-            raise RuntimeError(f"wiring.node_defs.{name}.description must be a non-empty string")
-
 
 
 def validate_record_contracts(cfg: dict[str, Any]) -> None:
@@ -178,6 +152,69 @@ def validate_record_contracts(cfg: dict[str, Any]) -> None:
             raise RuntimeError(f"wiring.model.organs.{record_type} has no matching wiring.record_contracts entry")
 
 
+def _contract_coherence(w: dict[str, Any]) -> list[str]:
+    problems: list[str] = []
+    try:
+        validate_record_contracts(w)
+    except Exception as exc:
+        problems.append(f"record_contracts invalid: {type(exc).__name__}: {exc}")
+        return problems
+    contracts = w["record_contracts"]
+    for prompt_key, text in w.get("prompts", {}).items():
+        for record_type in re.findall(r"record_type '([^']+)'", str(text)):
+            if record_type not in contracts:
+                problems.append(f"prompt '{prompt_key}' names record_type '{record_type}' with no record_contracts entry")
+    for record_type in w.get("model", {}).get("organs", {}):
+        if record_type not in contracts:
+            problems.append(f"model.organs.{record_type} has no record_contracts entry")
+    return problems
+
+
+def coherence_problems(w: dict[str, Any]) -> list[str]:
+    topo = w["topology"]
+    edges = topo["edges"]
+    nodes = set(topo["nodes"])
+    problems: list[str] = _contract_coherence(w)
+
+    if topo["cycle_start"] not in nodes:
+        problems.append(f"cycle_start '{topo['cycle_start']}' not in topology.nodes")
+
+    for src, sigmap in edges.items():
+        if src not in nodes:
+            problems.append(f"edge source '{src}' not in topology.nodes")
+        for sig, target in sigmap.items():
+            if not isinstance(target, str) or not target:
+                problems.append(f"{src}.{sig} has no valid target: {target!r}")
+                continue
+            if target not in SENTINELS and target not in nodes:
+                problems.append(f"{src}.{sig} -> '{target}' is not a known node")
+            if target in SENTINELS and sig != target:
+                problems.append(f"{src}.{sig} targets terminal name '{target}' instead of emitting terminal signal '{target}'")
+
+    node_dir = root_path(w["paths"]["nodes"])
+    for n in nodes:
+        if n not in edges:
+            problems.append(f"node '{n}' has no edges")
+        base = n.split(":", 1)[0]
+        if not (node_dir / f"{base}.py").is_file():
+            problems.append(f"node '{n}' has no plugin file {(node_dir / f'{base}.py')}")
+
+    seen: set[str] = set()
+    stack = [topo["cycle_start"]]
+    while stack:
+        cur = stack.pop()
+        if cur in seen or cur in SENTINELS:
+            continue
+        seen.add(cur)
+        for target in edges.get(cur, {}).values():
+            if isinstance(target, str) and target:
+                stack.append(target)
+    unreachable = nodes - seen
+    if unreachable:
+        problems.append(f"unreachable nodes from '{topo['cycle_start']}': {sorted(unreachable)}")
+    return problems
+
+
 def prompt(cfg: dict[str, Any], key: str) -> str:
     prompts = cfg["prompts"]
     if key not in prompts:
@@ -196,5 +233,41 @@ def get_transport_config(wiring: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     return transport, cfg
 
 
-def guidance_path(wiring: dict[str, Any]) -> pathlib.Path:
-    return root_path(wiring["paths"]["guidance"])
+class PluginKind(NamedTuple):
+    paths_key: str
+    module_prefix: str
+    export: str
+
+
+KINDS: dict[str, PluginKind] = {
+    "node": PluginKind(paths_key="nodes", module_prefix="endgame_node_", export="run"),
+    "transport": PluginKind(paths_key="brains", module_prefix="endgame_brain_transport_", export="call"),
+}
+
+
+def split_instance(name: str) -> tuple[str, str | None]:
+    if ":" in name:
+        base, instance = name.split(":", 1)
+        if not base or not instance:
+            raise RuntimeError(f"malformed plugin name '{name}': expected 'base:instance'")
+        return base, instance
+    return name, None
+
+
+def load(kind: str, name: str, w: dict[str, Any]):
+    spec_kind = KINDS.get(kind)
+    if spec_kind is None:
+        raise RuntimeError(f"unknown plugin kind '{kind}'; known: {', '.join(sorted(KINDS))}")
+    base, _instance = split_instance(name)
+    plugin_dir = root_path(w["paths"][spec_kind.paths_key])
+    path = plugin_dir / f"{base}.py"
+    if not path.exists():
+        raise RuntimeError(f"{kind} plugin '{base}' has no module at {path}; no fallback was attempted")
+    spec = importlib.util.spec_from_file_location(f"{spec_kind.module_prefix}{base}", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load {kind} plugin module: {path}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    if not hasattr(mod, spec_kind.export):
+        raise RuntimeError(f"{kind} plugin '{base}' does not export {spec_kind.export}(...)")
+    return mod

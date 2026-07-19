@@ -1,4 +1,4 @@
-"""[node_verify] — Thou receivest the [goal], the last [deed] (its description and hour of action), the operational [focus], and one fresh observation."""
+"""[node_verify] — Thou receivest the [goal], the last [deed] (its description and hour of action), the [state] brief, and the fresh [environment]."""
 import traceback
 
 import core_bus as bus
@@ -18,12 +18,11 @@ class VerifyNode(BaseNode):
     def build_payload(self, ctx):
         state = ctx["state"]
         desc = self._deed(ctx)
-        observation = bus.observation_brief(state)
         return {
             "goal": state["goal"],
             "deed": {"description": desc, "acted_at": state.get("last_action_at")},
-            "focus": bus.state_brief(state),
-            "observation": observation,
+            "state": bus.state_brief(state),
+            "environment": bus.environment_brief(state),
         }
 
     def run(self, ctx):
@@ -41,11 +40,6 @@ class VerifyNode(BaseNode):
             probe_fault = traceback.format_exc()
 
         if probe_fault is not None:
-            # The witness probe raised ere it judged, so THIS deed is UNJUDGED — not denied.
-            # A probe fault carries no verdict on the world, so it returns to the witness to
-            # look afresh, never to recovery (which would frame a new actor deed and, misled
-            # by an exec-string traceback, send the actor to mend a body file that is whole).
-            # No actor state is touched: the deed, the streak, and the actor's row all stand.
             note = (
                 "The read-only probe I authored raised ere it set a verdict, so this deed standeth "
                 "UNJUDGED — this is neither the actor's failing nor a fault in any node file, for the "
@@ -56,7 +50,7 @@ class VerifyNode(BaseNode):
                 "goal_interpretations": bus.with_interpretation(state.get("goal_interpretations"), "verify", note),
                 "last_verification": {"success": False, "signal": "unwitnessed", "reasoning": probe_fault},
             }
-            return bus.emit("unwitnessed", patch, record=record, evidence=self.build_payload(ctx))
+            return bus.emit("unwitnessed", patch)
 
         goal_satisfied = verdict["goal_satisfied"]
         deed_confirmed = verdict["deed_confirmed"]
@@ -86,7 +80,7 @@ class VerifyNode(BaseNode):
                 "action_frame": None,
                 "current_deed": None,
             })
-        return bus.emit(signal, patch, record=record, evidence=self.build_payload(ctx))
+        return bus.emit(signal, patch)
 
 
 def run(ctx):

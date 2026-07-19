@@ -14,11 +14,6 @@ DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = ctypes.c_void_p(-4)
 if not user32.SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2):
     raise ctypes.WinError()
 
-# SendInput + KEYEVENTF_UNICODE: the true keystroke road for arbitrary text. It
-# injects each UTF-16 code unit as a trusted OS key event, which the host turns
-# into a WM_CHAR the focused control accepts — including rich web editors that
-# ignore a programmatic paste. This is the character-synthesis primitive the
-# hand lacked; clipboard paste remains a separate, genuinely different road.
 KEYEVENTF_KEYUP = 0x0002
 KEYEVENTF_UNICODE = 0x0004
 _ULONG_PTR = ctypes.c_size_t
@@ -53,8 +48,6 @@ uia = _load_uia_module()
 comtypes.CoInitialize()
 
 
-# One key map, the single authority for every virtual-key the hand can strike, so
-# press_key and hotkey never diverge and no reachable key is silently caged.
 KEY_MAP: dict[str, int] = {
     "ctrl": 0x11, "control": 0x11, "alt": 0x12, "shift": 0x10, "win": 0x5B, "windows": 0x5B,
     "enter": 0x0D, "return": 0x0D, "tab": 0x09, "escape": 0x1B, "esc": 0x1B, "space": 0x20,
@@ -72,25 +65,15 @@ class Desktop:
         self.config = config or {}
         self._automation: Any = None
 
-    def _init_automation(self) -> None:
-        self._automation = comtypes.client.CreateObject(uia.CUIAutomation, interface=uia.IUIAutomation)
-
     @property
     def automation(self) -> Any:
         if self._automation is None:
-            self._init_automation()
+            self._automation = comtypes.client.CreateObject(uia.CUIAutomation, interface=uia.IUIAutomation)
         return self._automation
 
     def observe(self, config: dict[str, Any] | None = None) -> dict[str, Any]:
         from core_observation import observe as observe_desktop
-        cfg = config or {}
-        hc = cfg.get("hover_cache", self.config.get("hover_cache", {}))
-        return observe_desktop(self, hc)
-
-    def expand(self, elements: Any, char_budget: int | None = None) -> dict[str, Any]:
-        from core_observation import expand as expand_elements
-        items = elements if isinstance(elements, list) else [elements]
-        return expand_elements(self, items, char_budget=char_budget)
+        return observe_desktop(self, config or self.config)
 
     def click(self, x: int, y: int, hwnd: int = 0) -> dict[str, Any]:
         width, height = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)

@@ -24,7 +24,6 @@ def _const(name: str) -> int:
 
 
 TreeScope_Element = _const("TreeScope_Element")
-TreeScope_Descendants = _const("TreeScope_Descendants")
 TreeScope_Subtree = _const("TreeScope_Subtree")
 
 PID_RUNTIME_ID = _const("UIA_RuntimeIdPropertyId")
@@ -37,23 +36,19 @@ PID_ENABLED = _const("UIA_IsEnabledPropertyId")
 PID_OFFSCREEN = _const("UIA_IsOffscreenPropertyId")
 PID_HWND = _const("UIA_NativeWindowHandlePropertyId")
 PID_FRAMEWORK = _const("UIA_FrameworkIdPropertyId")
-PID_HAS_KEYBOARD_FOCUS = _const("UIA_HasKeyboardFocusPropertyId")
-PID_KEYBOARD_FOCUSABLE = _const("UIA_IsKeyboardFocusablePropertyId")
 PID_CONTENT_ELEMENT = _const("UIA_IsContentElementPropertyId")
 PID_WINDOW_INTERACTION_STATE = _const("UIA_WindowWindowInteractionStatePropertyId")
 PID_ITEM_STATUS = _const("UIA_ItemStatusPropertyId")
 SCAN_PROPERTY_IDS = [
     PID_RUNTIME_ID, PID_BOUNDING_RECT, PID_CONTROL_TYPE, PID_NAME, PID_AUTOMATION_ID, PID_CLASS_NAME,
-    PID_ENABLED, PID_OFFSCREEN, PID_HWND, PID_FRAMEWORK, PID_HAS_KEYBOARD_FOCUS, PID_KEYBOARD_FOCUSABLE, PID_CONTENT_ELEMENT,
+    PID_ENABLED, PID_OFFSCREEN, PID_HWND, PID_FRAMEWORK, PID_CONTENT_ELEMENT,
     PID_WINDOW_INTERACTION_STATE, PID_ITEM_STATUS,
 ]
 
 PID_VALUE_PATTERN = _const("UIA_ValuePatternId")
 PID_TEXT_PATTERN = _const("UIA_TextPatternId")
 PID_LEGACY_PATTERN = _const("UIA_LegacyIAccessiblePatternId")
-PID_INVOKE_PATTERN = _const("UIA_InvokePatternId")
-PID_SCROLL_PATTERN = _const("UIA_ScrollPatternId")
-SCAN_PATTERN_IDS = [PID_VALUE_PATTERN, PID_TEXT_PATTERN, PID_LEGACY_PATTERN, PID_INVOKE_PATTERN, PID_SCROLL_PATTERN]
+SCAN_PATTERN_IDS = [PID_VALUE_PATTERN, PID_TEXT_PATTERN, PID_LEGACY_PATTERN]
 
 CONTROL_TYPE_NAMES = {
     getattr(uia, attr): attr.replace("UIA_", "").replace("ControlTypeId", "")
@@ -64,8 +59,6 @@ CLICK_ROLES = {"Button", "Calendar", "CheckBox", "Hyperlink", "ListItem", "MenuI
 WRITE_ROLES = {"Edit", "ComboBox", "Spinner", "Document"}
 READ_ROLES = {"Text", "ListItem"}
 SCROLL_ROLES = {"List", "ScrollBar", "Slider", "Tree", "DataGrid"}
-CONTAINER_ROLES = {"Pane", "Document", "Window", "Group", "List", "Tree", "DataGrid", "Tab", "Menu", "ToolBar", "Table", "MenuBar", "SplitPane", "ScrollViewer"}
-JUNK_ROLES = {"TitleBar", "ScrollBar", "StatusBar", "ProgressBar", "Separator", "ToolTip", "Image", "Custom", "Header", "HeaderItem"}
 
 
 def control_type_name(control_type_id: int) -> str:
@@ -85,16 +78,10 @@ def action_for_role(role: str, class_name: str = "") -> str:
 
 
 def is_desktop_leakage(node: dict[str, Any]) -> bool:
-    return node["role"] == "List" and node["name"] == "Desktop" and action_for_role(node["role"], node["class_name"]) == "scroll"
+    return node["role"] == "List" and node["name"] == "Desktop"
 
 
 def enum_windows(min_area: int = 2500) -> list[dict[str, Any]]:
-    """Every visible top-level window, front-to-back in true z-order, each with its hwnd,
-    rectangle, and title. LOOSE by design: no title-text requirement, so context menus,
-    dropdowns, tooltips, system-error dialogs, and the taskbar — all untitled — are seen.
-    Only the truly absent are cast out: invisible, minimised, or smaller than min_area (the
-    1x1 helper and sliver windows). EnumWindows yieldeth front-to-back, which we keep as the
-    z-order. This is the whole of window discovery; z is inherited here, computed nowhere."""
     out: list[dict[str, Any]] = []
     seen: set[int] = set()
     enum_proc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
@@ -120,12 +107,6 @@ def enum_windows(min_area: int = 2500) -> list[dict[str, Any]]:
             "z_order": len(out),
         })
         return True
-
-    try:
-        user32.EnumWindows(enum_proc(callback), 0)
-    except Exception:
-        pass
-    return out
 
     try:
         user32.EnumWindows(enum_proc(callback), 0)
@@ -290,8 +271,6 @@ class UiaScanner:
                 "pattern_values": pattern_values,
                 "depth": depth,
                 "parent_runtime_id": parent_runtime_id or [],
-                "focused": _to_bool(_cached(element, PID_HAS_KEYBOARD_FOCUS)) or _to_bool(_current(element, PID_HAS_KEYBOARD_FOCUS)),
-                "is_keyboard_focusable": _to_bool(_cached(element, PID_KEYBOARD_FOCUSABLE)) or _to_bool(_current(element, PID_KEYBOARD_FOCUSABLE)),
                 "is_content_element": _to_bool(_cached(element, PID_CONTENT_ELEMENT)) or _to_bool(_current(element, PID_CONTENT_ELEMENT)),
                 "interaction_state": (lambda v: _to_int(v) if _unwrap(v) is not None else None)(_cached(element, PID_WINDOW_INTERACTION_STATE)) if role == "Window" else None,
                 "item_status": _to_str(_cached(element, PID_ITEM_STATUS)),
@@ -300,21 +279,10 @@ class UiaScanner:
         except Exception:
             return None
 
-    def harvest_subtree(self, root_element: Any, max_nodes: int | None = None, parent_runtime_id: list[int] | None = None, depth: int = 0, max_depth: int | None = None) -> list[dict[str, Any]]:
-        """Walk the cached subtree preserving TRUE parent identity and depth. The cache is
-        built with Subtree scope, so GetCachedChildren recurses from that one cached read
-        with no further live [UIA] calls — unlike a flat descendant list, which would tag
-        every node with the subtree root and destroy the real hierarchy."""
+    def harvest_subtree(self, root_element: Any, max_nodes: int | None = None) -> list[dict[str, Any]]:
         nodes: list[dict[str, Any]] = []
         seen: set[str] = set()
-        # Cap recursion by explicit max_depth, else the wiring-owned filter.max_depth.
-        try:
-            if max_depth is not None:
-                depth_ceiling = depth + int(max_depth)
-            else:
-                depth_ceiling = int(((self.cfg or {}).get("filter") or {}).get("max_depth", 40)) + depth + 5
-        except Exception:
-            depth_ceiling = depth + 45
+        depth_ceiling = 45
         try:
             root_element = root_element.BuildUpdatedCache(self._cache(TreeScope_Subtree))
         except Exception:
@@ -334,7 +302,7 @@ class UiaScanner:
             try:
                 kids = el.GetCachedChildren()
                 count = int(getattr(kids, "Length", 0)) if kids is not None else 0
-            except (ValueError, Exception):
+            except Exception:
                 kids, count = None, 0
             for i in range(count):
                 if max_nodes is not None and len(nodes) >= max_nodes:
@@ -344,68 +312,11 @@ class UiaScanner:
                 except Exception:
                     continue
 
-        visit(root_element, parent_runtime_id or [], depth)
+        visit(root_element, [], 0)
         return nodes
 
 
-def expand(desktop: Any, ids_or_points: list[Any], char_budget: int | None = None) -> dict[str, Any]:
-    """Targeted deeper look at named elements: re-acquire each at its screen point and
-    harvest its subtree, returning the WHOLE untruncated text, value, and every child
-    (including non-interactive), which the shallow tree omitteth. This is a fresh independent
-    look, not memory: it readeth the live [UIA] now. `ids_or_points` are entries of the current
-    action_index (each bearing px/py) or explicit {'px':x,'py':y} points.
-
-    No text is ever cut short. The shallow tree already nameth each element's true size in
-    chars, so thou knowest the cost ere thou askest. When a [char_budget] is given and the sum
-    of what thou askest exceedeth it, this faileth hard and nameth each element's size—ask
-    again for fewer or other elements. Given none, all thou namest is harvested whole."""
-    from ctypes import wintypes
-    scanner = UiaScanner({}, desktop)
-    harvested_by_key: dict[str, list[dict[str, Any]]] = {}
-    for i, item in enumerate(ids_or_points):
-        node = item if isinstance(item, dict) else {}
-        px, py = node.get("px"), node.get("py")
-        key = str(node.get("short_id") or node.get("id") or i)
-        if px is None or py is None:
-            raise RuntimeError(f"expand: element '{key}' bears no screen point to expand")
-        px, py = int(px), int(py)
-        pt = wintypes.POINT(px, py)
-        root_el = scanner.automation.ElementFromPointBuildCache(pt, scanner._cache())
-        if root_el is None:
-            raise RuntimeError(f"expand: no element at point ({px}, {py}) for '{key}'")
-        harvested_by_key[key] = scanner.harvest_subtree(root_el)
-
-    def _chars(harvested: list[dict[str, Any]]) -> int:
-        if not harvested:
-            return 0
-        head = harvested[0]
-        total = len(head.get("text_full", "") or "") + len(head.get("value", "") or "")
-        total += sum(len(n.get("text_full", "") or "") for n in harvested[1:])
-        return total
-
-    sizes = {key: _chars(h) for key, h in harvested_by_key.items()}
-    grand_total = sum(sizes.values())
-    if char_budget is not None and grand_total > char_budget:
-        detail = ", ".join(f"{k}={v} chars" for k, v in sizes.items())
-        raise RuntimeError(f"expand: requested {grand_total} chars exceedeth budget {char_budget} ({detail}); ask for fewer or other elements")
-
-    results: dict[str, Any] = {}
-    for key, harvested in harvested_by_key.items():
-        results[key] = {
-            "text_full": harvested[0].get("text_full", "") if harvested else "",
-            "value": harvested[0].get("value", "") if harvested else "",
-            "children": [
-                {"role": n["role"], "name": n["name"], "action": n["action"], "text": n.get("text_full") or ""}
-                for n in harvested[1:]
-            ],
-        }
-    return results
-
-
 def _probe_points(rect: dict[str, int], step_px: int) -> list[tuple[int, int]]:
-    """A golden-ratio quasirandom grid over ONE window's rectangle. Confined to the window,
-    so a small window is probed with a handful of points and a large one densely, spending no
-    probe on dead screen between windows."""
     left, top = rect["left"], rect["top"]
     w, h = max(1, rect["right"] - left), max(1, rect["bottom"] - top)
     cols, rows = max(1, w // step_px), max(1, h // step_px)
@@ -423,127 +334,68 @@ def _probe_points(rect: dict[str, int], step_px: int) -> list[tuple[int, int]]:
     return points
 
 
-def observe(desktop: Any, config: dict[str, Any] | None = None, trace: Any = None) -> dict[str, Any]:
-    """The whole of desktop observation, by ONE rule: for each window, probe its own
-    rectangle and keep only the elements that own to THAT window. A pixel where a nearer
-    window lieth answereth with that nearer window's element, whose owner faileth the test
-    and is dropped — so what surviveth per window is exactly its visible, reachable face, and
-    the click-point is proven by the very probe that found it. No z-order math, no separate
-    hit-resolution, no window reconstruction: window identity and rectangles are ground truth
-    from EnumWindows, and occlusion is answered for free by the drop.
-
-    trace(phase, payload) is an optional witness seam for the instrument; None for the organism.
-    """
+def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any]:
     cfg = dict(config or {})
-    if not cfg.get("enabled", True):
-        raise RuntimeError("observation is disabled")
-    _t = trace if callable(trace) else (lambda *a, **k: None)
-    scan = cfg.get("scan", {})
-    step_px = int(scan.get("step_px", 64))
-    max_subtree = int(scan.get("max_subtree_nodes_per_point", 2000))
-    line_preview_chars = int(cfg.get("budget", {}).get("line_preview_chars", 120))
+    step_px = int(cfg.get("step_px", 64))
+    max_subtree = int(cfg.get("max_subtree_nodes_per_point", 2000))
     sw, sh = int(user32.GetSystemMetrics(0)), int(user32.GetSystemMetrics(1))
     screen = {"width": sw, "height": sh}
 
     windows = enum_windows()
-    _t("windows", {"windows": windows, "screen": screen})
 
     scanner = UiaScanner(cfg, desktop)
-    saved = wintypes.POINT()
-    had_cursor = bool(user32.GetCursorPos(ctypes.byref(saved)))
-    # Per window: probe its rect, harvest the subtree at each hit, keep only own-owner nodes.
     windows_out: list[dict[str, Any]] = []
-    try:
-        for win in windows:
-            hwnd, rect = win["hwnd"], win["rect"]
-            kept: dict[str, dict[str, Any]] = {}
-            saturated: set[str] = set()
-            for x, y in _probe_points(rect, step_px):
-                user32.SetCursorPos(int(x), int(y))
-                pt = wintypes.POINT(int(x), int(y))
-                # THE RULE: whom doth this pixel own to? If not this window, it is a nearer
-                # window covering it — drop and move on. Free, and it IS the occlusion test.
-                try:
-                    owner = int(user32.GetAncestor(user32.WindowFromPoint(pt), 2) or 0)
-                except Exception:
-                    owner = 0
-                if owner != hwnd:
-                    continue
-                try:
-                    root = scanner.automation.ElementFromPointBuildCache(pt, scanner._cache(TreeScope_Element))
-                except Exception:
-                    continue
-                if root is None:
-                    continue
-                for i, node in enumerate(scanner.harvest_subtree(root, max_subtree)):
-                    if is_desktop_leakage(node):
-                        continue
-                    node["owner_hwnd"] = hwnd
-                    if i == 0:
-                        node.setdefault("hit_point", (int(x), int(y)))
-                    nid = node["id"]
-                    if nid in saturated:
-                        continue
-                    prev = kept.get(nid)
-                    if prev is None:
-                        kept[nid] = node
-                    else:
-                        if not prev.get("hit_point") and node.get("hit_point"):
-                            prev["hit_point"] = node["hit_point"]
-                        for key in ("text_full", "value"):
-                            if node[key] and (not prev[key] or len(node[key]) > len(prev[key])):
-                                prev[key] = node[key]
-            win["elements"] = list(kept.values())
-            windows_out.append(win)
-    finally:
-        if had_cursor:
+    for win in windows:
+        hwnd, rect = win["hwnd"], win["rect"]
+        kept: dict[str, dict[str, Any]] = {}
+        for x, y in _probe_points(rect, step_px):
+            pt = wintypes.POINT(int(x), int(y))
             try:
-                user32.SetCursorPos(saved.x, saved.y)
+                owner = int(user32.GetAncestor(user32.WindowFromPoint(pt), 2) or 0)
             except Exception:
-                pass
-    _t("scan", {"windows": windows_out, "screen": screen})
+                owner = 0
+            if owner != hwnd:
+                continue
+            try:
+                root = scanner.automation.ElementFromPointBuildCache(pt, scanner._cache(TreeScope_Element))
+            except Exception:
+                continue
+            if root is None:
+                continue
+            for i, node in enumerate(scanner.harvest_subtree(root, max_subtree)):
+                if is_desktop_leakage(node):
+                    continue
+                node["owner_hwnd"] = hwnd
+                if i == 0:
+                    node.setdefault("hit_point", (int(x), int(y)))
+                nid = node["id"]
+                prev = kept.get(nid)
+                if prev is None:
+                    kept[nid] = node
+                else:
+                    if not prev.get("hit_point") and node.get("hit_point"):
+                        prev["hit_point"] = node["hit_point"]
+                    for key in ("text_full", "value"):
+                        if node[key] and (not prev[key] or len(node[key]) > len(prev[key])):
+                            prev[key] = node[key]
+        win["elements"] = list(kept.values())
+        windows_out.append(win)
 
-    result = _render(windows_out, screen, line_preview_chars)
-    _t("build", result)
+    result = _render(windows_out, screen)
     observed_at = time.time()
-    artifact = {
-        "observed_at": observed_at,
-        "fresh_scan": True,
-        "screen": screen,
-        "desktop_tree": {
-            "id": "W0", "role": "Screen", "fresh_scan": True, "observed_at": observed_at,
-            "root": result["root"], "node_index": result["node_index"],
-            "window_count": result["window_count"], "element_count": result["element_count"],
-        },
-        "action_index": result["action_index"],
-        "desktop_tree_text": result["desktop_tree_text"],
-    }
     return {
         "observed_at": observed_at,
-        "fresh_scan": True,
-        "desktop_tree": artifact["desktop_tree"],
         "desktop_tree_text": result["desktop_tree_text"],
         "action_index": result["action_index"],
         "screen_elements": result["screen_elements"],
-        "observation_artifact": artifact,
+        "observation_artifact": {"screen": screen},
     }
 
 
-def _render(windows: list[dict[str, Any]], screen: dict[str, int], line_preview_chars: int) -> dict[str, Any]:
-    """Turn the per-window kept elements into the numbered tree the LLM readeth and the
-    action_index the body targeteth. Windows are W1..Wn in z-order (front first); actionable
-    elements are e1..eN in tree-walk order. An element nesteth under the nearest kept ancestor
-    of its own window (by runtime-id chain) or else its window. No pixel point in the text —
-    the body readeth px,py from the action_index by short_id."""
+def _render(windows: list[dict[str, Any]], screen: dict[str, int]) -> dict[str, Any]:
     def clean(v: Any) -> str:
         return " ".join(str(v or "").replace("\r", " ").replace("\n", " ").split())
 
-    def preview(text: str) -> tuple[str, int]:
-        c = clean(text)
-        return (c[:line_preview_chars], len(c)) if len(c) > line_preview_chars else (c, 0)
-
-    root = {"id": "W0", "role": "Screen", "name": "Screen", "title": "Desktop", "children": []}
-    node_index: dict[str, dict[str, Any]] = {"W0": {"short_id": "W0", "role": "Screen", "name": "Screen"}}
     action_index: dict[str, dict[str, Any]] = {}
     screen_elements: list[dict[str, Any]] = []
     counter = {"n": 0}
@@ -553,7 +405,6 @@ def _render(windows: list[dict[str, Any]], screen: dict[str, int], line_preview_
         wid = f"W{wi}"
         title = win["title"] or f"Window_{win['hwnd']}"
         elements = win["elements"]
-        # index every kept element for nesting by its true runtime-id chain within this window
         by_rid = {tuple(e.get("runtime_id") or []): e for e in elements if e.get("runtime_id")}
         action_children: dict[str, list[dict[str, Any]]] = {}
         roots: list[dict[str, Any]] = []
@@ -584,8 +435,6 @@ def _render(windows: list[dict[str, Any]], screen: dict[str, int], line_preview_
                 "enabled": e.get("enabled"),
             })
 
-        win_node = {"short_id": wid, "role": "Window", "name": title, "hwnd": win["hwnd"], "rect": win["rect"], "active": wi == 1}
-        node_index[wid] = win_node
         active = " [active]" if wi == 1 else ""
         lines.append(f"{wid} Window {clean(title)}{active}")
 
@@ -593,20 +442,13 @@ def _render(windows: list[dict[str, Any]], screen: dict[str, int], line_preview_
             counter["n"] += 1
             sid = f"e{counter['n']}"
             e["short_id"] = sid
-            action = str(e.get("action", ""))
-            disabled = e.get("enabled") is False
-            name_prev, name_total = preview(e.get("name", "") or "")
+            action = str(e.get("action", "")) if e.get("enabled") is not False else ""
             parts = [p for p in (
-                sid, str(e.get("role", "")), name_prev,
-                "[focused]" if e.get("focused") else "",
-                f"[{action}]" if action and not disabled else "",
-                "[disabled]" if disabled else "",
+                sid, str(e.get("role", "")), clean(e.get("name", "") or ""),
+                f"[{action}]" if action else "",
             ) if p]
-            if name_total:
-                parts.append(f"({name_total} chars)")
             lines.append("  " * indent + " ".join(parts))
             action_index[sid] = {**{k: v for k, v in e.items() if k != "children"}, "short_id": sid}
-            node_index[sid] = action_index[sid]
             for child in action_children.get(id(e), []):
                 emit(child, indent + 1)
 
@@ -614,11 +456,7 @@ def _render(windows: list[dict[str, Any]], screen: dict[str, int], line_preview_
             emit(e, 1)
 
     return {
-        "root": root,
-        "node_index": node_index,
         "action_index": action_index,
         "screen_elements": screen_elements,
         "desktop_tree_text": "\n".join(lines),
-        "window_count": len(windows),
-        "element_count": len(action_index),
     }

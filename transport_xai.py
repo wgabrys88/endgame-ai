@@ -1,4 +1,3 @@
-"""[transport_xai] — Thou shalt serialize wiring's request unto POST /v1/responses."""
 import json
 import os
 import urllib.error
@@ -7,17 +6,10 @@ import uuid
 
 import core_bus as bus
 
-# One routing hint per organism life: prompt_cache_key pins every call of this life to the
-# same server so the stable prompt prefix is reused from the server's KV cache instead of
-# recomputed. It is minted per process (not hardcoded, not in wiring), so a new life starts
-# cold on a fresh server and no two lives collide. It routes only; it stores nothing.
 _SESSION_CACHE_KEY = f"endgame-{uuid.uuid4()}"
 
 
 def _build_body(cfg, messages, body_override, response_format):
-    """The body is wiring's [request] base, laid over by the caller's [body_override]
-    (an organ tuning), with the dynamic fields filled and every null-valued key
-    dropped. Null in an override explicitly unsets a base field."""
     body = bus.deep_merge(cfg["request"], body_override or {})
     body.setdefault("prompt_cache_key", _SESSION_CACHE_KEY)
     body["input"] = [

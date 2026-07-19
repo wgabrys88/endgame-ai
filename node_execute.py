@@ -1,4 +1,4 @@
-"""[node_execute] — Thou receivest one fresh observation and any [action_frame]."""
+"""[node_execute] — Thou receivest the fresh [environment] and any [action_frame]."""
 import hashlib
 import time
 import traceback
@@ -19,9 +19,8 @@ class ExecuteNode(BaseNode):
         return {
             "goal": state["goal"],
             "action_frame": state.get("action_frame"),
-            "focus": bus.state_brief(state),
-            "observation": bus.observation_brief(state),
-            "environment_probe": state.get("environment_probe"),
+            "state": bus.state_brief(state),
+            "environment": bus.environment_brief(state),
         }
 
     def run(self, ctx):
@@ -54,8 +53,6 @@ class ExecuteNode(BaseNode):
                 "action_frame": None,
                 "last_verification": None,
             },
-            record=record,
-            evidence=self.build_payload(ctx),
         )
 
 

@@ -1,6 +1,4 @@
-from dataclasses import dataclass, field
-import json
-import re
+from dataclasses import dataclass
 import time
 from typing import Any
 
@@ -9,8 +7,6 @@ JsonDict = dict[str, Any]
 
 
 def deep_merge(base: JsonDict, override: JsonDict) -> JsonDict:
-    """Return a new dict: override laid over base, nested dicts merged recursively.
-    A non-dict override value replaces the base value wholesale."""
     merged = dict(base)
     for key, value in override.items():
         if isinstance(value, dict) and isinstance(merged.get(key), dict):
@@ -21,8 +17,6 @@ def deep_merge(base: JsonDict, override: JsonDict) -> JsonDict:
 
 
 def drop_nulls(obj: Any) -> Any:
-    """Recursively drop keys whose value is None (an unsent API field),
-    and drop any nested object left empty by that pruning. Lists are pruned in place."""
     if isinstance(obj, dict):
         pruned: JsonDict = {}
         for key, value in obj.items():
@@ -38,22 +32,17 @@ def drop_nulls(obj: Any) -> Any:
     return obj
 
 
-class BusContractError(RuntimeError):
-    """Base class for mechanical organism contract failures."""
+class BusContractError(RuntimeError): pass
 
 
-class TopologyContractError(BusContractError):
-    """Raised when a node emits a signal with no valid topology edge."""
+class TopologyContractError(BusContractError): pass
 
 
-class NodeRecordContractError(BusContractError):
-    """Raised when a node returns an invalid bus/output/record shape."""
+class NodeRecordContractError(BusContractError): pass
 
 
 @dataclass(frozen=True)
 class Record:
-    """Unified record format for all LLM organs."""
-
     record_type: str
     data: JsonDict
     reasoning: str = ""
@@ -66,120 +55,67 @@ class Record:
         return cls(record_type=obj.get("record_type", ""), data=obj.get("data", {}), reasoning=obj.get("reasoning", ""))
 
 
-@dataclass(frozen=True)
-class NodeOutput:
-    signal: str
-    patch: JsonDict = field(default_factory=dict)
-    record: Record | None = None
-    evidence: JsonDict = field(default_factory=dict)
-
-    def trace(self, *, node: str) -> JsonDict:
-        record_type = None
-        record_summary = None
-        if isinstance(self.record, Record):
-            record_type = self.record.record_type
-            record_summary = {"record_type": record_type, "data_keys": sorted(self.record.data)}
-        elif isinstance(self.record, dict):
-            record_type = self.record.get("record_type")
-            data = self.record.get("data")
-            record_summary = {"record_type": record_type, "data_keys": sorted(data) if isinstance(data, dict) else []}
-        return {
-            "kind": "endgame.node_output.v1",
-            "node": node,
-            "signal": self.signal,
-            "record_type": record_type,
-            "patch_keys": sorted(self.patch.keys()),
-            "evidence_keys": sorted(self.evidence.keys()),
-            "record": record_summary,
-            "emitted_at": time.time(),
-        }
-
-
-def emit(signal: str, patch: JsonDict | None = None, *, record: Record | JsonDict | None = None, evidence: JsonDict | None = None) -> NodeOutput:
+def emit(signal: str, patch: JsonDict | None = None) -> tuple[str, JsonDict]:
     if not isinstance(signal, str) or not signal.strip():
         raise ValueError("bus signal must be a non-empty string")
     if patch is not None and not isinstance(patch, dict):
         raise TypeError("bus patch must be a dict")
-    if record is not None and not isinstance(record, (Record, dict)):
-        raise TypeError("bus record must be a Record or dict when provided")
-    if evidence is not None and not isinstance(evidence, dict):
-        raise TypeError("bus evidence must be a dict when provided")
-    record_obj = Record.from_json(record) if isinstance(record, dict) else record
-    return NodeOutput(signal=signal.strip(), patch=dict(patch or {}), record=record_obj, evidence=dict(evidence or {}))
+    return signal.strip(), dict(patch or {})
 
 
 _INTERP_ORDER = ["execute", "verify", "recover"]
 
 
-def render_interpretation_table(goal: str, interps: JsonDict | None) -> str:
-    """The living word — the goal-interpretation rows — rendered for the tail of every user message.
-
-    Each thinking faculty keeps exactly one row: what it has LEARNED (not a restating of
-    the goal), rewritten in place whensoever it acts. The immutable root goal follows as a
-    fixed lodestar footer. The table is bounded (one row per faculty), never accumulates,
-    and never truncates. It rides the volatile user tail, so it costs no prefix cache."""
+def render_interpretation_table(goal: str, interps: JsonDict | None, templates: JsonDict) -> str:
     interps = interps or {}
-    lines = [
-        "THE LIVING WORD — this is thy sole thread across wakings, and thou plannest FROM it, not from the root goal. Each faculty keepeth one row: not a restating of the goal (the goal changeth never and needeth no echo), but what it hath LEARNED—what the world revealed, what deed was tried and how it fared, what obstacle now standeth, what the next true deed must therefore be. Try every row against the fresh observation and correct what it gainsayeth ere thou actest. A row that merely repeateth the goal is wasted and blind; write what advanceth the work:",
-    ]
+    lines = [templates["living_word_header"]]
     for faculty in _INTERP_ORDER:
         sentence = str(interps.get(faculty) or "").strip()
-        lines.append(f"[{faculty}] {sentence}" if sentence else f"[{faculty}] (not yet interpreted)")
-    lines.append(f"[the root goal, a fixed lodestar to consult but never to plan from] {goal}")
+        lines.append(f"[{faculty}] {sentence}" if sentence else templates["living_word_empty_row"].format(faculty=faculty))
+    lines.append(templates["living_word_goal_row"].format(goal=goal))
     return "\n".join(lines)
 
 
-def render_proven_ledger(ledger: list | None) -> str:
-    """WHAT STANDETH PROVEN DONE — the independently-witnessed effects, deterministically
-    recorded by the witness on each confirmation (never authored by the actor, so it
-    cannot be a goal-echo). A faculty reads this to know what already standeth achieved
-    upon the world, and MUST NOT redo it. This is the memory of the organism's own
-    successes that the free-text rows cannot carry."""
+def render_proven_ledger(ledger: list | None, templates: JsonDict) -> str:
     entries = [str(e).strip() for e in (ledger or []) if str(e).strip()]
     if not entries:
-        return ("WHAT STANDETH PROVEN DONE (witnessed effects upon the world): none yet. "
-                "No deed hath yet been independently confirmed.")
+        return templates["proven_ledger_empty"]
     body = "\n".join(f"  - {e}" for e in entries)
-    return ("WHAT STANDETH PROVEN DONE (witnessed effects upon the world, recorded by the "
-            "witness itself — not thy testimony but proven fact; DO NOT redo any of these, "
-            "and if the whole of what remaineth is already herein, strike the ROOT goal "
-            "directly):\n" + body)
+    return templates["proven_ledger_header"] + "\n" + body
 
 
 def with_interpretation(interps: JsonDict | None, faculty: str, sentence: str) -> JsonDict:
-    """Return a copy of the interpretation table with one faculty's row rewritten."""
     merged = dict(interps or {})
     merged[faculty] = str(sentence or "").strip()
     return merged
 
 
-def render_environment_probe(probe: JsonDict | None) -> str:
-    """THE STANDING HOST — the machine's own facts (place, tongue, tools, dwelling apps),
-    gathered fresh each turn by node_probe and laid at the tail of the user message so the
-    executor knoweth what already standeth and reinventeth it not. Rides the volatile tail;
-    costs no prefix cache."""
-    probe = probe or {}
-    if not probe:
-        return ""
-    lines = ["THE STANDING HOST — what the machine itself beareth this turn; build upon it, rediscover it not:"]
-    for key, value in probe.items():
-        if isinstance(value, list):
-            value = ", ".join(str(v) for v in value)
-        lines.append(f"[{key}] {value}")
-    return "\n".join(lines)
+def render_environment(environment: JsonDict | None, templates: JsonDict) -> str:
+    environment = environment or {}
+    tree = str(environment.get("desktop_tree_text") or "").strip()
+    host = environment.get("host") or {}
+    blocks: list[str] = []
+    if tree:
+        blocks.append(templates["environment_screen_header"] + "\n" + tree)
+    if host:
+        lines = [templates["standing_host_header"]]
+        for key, value in host.items():
+            if isinstance(value, list):
+                value = ", ".join(str(v) for v in value)
+            lines.append(f"[{key}] {value}")
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks)
 
 
-def coerce_node_output(node: str, result: Any) -> NodeOutput:
-    if isinstance(result, NodeOutput):
-        return result
-    if isinstance(result, tuple) and len(result) == 2:
-        signal, patch = result
-        if not isinstance(signal, str) or not signal:
-            raise NodeRecordContractError(f"node '{node}' contract violation: signal must be a non-empty string")
-        if not isinstance(patch, dict):
-            raise NodeRecordContractError(f"node '{node}' contract violation: patch must be dict")
-        return emit(signal, patch)
-    raise NodeRecordContractError(f"node '{node}' contract violation: expected NodeOutput or (signal, patch)")
+def coerce_node_output(node: str, result: Any) -> tuple[str, JsonDict]:
+    if not (isinstance(result, tuple) and len(result) == 2):
+        raise NodeRecordContractError(f"node '{node}' contract violation: expected (signal, patch)")
+    signal, patch = result
+    if not isinstance(signal, str) or not signal:
+        raise NodeRecordContractError(f"node '{node}' contract violation: signal must be a non-empty string")
+    if not isinstance(patch, dict):
+        raise NodeRecordContractError(f"node '{node}' contract violation: patch must be dict")
+    return signal, patch
 
 
 def allowed_signals(wiring: JsonDict, node: str) -> set[str]:
@@ -197,15 +133,7 @@ def validate_signal(wiring: JsonDict, node: str, signal: str) -> None:
         raise TopologyContractError(f"node '{node}' emitted signal '{signal}' outside topology contract; allowed: {allowed}")
 
 
-def emergent_signals(wiring: JsonDict, node: str | None) -> list[str]:
-    """Return the live outgoing signal vocabulary, excluding reserved 'error'."""
-    if not node:
-        return []
-    return sorted(s for s in allowed_signals(wiring, node) if s != "error")
-
-
 def state_brief(state: JsonDict) -> JsonDict:
-    """Present deed facts; the living word is extracted from here into the user tail."""
     current_deed = state.get("current_deed") or {}
     return {
         "goal_interpretations": dict(state.get("goal_interpretations") or {}),
@@ -217,45 +145,10 @@ def state_brief(state: JsonDict) -> JsonDict:
     }
 
 
-def focused_elements(state: JsonDict) -> JsonDict:
-    """Expand geometry/identity only for genuinely focused or action-framed ids.
-
-    desktop_tree_text already carries the readable overview — id, role, name,
-    [active]/[focused] markers, [action], and ~text hint — for every visible
-    element. This map therefore adds ONLY what the tree lacks (enabled, rect,
-    automation_id, class_name) and ONLY for the element(s) currently focused or
-    named by an action_frame. It never re-emits the whole tree as structured
-    metadata, so the payload carries each element once. Element targeting uses
-    the full in-memory action_index, not this brief.
-    """
-    action_index = state.get("action_index") or {}
-    if not isinstance(action_index, dict):
-        return {}
-    tree_text = str(state.get("desktop_tree_text") or "")
-    visible_ids = {line.strip().split(" ", 1)[0] for line in tree_text.splitlines() if line.strip()}
-    frame_text = json.dumps(state.get("action_frame") or {}, ensure_ascii=False, default=str)
-    framed_ids = set(re.findall(r"\b(?:e|W)\d+\b", frame_text))
-    detail_fields = ("name", "role", "action", "enabled", "rect", "automation_id", "class_name")
-    mapped: JsonDict = {}
-    for node_id, node in action_index.items():
-        if not isinstance(node, dict) or str(node_id) not in visible_ids:
-            continue
-        if node.get("focused") or str(node_id) in framed_ids:
-            mapped[str(node_id)] = {key: node[key] for key in detail_fields if key in node}
-    return mapped
-
-
-def observation_brief(state: JsonDict) -> JsonDict:
-    artifact = state.get("observation_artifact") or {}
+def environment_brief(state: JsonDict) -> JsonDict:
     return {
-        "provenance": (
-            "independent world state: the settled desktop as an outside eye beheld it, "
-            "produced by the OS and applications, not authored by the actor."
-        ),
         "desktop_tree_text": state.get("desktop_tree_text", ""),
-        "focused_elements": focused_elements(state),
-        "observed_at": state.get("observed_at"),
-        "screen": artifact.get("screen", {}) if isinstance(artifact, dict) else {},
+        "host": state.get("host_facts") or {},
     }
 
 
@@ -266,16 +159,12 @@ def execution_evidence(state: JsonDict) -> JsonDict:
         "provenance": (
             "actor-authored record: what code the executor authored and enacted, by its own account. "
             "This is the actor's testimony about what it did, not proof of world-effect. "
-            "Independent world state is carried separately in the observation field."
+            "Independent world state is carried separately in the environment."
         ),
     }
 
 
 def bump_failure_streak(state: JsonDict) -> JsonDict:
-    """Count denials since the last witnessed deed, monotonically. The tally is NOT
-    keyed to the deed's wording: a reworded description of the same obstacle cannot reset
-    it. Only a verifier confirmation clears it (see node_verify). The higher it climbs, the
-    wider recovery must forsake its tried approaches."""
     previous = state.get("failure_streak") or {}
     count = int(previous.get("count", 0) or 0) + 1
     return {"failure_streak": {"count": count, "updated_at": time.time()}}
