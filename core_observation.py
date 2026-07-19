@@ -359,22 +359,32 @@ def resolve_hit_point(scanner: "UiaScanner", target_rid: list[int], rect: dict[s
     if not target_rid or w <= 0 or h <= 0:
         return (None, "")
 
-    def hit_ok_at(px: int, py: int) -> bool:
+    def hit_cheap(px: int, py: int) -> int:
+        """One hit-test, no parent-walk. 1 = the hit is the target or a descendant (a true
+        landing); 2 = the hit is an ancestor on the target's own chain (its container chrome
+        — the target liveth at this pixel, the click landeth on it, no occlusion); 0 = a
+        foreign thing (a real cover) or nothing."""
         try:
             el = scanner.automation.ElementFromPoint(wintypes.POINT(int(px), int(py)))
         except Exception:
-            return False
+            return 0
         if el is None:
-            return False
+            return 0
         rid = _to_runtime_id(_current(el, PID_RUNTIME_ID))
         if _runtime_id_under(rid, target_rid):
-            return True
-        # A focusable ancestor sharing the target's id chain: clicking it focuses into the
-        # target (web contenteditables own no hittable pixel of their own).
-        if _runtime_id_under(target_rid, rid) and _to_bool(_current(el, PID_KEYBOARD_FOCUSABLE)):
-            return True
-        # parent-walk for providers whose child ids are not strict prefixes
+            return 1
+        if _runtime_id_under(target_rid, rid):
+            return 2
+        return 0
+
+    def hit_by_walk(px: int, py: int) -> bool:
+        """The costly fallback: walk up from the hit for providers whose child ids are not
+        strict prefixes of their parents (cross-provider chrome, e.g. a menu under a tab).
+        Run at most ONCE per element, only after every cheap trial hath failed."""
         try:
+            el = scanner.automation.ElementFromPoint(wintypes.POINT(int(px), int(py)))
+            if el is None:
+                return False
             walker = scanner.automation.RawViewWalker
             cur = el
             for _ in range(6):
@@ -397,12 +407,21 @@ def resolve_hit_point(scanner: "UiaScanner", target_rid: list[int], rect: dict[s
         for fy in (0.25, 0.5, 0.75):
             trials.append((int(left + w * fx), int(top + h * fy)))
     seen: set[tuple[int, int]] = set()
+    ordered: list[tuple[int, int]] = []
     for px, py in trials:
         if (px, py) in seen or not (left <= px < right and top <= py < bottom):
             continue
         seen.add((px, py))
-        if hit_ok_at(px, py):
+        ordered.append((px, py))
+    # First the CHEAP pass over every point (one hit-test each): a direct or ancestor-chain
+    # landing endeth at once. Only if ALL cheap trials fail do we pay the costly parent-walk,
+    # and but ONCE, at the centre — this is what maketh a truly-occluded element cheap to
+    # judge instead of running the walk at all eleven points.
+    for px, py in ordered:
+        if hit_cheap(px, py):
             return ((px, py), "")
+    if hit_by_walk(cx, cy):
+        return ((cx, cy), "")
     # nothing resolved — name the occluder at the centre for loud, honest report
     occluder = "unknown"
     try:

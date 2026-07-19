@@ -115,8 +115,16 @@ def _injection(cfg, desktop, result, logdir):
 
 
 def _numbering(tree_text):
-    """Parse e-numbers from the rendered tree; report count, max, gaps, duplicates."""
-    nums = [int(m) for m in re.findall(r"\be(\d+)\b", tree_text)]
+    """Parse the short_ids from the rendered tree — the FIRST token of each line only, never
+    an e<digit> that happeneth to sit inside a name or hint — and report count, max, gaps,
+    duplicates. (Reading the whole line would falsely flag any element whose text containeth
+    'e1' and such.)"""
+    nums = []
+    for line in tree_text.splitlines():
+        tok = line.strip().split(" ", 1)[0] if line.strip() else ""
+        m = re.fullmatch(r"e(\d+)", tok)
+        if m:
+            nums.append(int(m.group(1)))
     if not nums:
         return {"count": 0, "max": 0, "gaps": [], "duplicates": []}
     counts = Counter(nums)
