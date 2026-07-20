@@ -87,6 +87,7 @@ class ExecuteNode(BaseNode):
         return {
             "goal": state["goal"],
             "action_frame": state.get("action_frame"),
+            "prior_attempt": state.get("deed_retry") or None,
             "state": bus.state_brief(state),
             "environment": bus.environment_brief(state),
         }
@@ -105,26 +106,38 @@ class ExecuteNode(BaseNode):
             exec(code, ns)
         except Exception:
             deed_fault = traceback.format_exc()
-        signal = "deed_denied" if deed_fault else "done"
-        return bus.emit(
-            signal,
-            {
-                "current_deed": {"description": intent},
-                "goal_interpretations": bus.with_interpretation(
-                    state.get("goal_interpretations"), "execute", str(data.get("goal_interpretation") or "")
-                ),
-                "turn_executions": {
-                    "exec": {
-                        "code_sha256": hashlib.sha256(code.encode("utf-8", errors="replace")).hexdigest(),
-                        "code_chars": len(code),
-                        "deed_fault": deed_fault,
-                    }
-                },
-                "last_action_at": time.time(),
-                "action_frame": None,
-                "last_verification": None,
+        base_patch: JsonDict = {
+            "current_deed": {"description": intent},
+            "goal_interpretations": bus.with_interpretation(
+                state.get("goal_interpretations"), "execute", str(data.get("goal_interpretation") or "")
+            ),
+            "turn_executions": {
+                "exec": {
+                    "code_sha256": hashlib.sha256(code.encode("utf-8", errors="replace")).hexdigest(),
+                    "code_chars": len(code),
+                    "deed_fault": deed_fault,
+                }
             },
-        )
+            "last_action_at": time.time(),
+            "action_frame": None,
+            "last_verification": None,
+        }
+        if deed_fault is None:
+            base_patch["deed_retry"] = None
+            return bus.emit("done", base_patch)
+        max_retries = int(ctx["wiring"]["exploration"]["max_deed_retries"])
+        prior = state.get("deed_retry") or {}
+        attempts_so_far = int(prior.get("attempts", 0))
+        if attempts_so_far < max_retries:
+            base_patch["deed_retry"] = {
+                "attempts": attempts_so_far + 1,
+                "intent": intent,
+                "reasoning": str(record.reasoning or ""),
+                "fault": deed_fault,
+            }
+            return bus.emit("deed_retry", base_patch)
+        base_patch["deed_retry"] = None
+        return bus.emit("deed_denied", base_patch)
 
 
 class VerifyNode(BaseNode):

@@ -106,6 +106,9 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
         value = _require(cfg, path, int)
         if isinstance(value, bool) or value <= 0:
             raise RuntimeError(f"wiring.{path} must be a positive count")
+    retries = _require(cfg, "exploration.max_deed_retries", int)
+    if isinstance(retries, bool) or retries < 0:
+        raise RuntimeError("wiring.exploration.max_deed_retries must be a non-negative count")
     nodes = _require_list_str(cfg, "topology.nodes")
     _require(cfg, "prompts", dict)
     _require(cfg, "shared_prompt_prefix", str)
