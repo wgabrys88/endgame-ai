@@ -23,6 +23,11 @@ JsonDict = dict[str, Any]
 ROOT = pathlib.Path(__file__).parent.resolve()
 
 
+def _claim_only() -> bool:
+    """When set, think+dump only: skip world-mutating exec (actor code and witness probes)."""
+    return os.environ.get("ENDGAME_CLAIM_ONLY", "").strip().lower() in {"1", "true", "yes"}
+
+
 class BaseNode(ABC):
     prompt_key: str = ""
     expected_record_type: str = ""
@@ -99,14 +104,22 @@ class ExecuteNode(BaseNode):
         intent = str(data["intent"]).strip()
         if not intent:
             raise RuntimeError("execution requires non-empty intent")
-        ns = build_capability_runtime(ctx)
         deed_fault = None
-        try:
-            exec(code, ns)
-        except Exception:
-            deed_fault = traceback.format_exc()
+        if _claim_only():
+            deed_fault = "CLAIM_ONLY: exec skipped"
+            sys.stderr.write(
+                "CLAIM_ONLY: skipped exec at node_execute (set ENDGAME_CLAIM_ONLY=0 to enact)\n"
+            )
+        else:
+            ns = build_capability_runtime(ctx)
+            try:
+                exec(code, ns)
+            except Exception:
+                deed_fault = traceback.format_exc()
+        # Claim-only records intent for verify to speak, but is not a world fault → done.
+        signal = "deed_denied" if (deed_fault and not str(deed_fault).startswith("CLAIM_ONLY:")) else "done"
         return bus.emit(
-            "deed_denied" if deed_fault else "done",
+            signal,
             {
                 "current_deed": {"description": intent},
                 "goal_interpretations": bus.with_interpretation(
@@ -151,9 +164,33 @@ class VerifyNode(BaseNode):
     def run(self, ctx: JsonDict) -> tuple[str, JsonDict]:
         state = ctx["state"]
         record = self.think(ctx)
-        ns = build_capability_runtime(ctx, read_only=True)
         probe_fault = None
         verdict = None
+        if _claim_only():
+            # Skip probe; deny without fake confirmation so recover may speak (no unwitnessed loop).
+            sys.stderr.write(
+                "CLAIM_ONLY: skipped exec at node_verify (set ENDGAME_CLAIM_ONLY=0 to enact)\n"
+            )
+            reason = "CLAIM_ONLY: probe exec skipped; deed unproven"
+            return bus.emit(
+                "deed_denied",
+                {
+                    "verification": {
+                        "goal_satisfied": False,
+                        "deed_confirmed": False,
+                        "reasoning": reason,
+                        "deed_goal": self._deed(ctx),
+                    },
+                    "last_verification": {"success": False, "signal": "deed_denied", "reasoning": reason},
+                    "goal_interpretations": bus.with_interpretation(
+                        state.get("goal_interpretations"),
+                        "verify",
+                        str(record.data.get("goal_interpretation") or reason),
+                    ),
+                },
+            )
+
+        ns = build_capability_runtime(ctx, read_only=True)
         try:
             exec(record.data["code"], ns)
             verdict = ns.get("verdict")
