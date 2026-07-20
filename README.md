@@ -271,9 +271,8 @@ Discipline that is load-bearing in prompts and practice:
 - Click needs two ints: `desktop.click(action_index["eN"]["px"], action_index["eN"]["py"])`.
 - Short ids die each look; reacquire from this turn's tree / action_index.
 - Stdlib via import; body powers by bare name.
-- Mid-script re-look is `desktop.observe(config)` (legacy method name). Config is a **dict or
-  None**. Non-dict args are ignored and defaults used (harden so a bare number no longer
-  TypeErrors). Prefer explicit `time.sleep` for waiting; do not treat observe as sleep.
+- The model does **not** observe. Kernel `explore()` injects the environment before every think.
+  Actor/verify namespaces expose **no** `observe` callable; actor `desktop` has no `.observe`.
 
 ### node_verify (witness)
 
@@ -317,7 +316,7 @@ endgame-ai resolves it by **separation of powers**, not by hoping the model is h
 Enforced in `build_capability_runtime`:
 
 - Full namespace: `desktop`, `action_index`, `consult_model`, ...
-- `read_only=True`: `observe` + stdlib-oriented reads only (no `desktop` hand).
+- `read_only=True`: presented env fields + stdlib-oriented reads only (no `desktop` hand, no observe).
 
 ```mermaid
 flowchart LR
@@ -430,10 +429,10 @@ Commits B13/B14 collapsed probe/expand into **one always-on exploration** and re
 prose so the environment is **PRESENTED**, not "fetched" by an observe profile. Wiring knobs live
 under `exploration.*`. Pre-think path is `explore(ctx)` in `core_nodes.py`.
 
-Legacy names still exist on disk for the **hand re-look API**: file `core_observation.py`, method
-`desktop.observe(...)`, witness bare name `observe()`. Those are mid-script re-scans of the screen,
-not a separate perception faculty. Prefer saying **exploration** for the automatic pre-think path
-and **presented environment** for what the model reads.
+Internal implementation still lives in `core_observation.py` and is called only by kernel
+`explore()` (and the Desktop class method used there). LLM faculties never call it. Prefer saying
+**exploration** for the automatic pre-think path and **presented environment** for what the model
+reads.
 
 ---
 
@@ -540,7 +539,6 @@ flowchart TD
 
 | Method | Role |
 | --- | --- |
-| observe(config) | Mid-script re-look; config is dict or None |
 | click(x, y) | Physical click two ints |
 | type_text / paste / set_clipboard | Text roads |
 | press_key / hotkey / scroll / open_url | Keys, wheel, browser open |
@@ -550,7 +548,6 @@ flowchart TD
 | desktop | yes | no |
 | action_index | yes | no |
 | consult_model | yes | no |
-| observe | via desktop | yes (read_only bare) |
 | screen_elements / stdlib | yes | yes |
 | repo_root, python_executable | yes | yes |
 

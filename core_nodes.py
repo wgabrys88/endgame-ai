@@ -11,6 +11,7 @@ import subprocess
 import sys
 import time
 import traceback
+import types
 from abc import ABC
 from typing import Any, Callable
 
@@ -341,11 +342,10 @@ def build_capability_runtime(ctx: dict[str, Any], *, read_only: bool = False) ->
         "python_executable": sys.executable,
         "desktop_tree_text": str(state.get("desktop_tree_text", "")),
         "screen_elements": copy.deepcopy(state.get("screen_elements", [])),
-        "observation": copy.deepcopy(bus.environment_brief(state)),
-        "observed_at": state.get("observed_at"),
+        "environment": copy.deepcopy(bus.environment_brief(state)),
     }
     if read_only:
-        ns["observe"] = d.observe
+        # No observe(): environment is already injected before think; witness only reads.
         return ns
 
     w = ctx.get("wiring", {})
@@ -357,8 +357,19 @@ def build_capability_runtime(ctx: dict[str, Any], *, read_only: bool = False) ->
         result = brain.call([{"role": "user", "content": text}], w, profile=profile)
         return {"ok": True, "action": "consult_model", "profile": profile, "response": str(result["content"])}
 
+    # Hand without observe: LLM does not re-look; kernel explore() injects the environment.
+    hand = types.SimpleNamespace(
+        click=d.click,
+        set_clipboard=d.set_clipboard,
+        type_text=d.type_text,
+        paste_clipboard=d.paste_clipboard,
+        press_key=d.press_key,
+        hotkey=d.hotkey,
+        scroll=d.scroll,
+        open_url=d.open_url,
+    )
     ns.update({
-        "desktop": d,
+        "desktop": hand,
         "action_index": index if isinstance(index, dict) else {},
         "consult_model": consult_model,
         "state": state,
