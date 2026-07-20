@@ -71,16 +71,6 @@ class Desktop:
             self._automation = comtypes.client.CreateObject(uia.CUIAutomation, interface=uia.IUIAutomation)
         return self._automation
 
-    def observe(self, config: dict[str, Any] | None = None) -> dict[str, Any]:
-        from core_observation import observe as observe_desktop
-        if config is None:
-            cfg = self.config
-        elif isinstance(config, dict):
-            cfg = config
-        else:
-            cfg = self.config
-        return observe_desktop(self, cfg)
-
     def click(self, x: int, y: int, hwnd: int = 0) -> dict[str, Any]:
         width, height = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
         if not 0 <= x < width or not 0 <= y < height:

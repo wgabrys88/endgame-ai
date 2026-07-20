@@ -9,6 +9,6 @@
 !core_bus.py
 !core_desktop.py
 !core_nodes.py
-!core_observation.py
+!core_exploration.py
 !core_organism.py
 !core_wiring.py

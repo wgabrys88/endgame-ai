@@ -333,7 +333,7 @@ def _probe_points(rect: dict[str, int], step_px: int) -> list[tuple[int, int]]:
     return points
 
 
-def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any]:
+def explore(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any]:
     # Mid-script callers sometimes pass a number meaning "wait"; config is mapping-only.
     cfg = dict(config) if isinstance(config, dict) else {}
     step_px = int(cfg.get("step_px", 64))
@@ -342,11 +342,11 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
     screen = {"width": sw, "height": sh}
 
     windows = enum_windows()
-    focus_hwnds = {int(h) for h in cfg.get("focus_hwnds") or [] if isinstance(h, int)}
-    if focus_hwnds:
-        focused = [w for w in windows if int(w["hwnd"]) in focus_hwnds]
-        if focused:
-            windows = focused
+    only_hwnds = {int(h) for h in cfg.get("only_hwnds") or [] if isinstance(h, int)}
+    if only_hwnds:
+        narrowed = [w for w in windows if int(w["hwnd"]) in only_hwnds]
+        if narrowed:
+            windows = narrowed
 
     scanner = UiaScanner(cfg, desktop)
     saved = wintypes.POINT()

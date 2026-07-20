@@ -134,7 +134,7 @@ class ExecuteNode(BaseNode):
                 "intent": intent,
                 "reasoning": str(record.reasoning or ""),
                 "fault": deed_fault,
-                "focus_hwnds": _hwnds_referenced(code, state.get("action_index") or {}),
+                "only_hwnds": _hwnds_referenced(code, state.get("action_index") or {}),
             }
             return bus.emit("deed_retry", base_patch)
         base_patch["deed_retry"] = None
@@ -332,13 +332,14 @@ def _host_facts() -> dict[str, Any]:
 
 def explore(ctx: dict[str, Any]) -> None:
     import core_desktop as desktop
+    import core_exploration as exploration
 
     config = dict(ctx["wiring"]["exploration"])
     retry = ctx["state"].get("deed_retry") or {}
-    focus = retry.get("focus_hwnds") if isinstance(retry, dict) else None
-    if focus:
-        config["focus_hwnds"] = list(focus)
-    obs = desktop.get_desktop(config).observe(config)
+    only = retry.get("only_hwnds") if isinstance(retry, dict) else None
+    if only:
+        config["only_hwnds"] = list(only)
+    obs = exploration.explore(desktop.get_desktop(config), config)
     ctx["state"].update({
         "observed_at": obs.get("observed_at"),
         "desktop_tree_text": obs.get("desktop_tree_text", ""),
@@ -370,7 +371,7 @@ def build_capability_runtime(ctx: dict[str, Any], *, read_only: bool = False) ->
         "environment": copy.deepcopy(bus.environment_brief(state)),
     }
     if read_only:
-        # No observe(): environment is already injected before think; witness only reads.
+        # No re-exploration: environment is already injected before think; witness only reads.
         return ns
 
     w = ctx.get("wiring", {})
@@ -382,7 +383,7 @@ def build_capability_runtime(ctx: dict[str, Any], *, read_only: bool = False) ->
         result = brain.call([{"role": "user", "content": text}], w, profile=profile)
         return {"ok": True, "action": "consult_model", "profile": profile, "response": str(result["content"])}
 
-    # Hand without observe: LLM does not re-look; kernel explore() injects the environment.
+    # Hand without re-exploration: LLM does not re-look; kernel explore() injects the environment.
     hand = types.SimpleNamespace(
         click=d.click,
         set_clipboard=d.set_clipboard,
