@@ -24,10 +24,6 @@ def set_break_after_response(enabled: bool) -> None:
     _BREAK_AFTER_RESPONSE = bool(enabled)
 
 
-def break_after_response() -> bool:
-    return bool(_BREAK_AFTER_RESPONSE)
-
-
 def _messages(system_prompt: str, user_text: str, stable_context: str = "") -> list[dict[str, str]]:
     system = system_prompt + ("\n\n" + stable_context if stable_context else "")
     return [{"role": "system", "content": system}, {"role": "user", "content": user_text}]
