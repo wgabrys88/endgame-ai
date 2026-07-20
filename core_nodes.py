@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import contextlib
 import copy
 import hashlib
-import io
 import json
 import os
 import pathlib
@@ -89,7 +87,6 @@ class ExecuteNode(BaseNode):
         return {
             "goal": state["goal"],
             "action_frame": state.get("action_frame"),
-            "my_last_action_output": state.get("last_action_output") or "",
             "state": bus.state_brief(state),
             "environment": bus.environment_brief(state),
         }
@@ -104,14 +101,10 @@ class ExecuteNode(BaseNode):
             raise RuntimeError("execution requires non-empty intent")
         deed_fault = None
         ns = build_capability_runtime(ctx)
-        buffer = io.StringIO()
         try:
-            with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
-                exec(code, ns)
+            exec(code, ns)
         except Exception:
             deed_fault = traceback.format_exc()
-        max_output = int(ctx["wiring"]["exploration"]["max_action_output_chars"])
-        output = bus.clip_head_tail(buffer.getvalue(), max_output)
         signal = "deed_denied" if deed_fault else "done"
         return bus.emit(
             signal,
@@ -124,11 +117,9 @@ class ExecuteNode(BaseNode):
                     "exec": {
                         "code_sha256": hashlib.sha256(code.encode("utf-8", errors="replace")).hexdigest(),
                         "code_chars": len(code),
-                        "output": output,
                         "deed_fault": deed_fault,
                     }
                 },
-                "last_action_output": output,
                 "last_action_at": time.time(),
                 "action_frame": None,
                 "last_verification": None,
