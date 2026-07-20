@@ -14,8 +14,18 @@ import core_wiring as wiring
 _SESSION_CACHE_KEY = f"endgame-{uuid.uuid4()}"
 _ROOT = pathlib.Path(__file__).resolve().parent
 _DUMP_DIR = _ROOT / "_transmissions"
-# Full raw req/resp dumps always. Break after first response unless ENDGAME_NO_BREAK=1.
-_BREAK_AFTER_RESPONSE = os.environ.get("ENDGAME_NO_BREAK", "1").strip() not in {"1", "true", "yes"}
+# Full raw req/resp dumps always. Break after first dump only when CLI --breakpoint is set.
+_BREAK_AFTER_RESPONSE = False
+
+
+def set_break_after_response(enabled: bool) -> None:
+    """Primary tune interjection: dump then sys.exit(42) before faculty uses content."""
+    global _BREAK_AFTER_RESPONSE
+    _BREAK_AFTER_RESPONSE = bool(enabled)
+
+
+def break_after_response() -> bool:
+    return bool(_BREAK_AFTER_RESPONSE)
 
 
 def _messages(system_prompt: str, user_text: str, stable_context: str = "") -> list[dict[str, str]]:
@@ -319,7 +329,7 @@ def _transport_call(messages: list[dict[str, str]], cfg: dict[str, Any], *, body
             f"content_chars={len(content)} reasoning_chars={len(reasoning)}\n"
         )
         if _BREAK_AFTER_RESPONSE:
-            sys.stderr.write("BREAKPOINT after response (set ENDGAME_NO_BREAK=1 to continue the life)\n")
+            sys.stderr.write("BREAKPOINT after response (omit --breakpoint to continue the life)\n")
             sys.exit(42)
         return {"content": content, "reasoning": reasoning}
     except SystemExit:
@@ -345,7 +355,7 @@ def _transport_call(messages: list[dict[str, str]], cfg: dict[str, Any], *, body
         )
         sys.stderr.write(f"TRANSMISSION DUMP (HTTP error): {dump_dir}\n")
         if _BREAK_AFTER_RESPONSE:
-            sys.stderr.write("BREAKPOINT after failed response\n")
+            sys.stderr.write("BREAKPOINT after failed response (omit --breakpoint to continue)\n")
             sys.exit(42)
         raise RuntimeError(f"xai transport HTTP {exc.code}: {raw_response_text}") from exc
     except urllib.error.URLError as exc:
@@ -363,7 +373,7 @@ def _transport_call(messages: list[dict[str, str]], cfg: dict[str, Any], *, body
         )
         sys.stderr.write(f"TRANSMISSION DUMP (URL error): {dump_dir}\n")
         if _BREAK_AFTER_RESPONSE:
-            sys.stderr.write("BREAKPOINT after failed response\n")
+            sys.stderr.write("BREAKPOINT after failed response (omit --breakpoint to continue)\n")
             sys.exit(42)
         raise RuntimeError(f"xai transport URL error: {getattr(exc, 'reason', exc)}; no fallback was attempted") from exc
 

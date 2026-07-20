@@ -23,9 +23,17 @@ JsonDict = dict[str, Any]
 ROOT = pathlib.Path(__file__).parent.resolve()
 
 
+_CLAIM_ONLY = False
+
+
+def set_claim_only(enabled: bool) -> None:
+    """Secondary multi-faculty dry-run: think+dump, skip actor and probe exec."""
+    global _CLAIM_ONLY
+    _CLAIM_ONLY = bool(enabled)
+
+
 def _claim_only() -> bool:
-    """When set, think+dump only: skip world-mutating exec (actor code and witness probes)."""
-    return os.environ.get("ENDGAME_CLAIM_ONLY", "").strip().lower() in {"1", "true", "yes"}
+    return bool(_CLAIM_ONLY)
 
 
 class BaseNode(ABC):
@@ -108,7 +116,7 @@ class ExecuteNode(BaseNode):
         if _claim_only():
             deed_fault = "CLAIM_ONLY: exec skipped"
             sys.stderr.write(
-                "CLAIM_ONLY: skipped exec at node_execute (set ENDGAME_CLAIM_ONLY=0 to enact)\n"
+                "CLAIM_ONLY: skipped exec at node_execute (omit --claim-only to enact)\n"
             )
         else:
             ns = build_capability_runtime(ctx)
@@ -169,7 +177,7 @@ class VerifyNode(BaseNode):
         if _claim_only():
             # Skip probe; deny without fake confirmation so recover may speak (no unwitnessed loop).
             sys.stderr.write(
-                "CLAIM_ONLY: skipped exec at node_verify (set ENDGAME_CLAIM_ONLY=0 to enact)\n"
+                "CLAIM_ONLY: skipped exec at node_verify (omit --claim-only to enact)\n"
             )
             reason = "CLAIM_ONLY: probe exec skipped; deed unproven"
             return bus.emit(

@@ -2,6 +2,7 @@ import argparse
 import time
 from typing import Any
 
+import core_brain as brain
 import core_bus as bus
 import core_nodes as nodes
 import core_wiring as wiring
@@ -57,9 +58,27 @@ def run(goal: str | None) -> dict[str, Any]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("goal", nargs="?", default="")
+    ap = argparse.ArgumentParser(
+        description=(
+            "endgame-ai organism kernel. Dumps always under _transmissions/. "
+            "Use --breakpoint for one-transmission tune (exit 42 before exec). "
+            "Use --claim-only to walk the wheel without world-mutating exec."
+        )
+    )
+    ap.add_argument(
+        "--breakpoint",
+        action="store_true",
+        help="after the first model dump, exit 42 before any exec (primary prompt/knob science mode)",
+    )
+    ap.add_argument(
+        "--claim-only",
+        action="store_true",
+        help="skip actor and witness exec; multi-faculty dry-run (verify emits deed_denied)",
+    )
+    ap.add_argument("goal", nargs="?", default="", help="one-sentence root goal for this life")
     args = ap.parse_args(argv)
+    brain.set_break_after_response(bool(args.breakpoint))
+    nodes.set_claim_only(bool(args.claim_only))
     run(args.goal)
     return 0
 
