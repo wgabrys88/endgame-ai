@@ -64,8 +64,6 @@
     }
   },
   "paths": {
-    "nodes": ".",
-    "brains": ".",
     "guidance": "guidance.txt"
   },
   "exploration": {

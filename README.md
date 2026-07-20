@@ -276,7 +276,7 @@ sequenceDiagram
 ```
 
 The key ordering fact: `explore(ctx)` always runs immediately before the model call inside
-`core_node_base.think()`. The model never reasons on a stale view, and it never has to ask to look.
+`BaseNode.think()`. The model never reasons on a stale view, and it never has to ask to look.
 
 ---
 
@@ -293,7 +293,7 @@ mailbox from a human operator to the organism. Any note found is placed into sta
 `latest_counsel`, then it emits `attend`. It does not read the goal or the living word and sets no
 intent. It does not explore, because it makes no model call.
 
-Docstring (injected contract): `[node_guidance] - Thou receivest the [guidance] file.`
+Contract (injected): `[node_guidance] — Thou receivest the [guidance] file.`
 
 ### node_execute (the actor)
 
@@ -303,7 +303,7 @@ runs it with `exec` in a capability namespace that includes the full `desktop` h
 the only tool; there is no tool menu. A script that raises does not end the life; it routes to
 recovery as `deed_denied`. A clean run emits `done`.
 
-Docstring (injected contract): `[node_execute] - Thou receivest the fresh [environment] and any
+Contract (injected): `[node_execute] — Thou receivest the fresh [environment] and any
 [action_frame].`
 
 Its output record type is `execution`.
@@ -421,7 +421,12 @@ The rule:
 
 1. Enumerate the top-level windows with `EnumWindows` plus `GetWindowRect`. Their rectangles are
    ground truth.
-2. For each window, probe its own rectangle on a golden-ratio grid of points.
+2. For each top-level window (its own rectangle — paths are per-window, not one global path), walk a
+   low-discrepancy probe grid (golden-ratio spacing is only how points are spread; not a fancy path
+   language). Move the real mouse cursor (`SetCursorPos`) to each point, then probe. Stealing the
+   cursor for the scan is accepted: hover-only data (tooltips, hover names) only appears when the
+   pointer truly rests on the element. The prior cursor position is restored when the scan ends.
+   `W0` is the synthetic screen root line in the tree, not a separate pre-scan pass.
 3. At each point, keep an element only if `GetAncestor(WindowFromPoint)` resolves its owner to that
    same window.
 
@@ -451,7 +456,8 @@ flowchart TD
 
 Consequences that fall out for free:
 
-- Z-order needs no computation. Front-to-back is simply `EnumWindows` order.
+- Depth is not a model-facing concept. The probe either keeps a point's element or drops it; there is
+  no front/back label, no z-order field, and no active-window marker on the plane the model reads.
 - Occlusion is not a computed concept. A covered element is never collected. There is no `occluded_by`
   field, no occluder naming, no separate resolution pass. A covered window contributes nothing; a
   visible one contributes its face.
@@ -460,21 +466,27 @@ Consequences that fall out for free:
   itself are all seen. A minimum-area floor drops one-pixel and sliver junk.
 
 What the model reads is a shallow tree, one line per interactive element: short id, role, name, and
-`[action]` where the element affords one. A window line carries `[active]`. There are no pixel
-coordinates in the text; the body reads px and py from the `action_index` by short id, because a
-coordinate on the line is a dead token that only tempts the actor to nail a stale pixel. The organism
-reads a flat 2D plane of windows and their reachable elements. Full element text flows into the tree.
+`[action]` where the element affords one. There is no front/back or active-window notion: the screen
+is a flat 2D plane of windows and their reachable elements. There are no pixel coordinates in the
+text; the body reads px and py from the `action_index` by short id, because a coordinate on the line
+is a dead token that only tempts the actor to nail a stale pixel. Full element text flows into the
+tree.
 There is no per-line truncation and no on-demand deepening, because the whole environment block is
 bounded once at injection time.
 
 What the model receives versus what stays in Python: `core_bus.environment_brief` gathers
-`desktop_tree_text` plus the host facts, and `core_bus.render_environment` renders them as one block,
-cut once by `exploration.max_environment_chars`. The full `action_index`, keyed by short id and
-carrying px, py, rect, runtime id, and every UI-automation field, lives in the executor's Python
-namespace and never in the prompt. So the true model-facing budget is one quantity: the character
-length of the rendered environment block. Classification of what is actionable is by role sets in
-`action_for_role`; a non-actionable role yields an empty action and is dropped at the render gate, so
-no explicit junk or container list is needed.
+`desktop_tree_text` plus the host facts, and `core_bus.render_environment` spends
+`exploration.max_environment_chars` by a deterministic ranked fill (not a mid-string slice). All
+window title lines are kept first so the map of the desktop survives. Element lines are filled in two
+passes with no front/back preference: a fair character share across windows that have elements, then
+round-robin overflow in the same window order. Host core facts (platform, machine, user, cwd, python,
+shell tools) are always reserved; bulk `installed_apps` is included only if room remains after the
+screen. Any omission ends with an explicit `[environment budget: ...]` marker — never a silent
+mid-line cut. The full `action_index`, keyed by short id and carrying px, py, rect, runtime id, and
+every UI-automation field, lives in the executor's Python namespace and never in the prompt.
+Classification of what is actionable is by role sets in `action_for_role`; a non-actionable role
+yields an empty action and is dropped at the render gate, so no explicit junk or container list is
+needed.
 
 ---
 
@@ -498,7 +510,7 @@ flowchart TD
         U4["environment block LAST:<br/>live screen tree + host facts<br/>cut at max_environment_chars"]
     end
 
-    SYS --> USR --> CALL["transport_xai.call -> grok"]
+    SYS --> USR --> CALL["core_brain transport -> grok"]
     CALL --> REC["structured record<br/>(validated against contract)"]
 
     classDef sys fill:#1e6091,stroke:#a9d6e5,color:#ffffff;
@@ -518,13 +530,13 @@ The mechanics, all in `core_brain.think()`:
 - The user message is assembled stable-first, volatile-last: first the organism's own memory (the
   state brief, the proven ledger, the living word), then last the single environment block (the live
   screen tree followed by the standing host facts).
-- Only the environment block is trimmed, and only by `exploration.max_environment_chars` (default
-  4000). Python assembles the world, Python trims it, Python inserts it. The organism's own memory is
-  never trimmed by this value.
+- Only the environment block is budgeted, and only by `exploration.max_environment_chars` (default
+  4000). Python assembles the world, Python spends the budget by ranked fill with a visible marker,
+  Python inserts it. The organism's own memory is never trimmed by this value.
 - Structured outputs are on. The record's JSON schema is derived from the record contract and enforced
   by the transport, so the model must return exactly the contracted fields.
 
-The transport (`transport_xai.py`) sets a per-process `prompt_cache_key` so the provider can reuse the
+The transport inside `core_brain` sets a per-process `prompt_cache_key` so the provider can reuse the
 cached prefix across the many calls of one life. Reasoning happens natively in the model (reasoning
 effort is set in `wiring.json`), not through a two-pass prompt.
 
@@ -675,8 +687,6 @@ model
     verification    { reasoning.effort medium, max_output_tokens 16384 }
     recovery        { reasoning.effort medium, max_output_tokens 16384 }
 paths
-  nodes             "."
-  brains            "."
   guidance          "guidance.txt"
 exploration
   step_px           64
@@ -715,25 +725,18 @@ library only. Node files carry exactly one docstring each and no other prose.
 | File | Role |
 | --- | --- |
 | `core_organism.py` | The kernel. Loads wiring, holds state, turns the wheel, routes signals to nodes. |
-| `core_wiring.py` | Loads and validates `wiring.json` (structure and coherence), loads plugins, resolves prompts. |
-| `core_node_base.py` | `BaseNode`: builds the payload, calls `explore` then the model, checks the record type. |
-| `core_nodes.py` | `explore` (screen plus host facts) and `build_capability_runtime` (actor vs read-only namespaces). |
-| `core_brain.py` | `think`: assembles the message, enforces contracts, derives schemas, calls the transport. |
-| `core_bus.py` | Records, signals, state and environment briefs, prompt-template rendering, ledger and streak helpers. |
-| `core_observation.py` | The window-first perception rule, UI Automation scanning, tree rendering. |
+| `core_wiring.py` | Loads and validates `wiring.json` (structure and coherence), resolves prompts. |
+| `core_nodes.py` | OOP faculties: `BaseNode`, guidance/execute/verify/recover, `FACULTIES` registry, `explore`, capability namespaces, `call_node`. Input contracts live as each class's `contract` string. |
+| `core_brain.py` | `think` + xAI transport: assemble messages, enforce contracts, derive schemas, HTTP call. |
+| `core_bus.py` | Records, signals, state and environment briefs, ranked environment budget, ledger helpers. |
+| `core_observation.py` | Window-first perception, cursor-traversal probes, UI Automation scan, tree render. |
 | `core_desktop.py` | The hand: input synthesis and the `observe` entry point. Windows-only. |
-| `transport_xai.py` | The model transport: builds the request body, calls the endpoint, extracts content and reasoning. |
-| `node_guidance.py` | The operator mailbox. Pure Python, no model call. |
-| `node_execute.py` | The actor node. |
-| `node_verify.py` | The witness node. |
-| `node_recover.py` | The recovery node. |
 | `wiring.json` | The single source of truth: model, paths, exploration, topology, prompts, contracts. |
 | `guidance.txt` | The operator counsel mailbox (created and cleared at runtime; not tracked). |
 
-The convention on prose: the only human-language prose in the code is the module-level docstring at
-the top of each `node_*.py` file, because those, and only those, are read at runtime and injected
-into prompts. Everything else that needs saying lives in `wiring.json` prompt text or in commit
-bodies. Any prose left in the code is therefore, by its presence, known to be load-bearing.
+The convention on prose: faculty input contracts are the `contract` class attributes on the nodes in
+`core_nodes.py` (injected as downstream contracts). Everything else that needs saying lives in
+`wiring.json` prompt text or in commit bodies.
 
 ---
 
@@ -902,9 +905,9 @@ The durable protocol for anyone working on the organism.
   (`git update-ref refs/endgame/known_good <prev-sha>`). The marker can always be moved back.
 - Work in explicit phases. State a phased plan before major work. Near the context limit, stop,
   summarize, write exact next-phase instructions, and checkpoint.
-- Do not add comments or docstrings as prose. The only prose in code is the six-node docstrings the
-  runtime injects. Everything else that needs saying goes in `wiring.json` prompt text or commit
-  bodies.
+- Do not add comments or docstrings as prose. Faculty input contracts are the `contract` attributes
+  on node classes in `core_nodes.py`. Everything else that needs saying goes in `wiring.json` prompt
+  text or commit bodies.
 
 ---
 
@@ -921,9 +924,9 @@ built.
    down-payment.
 
 2. Goal-river steering exploration. Held on the task-agnostic law. Exploration is pure Python with no
-   model call; making it goal-aware breaks the blind-observer design. The window `[active]` marker
-   plus the standing host open-windows already answer "which window." Revisit only if a live run shows
-   the executor repeatedly acting on the wrong window.
+   model call; making it goal-aware breaks the blind-observer design. Window titles on the flat 2D
+   plane plus the standing host already name what is open. Revisit only if a live run shows the
+   executor repeatedly acting on the wrong surface.
 
 3. Tab-jump observer (experimental alternate topology). Deferred by operator caution. Holding Tab
    jumps across interactive web elements, but Tab can generate actions, and an observer must never
@@ -934,9 +937,11 @@ built.
    rebuild. The deeper seed is still open: scan could fan into several cheap linear Python passes.
 
 5. Single injection-time character budget plus explosion scan. One deterministic budget applied at the
-   moment before injection, with a visible trim marker, never silent. This is now realized as
-   `max_environment_chars`. The explosion scan (depth graduated by distance from a focal point) is
-   partially pre-empted by the per-window scan and may not be needed while the tree stays small.
+   moment before injection, with a visible trim marker, never silent. Realized as
+   `max_environment_chars` spent by ranked fill in `render_environment` (titles first, fair share,
+   equal round-robin, host core reserved, `installed_apps` deferred — no front/back preference). The
+   explosion scan (depth graduated by distance from a focal point) is partially pre-empted by the
+   per-window scan and may not be needed while the tree stays small.
 
 6. The witness proportional to the deed. The witness fires the full read-only-proof faculty even for a
    single trivial click. This is not a defect to remove; a correct witness handles cheap deeds cheaply.
