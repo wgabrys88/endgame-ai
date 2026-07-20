@@ -1,4 +1,5 @@
 import argparse
+import importlib
 import time
 from typing import Any
 
@@ -37,12 +38,12 @@ def run(goal: str | None) -> dict[str, Any]:
     }
     try:
         while True:
+            nodes_module = importlib.reload(nodes)
+            w = wiring.load_wiring()
             st["_phase"] = "executing_node"
             st["current_node"] = current
             ctx = {"wiring": w, "state": dict(st), "goal": goal or "", "node": current}
-            signal_name, patch = nodes.call_node(current, ctx)
-            if patch.pop("_reload_wiring", False):
-                w = wiring.load_wiring()
+            signal_name, patch = nodes_module.call_node(current, ctx)
             st.update(patch)
             st["last_signal"] = signal_name
             st["last_node"] = current
