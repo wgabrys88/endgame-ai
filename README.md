@@ -39,6 +39,7 @@ self-evolution is allowed without cages, fallbacks, or secret state.
 - [The record contracts](#the-record-contracts)
 - [The desktop body and capability namespaces](#the-desktop-body-and-capability-namespaces)
 - [The wiring document](#the-wiring-document)
+- [Guidance mailbox (text or JSON seed)](#guidance-mailbox-text-or-json-seed)
 - [Transmission dumps and CLI interjections](#transmission-dumps-and-cli-interjections)
 - [Tuning methodology (prompts, knobs, cache)](#tuning-methodology-prompts-knobs-cache)
 - [File-by-file map](#file-by-file-map)
@@ -183,7 +184,7 @@ swallowing. A broken body ends the life with a raised exception. Design ethos is
 | Config scattered | One JSON body (`wiring.json`) plus small Python kernel |
 | Silent truncation of context | Ranked env budget with **visible** omission markers |
 | Hidden logging product | Dumps under `_transmissions/` for tune/debug; body stays lean |
-| Env vars as secret control plane | Interjections are **CLI flags** on `core_organism.py` |
+| Env vars as secret control plane | Sole science stop is CLI `--breakpoint`; multi-faculty via guidance file shape |
 
 The organism has almost none of the usual "features." That absence is the design: fewer moving
 parts, one source of truth, honesty by structure, a body it can reshape.
@@ -268,6 +269,8 @@ Exact edge table (from `wiring.json` topology; re-read the file if this table an
 | From | Signal | To |
 | --- | --- | --- |
 | node_guidance | attend | node_execute |
+| node_guidance | verify | node_verify |
+| node_guidance | recover | node_recover |
 | node_execute | done | node_verify |
 | node_execute | deed_denied | node_recover |
 | node_verify | deed_confirmed | node_guidance |
@@ -275,6 +278,10 @@ Exact edge table (from `wiring.json` topology; re-read the file if this table an
 | node_verify | unwitnessed | node_verify |
 | node_verify | halt | (life ends) |
 | node_recover | recovered | node_guidance |
+
+Guidance signals are **not** chosen by a free optional field. Empty/plain-text guidance always emits
+`attend`. A JSON process-memory seed is classified by **structure alone** (see
+[Guidance mailbox](#guidance-mailbox-text-or-json-seed)).
 
 `cycle_start = node_guidance`. The wheel turns until `node_verify` emits `halt`, the body raises, or
 the process is stopped from outside. There is **no** internal turn cap, wall-clock leash, or step
@@ -386,11 +393,10 @@ Key ordering fact: `explore(ctx)` always runs immediately before the model call 
 `BaseNode.think()`. The model never reasons on a deliberately stale view, and it never has to ask to
 look.
 
-Optional interjections (see [Transmission dumps and CLI interjections](#transmission-dumps-and-cli-interjections)):
+Optional interjection (see [Transmission dumps and CLI interjections](#transmission-dumps-and-cli-interjections)):
 
 - `--breakpoint`: after the model responds and the dump is written, kill the process before `exec`
-  (primary tune mode).
-- `--claim-only`: skip `exec` while letting the wheel continue (multi-faculty dry-run).
+  (sole science stop). Multi-faculty science uses a JSON seed in the guidance file, not a second flag.
 
 ---
 
@@ -402,9 +408,9 @@ prompts via topology (not free-floating comments).
 
 ### node_guidance (cycle start)
 
-Pure Python, no model call. Reads and clears the operator counsel file (`paths.guidance`, default
-`guidance.txt`). Any note becomes `latest_counsel`, then emits `attend`. Does not read the goal as
-its charge, does not explore (no model call).
+Pure Python, no model call. Reads and clears `paths.guidance` (default `guidance.txt`). Does not
+explore. See [Guidance mailbox](#guidance-mailbox-text-or-json-seed) for plain text vs JSON seed and
+deterministic routing.
 
 Contract (class attribute): receives the guidance file.
 
@@ -865,6 +871,55 @@ There is **no** wiring knob today for ledger max length. That absence is real; s
 
 ---
 
+## Guidance mailbox (text or JSON seed)
+
+`node_guidance` is the deterministic injection surface. One file, clear-after-consume, pure Python.
+
+| File content | Route | Patch |
+| --- | --- | --- |
+| empty / missing | `attend` → execute | empty counsel |
+| plain text (not a JSON object) | `attend` → execute | `latest_counsel` = text |
+| JSON **object** seed | structure alone (below) | allowlisted process-memory fields |
+
+### Structure-only routing (no optional target field)
+
+There is no `signal` / `route` / `go_to` key. The writer shapes the pack; code classifies it:
+
+1. Recover if the seed has `last_verification` and/or `turn_executions` and/or `evidence`.
+2. Else verify if the seed has `current_deed` or `deed`.
+3. Else attend (execute), including living-word-only or `action_frame` packs.
+
+Fail hard on invalid JSON-looking files, unknown keys, or forbidden live-world keys
+(`desktop_tree_text`, `host_facts`, `action_index`, screen/env fakes). Environment is always from
+fresh `explore()` before think.
+
+Allowlisted seed fields: `latest_counsel`, `goal`, `current_deed` / `deed`, `last_action_at`,
+`action_frame`, `goal_interpretations`, `proven_ledger`, `failure_streak`, `last_verification`,
+`turn_executions`, `evidence` (unpacked into the real state fields recover already reads).
+
+Human, AI session, or the organism may write the file. Prompts are unchanged: they already consume
+state + fresh environment.
+
+### Multi-faculty science recipes (with `--breakpoint`)
+
+**Execute:** empty or prose guidance; breakpoint goal → first model dump is execute.
+
+**Verify:** JSON seed with a deed under judgment, e.g.
+
+```json
+{
+  "current_deed": {"description": "wrote chess_sight_report.txt under repo root"},
+  "goal_interpretations": {"execute": "I claimed the report as the one deed."}
+}
+```
+
+then `python core_organism.py --breakpoint "prove the report by independent effect"`.
+
+**Recover:** JSON seed with denial evidence plus deed, e.g. `last_verification` and/or
+`turn_executions`, then the same breakpoint command with an appropriate goal.
+
+---
+
 ## Transmission dumps and CLI interjections
 
 ### Always-on dumps
@@ -876,7 +931,7 @@ Every transport call writes a full untruncated dump under `_transmissions/<stamp
 These dumps are the **primary instrument** for prompt and knob science. The body does not grow a
 product logger.
 
-### Breakpoint (primary tune mode): CLI only
+### Breakpoint (sole science stop): CLI only
 
 ```text
 python core_organism.py --breakpoint "your goal for one transmission"
@@ -888,63 +943,35 @@ python core_organism.py --breakpoint "your goal for one transmission"
 | `--breakpoint` | Break **ON**: after dump, `sys.exit(42)` **before** the node uses content, therefore **before any exec** |
 
 Implemented as a runtime flag set from argv (`core_brain.set_break_after_response`), **not** an
-environment variable. There is no dual env path. Ambient env control was removed on purpose (clean
-state, no double-negative `NO_BREAK`, fractal child lives get explicit argv).
+environment variable. There is no dual env path and **no claim-only mode**.
 
-For tuning: force breakpoint so each life is **one transmission, analyze, stop**. Never open-loop a
-multi-deed life while benchmarking prompts or env budgets; that mixes world mutation with science and
-burns tokens without clean A/B.
-
-First thinking faculty after guidance is always **execute** on the default wheel. Breakpoint
-therefore exercises shared + execute + templates + execute's downstream contract first.
-Multi-faculty under pure breakpoint requires separate lives or `--claim-only`.
-
-### Claim-only (secondary multi-faculty dry-run): CLI only
-
-```text
-python core_organism.py --claim-only "goal that would act"
-```
-
-- After think, **skip** `exec` at execute and verify.
-- Execute still emits `done` with intent recorded (and a `CLAIM_ONLY` deed_fault marker) so verify
-  may speak.
-- Verify under claim-only emits **`deed_denied`** with an explicit claim-only reason (not
-  `unwitnessed`, which would loop forever).
-- Recover has no exec; unchanged.
-
-Use claim-only when you need the **wheel** to visit verify/recover without world mutation. Prefer
-breakpoint for pure prompt A/B of a single faculty.
-
-Composition: if both `--breakpoint` and `--claim-only` are set, breakpoint wins on the first
-transport (process dies after the first dump; claim-only never reaches later nodes in that life).
+For tuning: one transmission, analyze, stop. Never open-loop thrash the desktop while A/B'ing
+prompts or env budgets. Which faculty speaks first is guidance routing (empty/prose → execute;
+JSON shape → verify or recover when seeded).
 
 ```mermaid
 flowchart TD
     T["model responds"] --> D["dump full req/resp"]
     D --> B{"--breakpoint?"}
     B -- yes --> X["sys.exit 42<br/>no exec"]
-    B -- no --> C{"--claim-only?"}
-    C -- yes --> S["skip exec<br/>emit topology signal"]
-    C -- no --> E["exec code / probe"]
+    B -- no --> E["exec code / probe"]
 
     classDef stop fill:#9d1c1c,stroke:#ffccd5,color:#ffffff;
     classDef ok fill:#2d6a4f,stroke:#95d5b2,color:#ffffff;
     class X stop;
-    class E,S ok;
+    class E ok;
 ```
 
 ### Fractal self-evaluation via breakpoint
 
-Because interjections are argv, an outer life (or human session) can spawn:
+An outer life (or human session) can spawn:
 
 ```text
 python core_organism.py --breakpoint "inventory thy own capabilities from fresh environment"
 ```
 
-The outer actor may run that as subprocess code-as-action, then read `_transmissions/` dumps as
-independent filesystem evidence for a later witness probe. That is how fractal topology and
-breakpoint compose: the system can inspect a child instance of itself without a second harness
-product.
+Optionally write a JSON seed first so the child life opens on verify or recover. Dumps under
+`_transmissions/` are independent filesystem evidence for an outer witness. No second harness.
 
 ---
 
@@ -1023,9 +1050,9 @@ rewrite is cleaner (subtraction or hot-swap still preferred).
 
 | File | Role |
 | --- | --- |
-| `core_organism.py` | Kernel: load wiring, hold state, turn wheel, route signals, **CLI** `--breakpoint` / `--claim-only` |
+| `core_organism.py` | Kernel: load wiring, hold state, turn wheel, route signals, **CLI** `--breakpoint` |
 | `core_wiring.py` | Load/validate wiring, resolve prompts, transport config, fractal base checks |
-| `core_nodes.py` | Faculties, explore, capability namespaces, claim-only gate, `call_node` |
+| `core_nodes.py` | Faculties, guidance seed/route, explore, capability namespaces, `call_node` |
 | `core_brain.py` | Message assembly, contracts, xAI transport, dumps, breakpoint exit |
 | `core_bus.py` | Records, signals, briefs, ranked environment budget, living word + ledger render |
 | `core_observation.py` | Window-first perception, probe grid, tree + action_index |
@@ -1050,13 +1077,13 @@ flowchart TD
 
     ST --> EXP1["explore: tree + host + action_index"]
     EXP1 --> EX["node_execute.think"]
-    EX -->|execution record| RUN["exec code<br/>or --claim-only / --breakpoint"]
+    EX -->|execution record| RUN["exec code<br/>or --breakpoint stop"]
     RUN -->|world may change| WORLD[("real desktop")]
     RUN -->|current_deed| ST
 
     ST --> EXP2["explore fresh"]
     EXP2 --> VF["node_verify.think"]
-    VF -->|probe code| PROBE["exec probe<br/>or --claim-only skip"]
+    VF -->|probe code| PROBE["exec probe<br/>(or --breakpoint stop)"]
     WORLD -->|independent evidence| PROBE
     PROBE -->|deed_confirmed| LEDGER[("proven_ledger this life")]
     PROBE -->|deed_denied| RC["node_recover"]
@@ -1104,18 +1131,16 @@ python core_organism.py --breakpoint "inventory / sight / author-only goal"
 
 Expect process exit code **42** and a dump path on stderr. Score `content.txt` and `message_user.txt`.
 
-### Claim-only multi-faculty dry-run
+### Multi-faculty via guidance seed (not a second CLI mode)
 
-```text
-python core_organism.py --claim-only "goal that would act"
-```
-
-Expect CLAIM_ONLY lines on stderr; dumps for each think; no actor/probe side effects; verify denies
-with claim-only reason.
+Write plain text or a JSON process-memory object to `guidance.txt` (see
+[Guidance mailbox](#guidance-mailbox-text-or-json-seed)). Structure alone routes to execute, verify,
+or recover. Combine with `--breakpoint` to dump the first model faculty without world exec.
 
 ### Operator counsel mid-life
 
-Write a line to `guidance.txt`. Next guidance lap reads and clears it.
+Write a line to `guidance.txt`. Next guidance lap reads and clears it. JSON seeds are one-shot the
+same way.
 
 ### Git and credentials on Windows
 
@@ -1241,7 +1266,7 @@ atemporal practice.
 - Use `--breakpoint` for prompt/knob A/B; score dumps; freeze winners into wiring.
 - Preserve biblical register; preserve Separated Powers; preserve cache order.
 - Prefer tuning `max_environment_chars`, prompts, temperature, effort over new modules.
-- When the organism must act on the world, omit `--breakpoint` and `--claim-only` deliberately.
+- When the organism must act on the world, omit `--breakpoint` deliberately.
 - When describing memory, distinguish living word overwrite, ledger append-in-life, and process death.
 
 **Do not:**
@@ -1324,7 +1349,7 @@ The organism is allowed, and expected when evidence warrants, to improve its own
 | Model hyperparameters | Same | Breakpoint A/B; organs and request both checked |
 | Prompt surfaces | Same | Cliff-search with biblical register preserved |
 | Python body / topology | Organism (hot-swap) or human | True defect in body; witness-friendly proof of better path |
-| CLI interjections | Human/AI sessions primarily | Tune under `--breakpoint`; dry-run under `--claim-only` |
+| CLI interjections | Human/AI sessions primarily | Tune under `--breakpoint`; multi-faculty via guidance JSON seed |
 | New faculties / memory nodes | Organism may invent if topology allows self-rewrite | Proven usefulness then commit and push |
 | Ledger discipline | Not built; candidate | Measured `message_user` growth vs long lives |
 
@@ -1387,7 +1412,7 @@ subtraction unless it replaces something larger. Prefer:
 - **action_index**: short_id maps to px, py, rect, … for clicks; coords not dumped into prompt lines.
 - **Body**: Python kernel files + wiring the organism may edit.
 - **Breakpoint**: CLI `--breakpoint`; dump after model response then exit 42 before exec.
-- **Claim-only**: CLI `--claim-only`; skip exec after think; multi-faculty dry-run.
+- **Guidance seed**: plain text counsel or JSON process-memory pack; structure routes attend/verify/recover.
 - **deed_denied / deed_confirmed / unwitnessed / halt**: topology signals (see edge table).
 - **Downstream contract**: consumer `contract` strings injected into an emitter's system prompt.
 - **Environment**: fresh screen tree + host facts injected last in the user message.

@@ -39,11 +39,18 @@ def run(goal: str | None) -> dict[str, Any]:
         while True:
             st["_phase"] = "executing_node"
             st["current_node"] = current
-            ctx = {"wiring": w, "state": dict(st), "goal": goal or "", "node": current}
+            ctx = {
+                "wiring": w,
+                "state": dict(st),
+                "goal": str(st.get("goal") or goal or ""),
+                "node": current,
+            }
             signal_name, patch = nodes.call_node(current, ctx)
             if patch.pop("_reload_wiring", False):
                 w = wiring.load_wiring()
             st.update(patch)
+            if patch.get("goal"):
+                goal = str(patch["goal"])
             st["last_signal"] = signal_name
             st["last_node"] = current
             st["tick"] += 1
@@ -62,7 +69,8 @@ def main(argv: list[str] | None = None) -> int:
         description=(
             "endgame-ai organism kernel. Dumps always under _transmissions/. "
             "Use --breakpoint for one-transmission tune (exit 42 before exec). "
-            "Use --claim-only to walk the wheel without world-mutating exec."
+            "Multi-faculty science: put a process-memory JSON seed in guidance.txt; "
+            "structure alone routes to execute, verify, or recover."
         )
     )
     ap.add_argument(
@@ -70,15 +78,9 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="after the first model dump, exit 42 before any exec (primary prompt/knob science mode)",
     )
-    ap.add_argument(
-        "--claim-only",
-        action="store_true",
-        help="skip actor and witness exec; multi-faculty dry-run (verify emits deed_denied)",
-    )
     ap.add_argument("goal", nargs="?", default="", help="one-sentence root goal for this life")
     args = ap.parse_args(argv)
     brain.set_break_after_response(bool(args.breakpoint))
-    nodes.set_claim_only(bool(args.claim_only))
     run(args.goal)
     return 0
 
