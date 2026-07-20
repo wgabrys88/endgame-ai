@@ -39,18 +39,11 @@ def run(goal: str | None) -> dict[str, Any]:
         while True:
             st["_phase"] = "executing_node"
             st["current_node"] = current
-            ctx = {
-                "wiring": w,
-                "state": dict(st),
-                "goal": str(st.get("goal") or goal or ""),
-                "node": current,
-            }
+            ctx = {"wiring": w, "state": dict(st), "goal": goal or "", "node": current}
             signal_name, patch = nodes.call_node(current, ctx)
             if patch.pop("_reload_wiring", False):
                 w = wiring.load_wiring()
             st.update(patch)
-            if patch.get("goal"):
-                goal = str(patch["goal"])
             st["last_signal"] = signal_name
             st["last_node"] = current
             st["tick"] += 1
@@ -68,15 +61,13 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description=(
             "endgame-ai organism kernel. Dumps always under _transmissions/. "
-            "Use --breakpoint for one-transmission tune (exit 42 before exec). "
-            "Multi-faculty science: put a process-memory JSON seed in guidance.txt; "
-            "structure alone routes to execute, verify, or recover."
+            "Use --breakpoint for one-transmission tune (exit 42 before exec)."
         )
     )
     ap.add_argument(
         "--breakpoint",
         action="store_true",
-        help="after the first model dump, exit 42 before any exec (primary prompt/knob science mode)",
+        help="after the first model dump, exit 42 before any exec (prompt/knob science mode)",
     )
     ap.add_argument("goal", nargs="?", default="", help="one-sentence root goal for this life")
     args = ap.parse_args(argv)

@@ -22,33 +22,6 @@ import core_wiring as wiring
 JsonDict = dict[str, Any]
 ROOT = pathlib.Path(__file__).parent.resolve()
 
-# Process-memory seed keys only. Live screen / host / action_index are never seeded.
-_GUIDANCE_SEED_ALLOW = frozenset({
-    "latest_counsel",
-    "goal",
-    "current_deed",
-    "deed",
-    "last_action_at",
-    "action_frame",
-    "goal_interpretations",
-    "proven_ledger",
-    "failure_streak",
-    "last_verification",
-    "turn_executions",
-    "evidence",
-})
-_GUIDANCE_SEED_FORBID = frozenset({
-    "desktop_tree_text",
-    "host_facts",
-    "action_index",
-    "screen_elements",
-    "observation",
-    "environment",
-    "host",
-    "observed_at",
-    "observation_artifact",
-})
-
 
 class BaseNode(ABC):
     prompt_key: str = ""
@@ -93,146 +66,15 @@ class BaseNode(ABC):
         return bus.emit(self.signal_from_data(record.data, ctx), self.patch_from_record(record, ctx))
 
 
-def _normalize_deed(value: Any) -> JsonDict:
-    if isinstance(value, dict):
-        desc = str(value.get("description") or "").strip()
-        if not desc:
-            raise RuntimeError("guidance seed deed/current_deed requires non-blank description")
-        return {"description": desc}
-    desc = str(value or "").strip()
-    if not desc:
-        raise RuntimeError("guidance seed deed/current_deed requires non-blank description")
-    return {"description": desc}
-
-
-def _guidance_route_signal(seed: JsonDict) -> str:
-    """Deterministic route from seed shape alone. No optional target field."""
-    if any(k in seed for k in ("last_verification", "turn_executions", "evidence")):
-        return "recover"
-    if "current_deed" in seed or "deed" in seed:
-        return "verify"
-    return "attend"
-
-
-def _guidance_seed_patch(seed: JsonDict) -> JsonDict:
-    forbidden = sorted(set(seed) & _GUIDANCE_SEED_FORBID)
-    if forbidden:
-        raise RuntimeError(
-            f"guidance seed must not fake live environment; forbidden keys present: {forbidden}"
-        )
-    unknown = sorted(set(seed) - _GUIDANCE_SEED_ALLOW)
-    if unknown:
-        raise RuntimeError(f"guidance seed has unknown keys: {unknown}; allowed: {sorted(_GUIDANCE_SEED_ALLOW)}")
-    patch: JsonDict = {}
-    if "latest_counsel" in seed:
-        patch["latest_counsel"] = str(seed.get("latest_counsel") or "")
-    if "goal" in seed:
-        goal = str(seed.get("goal") or "").strip()
-        if not goal:
-            raise RuntimeError("guidance seed goal must be non-blank when provided")
-        patch["goal"] = goal
-    if "current_deed" in seed and "deed" in seed:
-        raise RuntimeError("guidance seed must not provide both current_deed and deed")
-    if "current_deed" in seed:
-        patch["current_deed"] = _normalize_deed(seed["current_deed"])
-    elif "deed" in seed:
-        patch["current_deed"] = _normalize_deed(seed["deed"])
-    if "last_action_at" in seed:
-        ts = seed["last_action_at"]
-        if ts is not None and not isinstance(ts, (int, float)):
-            raise RuntimeError("guidance seed last_action_at must be number or null")
-        patch["last_action_at"] = ts
-    if "action_frame" in seed:
-        frame = seed["action_frame"]
-        if frame is not None and not isinstance(frame, dict):
-            raise RuntimeError("guidance seed action_frame must be object or null")
-        patch["action_frame"] = frame
-    if "goal_interpretations" in seed:
-        interps = seed["goal_interpretations"]
-        if not isinstance(interps, dict):
-            raise RuntimeError("guidance seed goal_interpretations must be object")
-        patch["goal_interpretations"] = {str(k): str(v or "").strip() for k, v in interps.items()}
-    if "proven_ledger" in seed:
-        ledger = seed["proven_ledger"]
-        if not isinstance(ledger, list) or not all(isinstance(x, str) for x in ledger):
-            raise RuntimeError("guidance seed proven_ledger must be list[str]")
-        patch["proven_ledger"] = [str(x).strip() for x in ledger if str(x).strip()]
-    if "failure_streak" in seed:
-        streak = seed["failure_streak"]
-        if not isinstance(streak, dict):
-            raise RuntimeError("guidance seed failure_streak must be object")
-        patch["failure_streak"] = streak
-    if "last_verification" in seed:
-        last_v = seed["last_verification"]
-        if not isinstance(last_v, dict):
-            raise RuntimeError("guidance seed last_verification must be object")
-        patch["last_verification"] = last_v
-    if "turn_executions" in seed:
-        turns = seed["turn_executions"]
-        if not isinstance(turns, dict):
-            raise RuntimeError("guidance seed turn_executions must be object")
-        patch["turn_executions"] = turns
-    if "evidence" in seed:
-        evidence = seed["evidence"]
-        if not isinstance(evidence, dict):
-            raise RuntimeError("guidance seed evidence must be object")
-        # Unpack into the real state fields recover already reads.
-        if "last_verification" in evidence:
-            if "last_verification" in patch:
-                raise RuntimeError("guidance seed evidence.last_verification conflicts with top-level last_verification")
-            if not isinstance(evidence["last_verification"], dict):
-                raise RuntimeError("guidance seed evidence.last_verification must be object")
-            patch["last_verification"] = evidence["last_verification"]
-        if "executions" in evidence:
-            if "turn_executions" in patch:
-                raise RuntimeError("guidance seed evidence.executions conflicts with top-level turn_executions")
-            if not isinstance(evidence["executions"], dict):
-                raise RuntimeError("guidance seed evidence.executions must be object")
-            patch["turn_executions"] = evidence["executions"]
-        if "failure_streak" in evidence:
-            if "failure_streak" in patch:
-                raise RuntimeError("guidance seed evidence.failure_streak conflicts with top-level failure_streak")
-            if not isinstance(evidence["failure_streak"], dict):
-                raise RuntimeError("guidance seed evidence.failure_streak must be object")
-            patch["failure_streak"] = evidence["failure_streak"]
-    return patch
-
-
 class GuidanceNode:
     contract = "[node_guidance] — Thou receivest the [guidance] file."
 
     def run(self, ctx: JsonDict) -> tuple[str, JsonDict]:
         path = wiring.root_path(ctx["wiring"]["paths"]["guidance"])
-        raw = path.read_text(encoding="utf-8") if path.exists() else ""
-        text = raw.strip()
-        if not text:
-            return bus.emit("attend", {"latest_counsel": ""})
-
-        # Prefer JSON object seed when the whole file is a JSON object.
-        seed_obj: Any = None
-        try:
-            parsed = json.loads(text)
-        except json.JSONDecodeError:
-            parsed = None
-        if isinstance(parsed, dict):
-            seed_obj = parsed
-        elif parsed is not None:
-            raise RuntimeError(
-                "guidance file JSON must be an object (process-memory seed); arrays/scalars are not seeds"
-            )
-        elif text[:1] in "{[":
-            raise RuntimeError("guidance file looks like JSON but is not valid JSON object")
-
-        if seed_obj is not None:
-            signal = _guidance_route_signal(seed_obj)
-            patch = _guidance_seed_patch(seed_obj)
-            if "latest_counsel" not in patch:
-                patch["latest_counsel"] = ""
+        counsel = path.read_text(encoding="utf-8").strip() if path.exists() else ""
+        if counsel:
             path.write_text("", encoding="utf-8")
-            return bus.emit(signal, patch)
-
-        path.write_text("", encoding="utf-8")
-        return bus.emit("attend", {"latest_counsel": text})
+        return bus.emit("attend", {"latest_counsel": counsel})
 
 
 class ExecuteNode(BaseNode):

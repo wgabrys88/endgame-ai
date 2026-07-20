@@ -81,9 +81,7 @@
     ],
     "edges": {
       "node_guidance": {
-        "attend": "node_execute",
-        "verify": "node_verify",
-        "recover": "node_recover"
+        "attend": "node_execute"
       },
       "node_execute": {
         "done": "node_verify",
