@@ -102,7 +102,7 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
     _require(cfg, "topology.edges", dict)
     _require(cfg, "paths.guidance", str)
     _require(cfg, "topology.cycle_start", str)
-    for path in ("exploration.step_px", "exploration.max_subtree_nodes_per_point", "exploration.max_environment_chars"):
+    for path in ("exploration.step_px", "exploration.max_subtree_nodes_per_point", "exploration.max_environment_chars", "exploration.max_action_output_chars"):
         value = _require(cfg, path, int)
         if isinstance(value, bool) or value <= 0:
             raise RuntimeError(f"wiring.{path} must be a positive count")

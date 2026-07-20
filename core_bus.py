@@ -89,6 +89,22 @@ def with_interpretation(interps: JsonDict | None, faculty: str, sentence: str) -
     return merged
 
 
+def clip_head_tail(text: str, max_chars: int) -> str:
+    s = str(text or "")
+    budget = int(max_chars)
+    if budget <= 0:
+        raise ValueError("max_action_output_chars must be positive")
+    if len(s) <= budget:
+        return s
+    marker = f"\n[...{len(s) - budget} chars elided...]\n"
+    if budget <= len(marker):
+        return s[:budget]
+    room = budget - len(marker)
+    head = room - room // 2
+    tail = room // 2
+    return s[:head] + marker + (s[-tail:] if tail else "")
+
+
 def _host_line(key: str, value: Any) -> str:
     if isinstance(value, list):
         value = ", ".join(str(v) for v in value)
