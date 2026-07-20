@@ -104,7 +104,6 @@ def enum_windows(min_area: int = 2500) -> list[dict[str, Any]]:
             "hwnd": h,
             "title": buf.value or "",
             "rect": {"left": int(rect.left), "top": int(rect.top), "right": int(rect.right), "bottom": int(rect.bottom)},
-            "z_order": len(out),
         })
         return True
 
@@ -335,7 +334,8 @@ def _probe_points(rect: dict[str, int], step_px: int) -> list[tuple[int, int]]:
 
 
 def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any]:
-    cfg = dict(config or {})
+    # Mid-script callers sometimes pass a number meaning "wait"; config is mapping-only.
+    cfg = dict(config) if isinstance(config, dict) else {}
     step_px = int(cfg.get("step_px", 64))
     max_subtree = int(cfg.get("max_subtree_nodes_per_point", 2000))
     sw, sh = int(user32.GetSystemMetrics(0)), int(user32.GetSystemMetrics(1))
@@ -344,42 +344,52 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
     windows = enum_windows()
 
     scanner = UiaScanner(cfg, desktop)
+    saved = wintypes.POINT()
+    had_cursor = bool(user32.GetCursorPos(ctypes.byref(saved)))
     windows_out: list[dict[str, Any]] = []
-    for win in windows:
-        hwnd, rect = win["hwnd"], win["rect"]
-        kept: dict[str, dict[str, Any]] = {}
-        for x, y in _probe_points(rect, step_px):
-            pt = wintypes.POINT(int(x), int(y))
-            try:
-                owner = int(user32.GetAncestor(user32.WindowFromPoint(pt), 2) or 0)
-            except Exception:
-                owner = 0
-            if owner != hwnd:
-                continue
-            try:
-                root = scanner.automation.ElementFromPointBuildCache(pt, scanner._cache(TreeScope_Element))
-            except Exception:
-                continue
-            if root is None:
-                continue
-            for i, node in enumerate(scanner.harvest_subtree(root, max_subtree)):
-                if is_desktop_leakage(node):
+    try:
+        for win in windows:
+            hwnd, rect = win["hwnd"], win["rect"]
+            kept: dict[str, dict[str, Any]] = {}
+            for x, y in _probe_points(rect, step_px):
+                user32.SetCursorPos(int(x), int(y))
+                pt = wintypes.POINT(int(x), int(y))
+                try:
+                    owner = int(user32.GetAncestor(user32.WindowFromPoint(pt), 2) or 0)
+                except Exception:
+                    owner = 0
+                if owner != hwnd:
                     continue
-                node["owner_hwnd"] = hwnd
-                if i == 0:
-                    node.setdefault("hit_point", (int(x), int(y)))
-                nid = node["id"]
-                prev = kept.get(nid)
-                if prev is None:
-                    kept[nid] = node
-                else:
-                    if not prev.get("hit_point") and node.get("hit_point"):
-                        prev["hit_point"] = node["hit_point"]
-                    for key in ("text_full", "value"):
-                        if node[key] and (not prev[key] or len(node[key]) > len(prev[key])):
-                            prev[key] = node[key]
-        win["elements"] = list(kept.values())
-        windows_out.append(win)
+                try:
+                    root = scanner.automation.ElementFromPointBuildCache(pt, scanner._cache(TreeScope_Element))
+                except Exception:
+                    continue
+                if root is None:
+                    continue
+                for i, node in enumerate(scanner.harvest_subtree(root, max_subtree)):
+                    if is_desktop_leakage(node):
+                        continue
+                    node["owner_hwnd"] = hwnd
+                    if i == 0:
+                        node.setdefault("hit_point", (int(x), int(y)))
+                    nid = node["id"]
+                    prev = kept.get(nid)
+                    if prev is None:
+                        kept[nid] = node
+                    else:
+                        if not prev.get("hit_point") and node.get("hit_point"):
+                            prev["hit_point"] = node["hit_point"]
+                        for key in ("text_full", "value"):
+                            if node[key] and (not prev[key] or len(node[key]) > len(prev[key])):
+                                prev[key] = node[key]
+            win["elements"] = list(kept.values())
+            windows_out.append(win)
+    finally:
+        if had_cursor:
+            try:
+                user32.SetCursorPos(saved.x, saved.y)
+            except Exception:
+                pass
 
     result = _render(windows_out, screen)
     observed_at = time.time()
@@ -435,9 +445,7 @@ def _render(windows: list[dict[str, Any]], screen: dict[str, int]) -> dict[str, 
                 "enabled": e.get("enabled"),
             })
 
-        active = " [active]" if wi == 1 else ""
-        lines.append(f"{wid} Window {clean(title)}{active}")
-
+        lines.append(f"{wid} Window {clean(title)}")
         def emit(e: dict[str, Any], indent: int) -> None:
             counter["n"] += 1
             sid = f"e{counter['n']}"

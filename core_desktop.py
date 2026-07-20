@@ -73,7 +73,13 @@ class Desktop:
 
     def observe(self, config: dict[str, Any] | None = None) -> dict[str, Any]:
         from core_observation import observe as observe_desktop
-        return observe_desktop(self, config or self.config)
+        if config is None:
+            cfg = self.config
+        elif isinstance(config, dict):
+            cfg = config
+        else:
+            cfg = self.config
+        return observe_desktop(self, cfg)
 
     def click(self, x: int, y: int, hwnd: int = 0) -> dict[str, Any]:
         width, height = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)

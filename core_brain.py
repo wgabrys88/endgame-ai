@@ -1,8 +1,27 @@
 import json
+import os
+import pathlib
+import sys
+import time
+import urllib.error
+import urllib.request
+import uuid
 from typing import Any
 
 import core_bus as bus
 import core_wiring as wiring
+
+_SESSION_CACHE_KEY = f"endgame-{uuid.uuid4()}"
+_ROOT = pathlib.Path(__file__).resolve().parent
+_DUMP_DIR = _ROOT / "_transmissions"
+# Full raw req/resp dumps always. Break after first dump only when CLI --breakpoint is set.
+_BREAK_AFTER_RESPONSE = False
+
+
+def set_break_after_response(enabled: bool) -> None:
+    """Primary tune interjection: dump then sys.exit(42) before faculty uses content."""
+    global _BREAK_AFTER_RESPONSE
+    _BREAK_AFTER_RESPONSE = bool(enabled)
 
 
 def _messages(system_prompt: str, user_text: str, stable_context: str = "") -> list[dict[str, str]]:
@@ -35,7 +54,10 @@ def _validate_record_contract(w: dict[str, Any], record: bus.Record, expected_re
             raise RuntimeError(f"{record.record_type} record has unexpected data keys: {unexpected}")
     json_types = {"string": str, "boolean": bool, "array": list, "object": dict, "number": (int, float), "integer": int}
     for key, type_name in types.items():
-        if key in record.data and (not isinstance(record.data[key], json_types[type_name]) or type_name in {"number", "integer"} and isinstance(record.data[key], bool)):
+        if key in record.data and (
+            not isinstance(record.data[key], json_types[type_name])
+            or type_name in {"number", "integer"} and isinstance(record.data[key], bool)
+        ):
             raise RuntimeError(f"{record.record_type}.data.{key} must be {type_name}")
     for key in non_empty:
         if key in record.data and not record.data[key]:
@@ -45,6 +67,16 @@ def _validate_record_contract(w: dict[str, Any], record: bus.Record, expected_re
     for key, values in enums.items():
         if key in record.data and record.data[key] not in set(values):
             raise RuntimeError(f"{record.record_type}.data.{key}={record.data[key]!r} outside {values!r}")
+
+
+def extract_json_object(text: str) -> dict[str, Any] | None:
+    if not text:
+        return None
+    try:
+        obj = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    return obj if isinstance(obj, dict) else None
 
 
 def _commit_record(content: str, w: dict[str, Any], expected_record_type: str | None = None) -> bus.Record:
@@ -58,46 +90,26 @@ def _commit_record(content: str, w: dict[str, Any], expected_record_type: str | 
     return committed
 
 
-
-def _node_docstring(w: dict[str, Any], node: str) -> str:
-    import ast
-    base = node.split(":", 1)[0]
-    node_dir = wiring.root_path(w["paths"]["nodes"])
-    path = node_dir / f"{base}.py"
-    if not path.is_file():
-        raise RuntimeError(f"node '{node}' declareth no input contract")
-    doc = ast.get_docstring(ast.parse(path.read_text(encoding="utf-8")))
-    if not doc:
-        raise RuntimeError(f"node '{base}' declareth no input contract")
-    return doc.strip()
-
-
 def downstream_contract(w: dict[str, Any], emitting_node: str | None) -> str:
     if not emitting_node:
         return ""
+    import core_nodes as nodes
+
     edges = w.get("topology", {}).get("edges", {}).get(emitting_node, {})
-    seen: list[tuple[str, str]] = []
-    for signal, target in edges.items():
-        if signal == "error":
-            continue
-        if isinstance(target, str) and target != "halt":
-            seen.append((signal, target))
+    seen = [
+        (signal, target)
+        for signal, target in edges.items()
+        if signal != "error" and isinstance(target, str) and target != "halt"
+    ]
     if not seen:
         return ""
-    lines = ["DOWNSTREAM CONTRACT — thine output is wired (through the [topology]) unto these consumers; bring forth that which they await:"]
+    lines = [
+        "DOWNSTREAM CONTRACT — thine output is wired (through the [topology]) unto these consumers; "
+        "bring forth that which they await:"
+    ]
     for signal, succ in seen:
-        lines.append(f"\n[on signal '{signal}' -> {succ}]\n{_node_docstring(w, succ)}")
+        lines.append(f"\n[on signal '{signal}' -> {succ}]\n{nodes.node_contract(succ)}")
     return "\n".join(lines)
-
-
-def _organ_tuning(w: dict[str, Any], record_type: str | None) -> dict[str, Any]:
-    organ = w["model"]["organs"].get(record_type) if record_type else None
-    return dict(organ) if isinstance(organ, dict) else {}
-
-
-def _structured_outputs_enabled(cfg: dict[str, Any]) -> bool:
-    structured = cfg.get("structured_outputs")
-    return bool(structured.get("enabled", False)) if isinstance(structured, dict) else bool(structured)
 
 
 def resolve_profile(w: dict[str, Any], profile: str | None) -> dict[str, Any]:
@@ -120,8 +132,7 @@ def _record_response_format(w: dict[str, Any], record_type: str) -> dict[str, An
         limit_name = {"string": "minLength", "array": "minItems", "object": "minProperties"}.get(type_name)
         if limit_name:
             data_properties.setdefault(key, {})[limit_name] = 1
-    enums = dict(contract["enums"])
-    for key, values in enums.items():
+    for key, values in dict(contract["enums"]).items():
         data_properties.setdefault(key, {})["enum"] = list(values)
     return {
         "type": "json_schema",
@@ -144,52 +155,281 @@ def _record_response_format(w: dict[str, Any], record_type: str) -> dict[str, An
     }
 
 
-def call(messages: list[dict[str, str]], w: dict[str, Any], *, response_format: dict[str, Any] | None = None, body_override: dict[str, Any] | None = None, profile: str | None = None) -> dict[str, str]:
+def _transport_body(cfg: dict[str, Any], messages: list[dict[str, str]], body_override: dict | None, response_format: dict | None) -> dict[str, Any]:
+    body = bus.deep_merge(cfg["request"], body_override or {})
+    body.setdefault("prompt_cache_key", _SESSION_CACHE_KEY)
+    body["input"] = [
+        {"role": m.get("role", "user"), "content": m.get("content", "")}
+        for m in messages
+        if m.get("role", "user") in {"system", "user", "assistant"}
+    ]
+    if isinstance(response_format, dict):
+        if str(response_format.get("type", "json_schema")) == "json_object":
+            body["text"] = {"format": {"type": "json_object"}}
+        else:
+            body["text"] = {"format": {
+                "type": response_format.get("type", "json_schema"),
+                "name": response_format.get("name", "record"),
+                "schema": response_format.get("schema", {}),
+                "strict": bool(response_format.get("strict", True)),
+            }}
+    return bus.drop_nulls(body)
+
+
+def _write_full(path: pathlib.Path, text: str) -> None:
+    path.write_text(text, encoding="utf-8", newline="\n")
+
+
+def _dump_transmission(
+    *,
+    url: str,
+    payload: dict[str, Any],
+    messages: list[dict[str, str]],
+    raw_response_text: str,
+    response_obj: Any,
+    content: str,
+    reasoning: str,
+    http_status: int | None,
+    error: str | None,
+) -> pathlib.Path:
+    """Write untruncated request/response artifacts for offline analysis."""
+    _DUMP_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    uid = uuid.uuid4().hex[:8]
+    run_dir = _DUMP_DIR / f"{stamp}_{uid}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    request_json = json.dumps(payload, ensure_ascii=False, indent=2, default=str)
+    response_json = (
+        json.dumps(response_obj, ensure_ascii=False, indent=2, default=str)
+        if response_obj is not None
+        else raw_response_text
+    )
+    meta = {
+        "dumped_at": time.time(),
+        "url": url,
+        "http_status": http_status,
+        "error": error,
+        "request_chars": len(request_json),
+        "raw_response_chars": len(raw_response_text or ""),
+        "content_chars": len(content or ""),
+        "reasoning_chars": len(reasoning or ""),
+        "message_roles": [m.get("role") for m in messages],
+        "message_char_counts": {m.get("role", "?"): len(m.get("content") or "") for m in messages},
+        "break_after_response": _BREAK_AFTER_RESPONSE,
+    }
+    bundle = {
+        "meta": meta,
+        "request_body": payload,
+        "messages": messages,
+        "raw_response_text": raw_response_text,
+        "response_object": response_obj,
+        "extracted_content": content,
+        "extracted_reasoning": reasoning,
+    }
+    # Full bundle + side files (no truncation).
+    _write_full(run_dir / "transmission.json", json.dumps(bundle, ensure_ascii=False, indent=2, default=str))
+    _write_full(run_dir / "request_body.json", request_json)
+    _write_full(run_dir / "response_raw.json", response_json if response_obj is not None else (raw_response_text or ""))
+    _write_full(run_dir / "response_raw.txt", raw_response_text or "")
+    _write_full(run_dir / "content.txt", content or "")
+    _write_full(run_dir / "reasoning.txt", reasoning or "")
+    for m in messages:
+        role = str(m.get("role") or "unknown")
+        _write_full(run_dir / f"message_{role}.txt", str(m.get("content") or ""))
+    _write_full(run_dir / "meta.json", json.dumps(meta, ensure_ascii=False, indent=2))
+
+    latest = _ROOT / "_transmission_latest.json"
+    _write_full(latest, json.dumps(bundle, ensure_ascii=False, indent=2, default=str))
+    # Pointer for quick open
+    _write_full(_ROOT / "_transmission_latest_dir.txt", str(run_dir))
+    return run_dir
+
+
+def _texts_from_parts(parts: Any) -> list[str]:
+    out: list[str] = []
+    if isinstance(parts, str) and parts.strip():
+        return [parts]
+    if not isinstance(parts, list):
+        return out
+    for part in parts:
+        if isinstance(part, str) and part.strip():
+            out.append(part)
+        elif isinstance(part, dict) and part.get("text"):
+            out.append(str(part["text"]))
+    return out
+
+
+def _extract_content_reasoning(obj: dict[str, Any]) -> tuple[str, str]:
+    content = str(obj.get("output_text") or "")
+    reasoning_parts: list[str] = []
+    message_parts: list[str] = []
+    if isinstance(obj.get("output"), list):
+        for item in obj["output"]:
+            if not isinstance(item, dict):
+                continue
+            kind = item.get("type")
+            if kind == "reasoning":
+                # xAI may put reasoning in summary and/or content.
+                reasoning_parts.extend(_texts_from_parts(item.get("summary")))
+                reasoning_parts.extend(_texts_from_parts(item.get("content")))
+            else:
+                message_parts.extend(_texts_from_parts(item.get("content")))
+    if not content.strip():
+        content = "\n".join(message_parts)
+    return content, "\n".join(reasoning_parts).strip()
+
+
+def _transport_call(messages: list[dict[str, str]], cfg: dict[str, Any], *, body_override=None, response_format=None) -> dict[str, str]:
+    api_key = os.environ.get("XAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("xai transport: XAI_API_KEY missing; no fallback was attempted")
+    payload = _transport_body(cfg, messages, body_override, response_format)
+    url = str(cfg["url"])
+    raw_bytes = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=raw_bytes,
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
+        method="POST",
+    )
+    raw_response_text = ""
+    response_obj: Any = None
+    content = ""
+    reasoning = ""
+    http_status: int | None = None
+    error: str | None = None
+    try:
+        with urllib.request.urlopen(req, timeout=float(cfg["timeout"])) as resp:
+            http_status = int(getattr(resp, "status", 200) or 200)
+            raw_response_text = resp.read().decode("utf-8")
+        response_obj = json.loads(raw_response_text) if raw_response_text else {}
+        if not isinstance(response_obj, dict):
+            raise RuntimeError(f"xai transport expected JSON object, got {type(response_obj).__name__}")
+        content, reasoning = _extract_content_reasoning(response_obj)
+        dump_dir = _dump_transmission(
+            url=url,
+            payload=payload,
+            messages=messages,
+            raw_response_text=raw_response_text,
+            response_obj=response_obj,
+            content=content,
+            reasoning=reasoning,
+            http_status=http_status,
+            error=None,
+        )
+        sys.stderr.write(
+            f"TRANSMISSION DUMP (full, no truncation): {dump_dir}\n"
+            f"  also: {_ROOT / '_transmission_latest.json'}\n"
+            f"  request_chars={len(raw_bytes)} response_chars={len(raw_response_text)} "
+            f"content_chars={len(content)} reasoning_chars={len(reasoning)}\n"
+        )
+        if _BREAK_AFTER_RESPONSE:
+            sys.stderr.write("BREAKPOINT after response (omit --breakpoint to continue the life)\n")
+            sys.exit(42)
+        return {"content": content, "reasoning": reasoning}
+    except SystemExit:
+        raise
+    except urllib.error.HTTPError as exc:
+        http_status = int(exc.code)
+        raw_response_text = exc.read().decode("utf-8")
+        error = f"HTTP {exc.code}"
+        try:
+            response_obj = json.loads(raw_response_text) if raw_response_text else None
+        except json.JSONDecodeError:
+            response_obj = None
+        dump_dir = _dump_transmission(
+            url=url,
+            payload=payload,
+            messages=messages,
+            raw_response_text=raw_response_text,
+            response_obj=response_obj,
+            content="",
+            reasoning="",
+            http_status=http_status,
+            error=error,
+        )
+        sys.stderr.write(f"TRANSMISSION DUMP (HTTP error): {dump_dir}\n")
+        if _BREAK_AFTER_RESPONSE:
+            sys.stderr.write("BREAKPOINT after failed response (omit --breakpoint to continue)\n")
+            sys.exit(42)
+        raise RuntimeError(f"xai transport HTTP {exc.code}: {raw_response_text}") from exc
+    except urllib.error.URLError as exc:
+        error = f"URL error: {getattr(exc, 'reason', exc)}"
+        dump_dir = _dump_transmission(
+            url=url,
+            payload=payload,
+            messages=messages,
+            raw_response_text="",
+            response_obj=None,
+            content="",
+            reasoning="",
+            http_status=None,
+            error=error,
+        )
+        sys.stderr.write(f"TRANSMISSION DUMP (URL error): {dump_dir}\n")
+        if _BREAK_AFTER_RESPONSE:
+            sys.stderr.write("BREAKPOINT after failed response (omit --breakpoint to continue)\n")
+            sys.exit(42)
+        raise RuntimeError(f"xai transport URL error: {getattr(exc, 'reason', exc)}; no fallback was attempted") from exc
+
+
+def call(
+    messages: list[dict[str, str]],
+    w: dict[str, Any],
+    *,
+    response_format: dict[str, Any] | None = None,
+    body_override: dict[str, Any] | None = None,
+    profile: str | None = None,
+) -> dict[str, str]:
     transport, cfg = wiring.get_transport_config(w)
     override = bus.deep_merge(resolve_profile(w, profile), body_override or {})
     try:
-        result = wiring.load("transport", transport, w).call(messages, cfg, body_override=override, response_format=response_format)
+        result = _transport_call(messages, cfg, body_override=override, response_format=response_format)
     except Exception as exc:
         raise RuntimeError(f"{transport} brain failed hard: {exc}") from exc
-    if not isinstance(result, dict):
-        raise RuntimeError(f"{transport} brain contract violation: expected dict, got {type(result).__name__}")
     content, reasoning = result.get("content"), result.get("reasoning", "")
     if not isinstance(content, str) or not content.strip():
         raise RuntimeError(f"{transport} brain contract violation: missing non-empty content")
     if reasoning is not None and not isinstance(reasoning, str):
         raise RuntimeError(f"{transport} brain contract violation: reasoning must be string when present")
-    out = {"content": content, "reasoning": reasoning or ""}
-    return out
+    return {"content": content, "reasoning": reasoning or ""}
 
 
-def extract_json_object(text: str) -> dict[str, Any] | None:
-    if not text:
-        return None
-    try:
-        obj = json.loads(text)
-    except json.JSONDecodeError:
-        return None
-    return obj if isinstance(obj, dict) else None
-
-
-def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, expected_record_type: str | None = None, emitting_node: str | None = None, body_override: dict[str, Any] | None = None) -> dict[str, Any]:
+def think(
+    system_prompt: str,
+    payload: dict[str, Any],
+    w: dict[str, Any],
+    *,
+    expected_record_type: str | None = None,
+    emitting_node: str | None = None,
+    body_override: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     _, cfg = wiring.get_transport_config(w)
-    organ_tuning = _organ_tuning(w, expected_record_type)
+    organ = w["model"]["organs"].get(expected_record_type) if expected_record_type else None
+    organ_tuning = dict(organ) if isinstance(organ, dict) else {}
     goal = str(payload.pop("goal") or "") if "goal" in payload else ""
     environment = payload.pop("environment", None)
     brief = payload.get("state")
     interps = brief.pop("goal_interpretations", None) if isinstance(brief, dict) else None
     ledger = brief.pop("proven_ledger", None) if isinstance(brief, dict) else None
     templates = w["prompt_templates"]
-    memory_text = json.dumps(payload, ensure_ascii=False, default=str)
-    memory_text = f"{memory_text}\n\n{bus.render_proven_ledger(ledger, templates)}\n\n{bus.render_interpretation_table(goal, interps, templates)}"
-    environment_text = bus.render_environment(environment, templates)
+    memory_text = (
+        f"{json.dumps(payload, ensure_ascii=False, default=str)}\n\n"
+        f"{bus.render_proven_ledger(ledger, templates)}\n\n"
+        f"{bus.render_interpretation_table(goal, interps, templates)}"
+    )
     max_chars = int(w["exploration"]["max_environment_chars"])
-    user_text = f"{memory_text}\n\n{environment_text[:max_chars]}"
-    response_format = _record_response_format(w, expected_record_type) if expected_record_type and _structured_outputs_enabled(cfg) else None
-    override = bus.deep_merge(organ_tuning, body_override or {})
-    stable_context = downstream_contract(w, emitting_node)
-    result = call(_messages(system_prompt, user_text, stable_context), w, response_format=response_format, body_override=override)
+    user_text = f"{memory_text}\n\n{bus.render_environment(environment, templates, max_chars=max_chars)}"
+    structured = cfg.get("structured_outputs")
+    structured_on = bool(structured.get("enabled", False)) if isinstance(structured, dict) else bool(structured)
+    response_format = _record_response_format(w, expected_record_type) if expected_record_type and structured_on else None
+    result = call(
+        _messages(system_prompt, user_text, downstream_contract(w, emitting_node)),
+        w,
+        response_format=response_format,
+        body_override=bus.deep_merge(organ_tuning, body_override or {}),
+    )
     record = _commit_record(result["content"], w, expected_record_type)
     transport_reasoning = str(result.get("reasoning") or "").strip()
     return bus.Record(record.record_type, record.data, transport_reasoning or record.reasoning).to_json()

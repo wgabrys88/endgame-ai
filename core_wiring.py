@@ -1,44 +1,28 @@
-import importlib.util
+import json
 import pathlib
 import re
-from typing import Any, NamedTuple
+from typing import Any
 
 ROOT = pathlib.Path(__file__).parent.resolve()
-
 SENTINELS = {"halt"}
+_TEMPLATE_KEYS = (
+    "living_word_header", "living_word_goal_row", "living_word_empty_row",
+    "proven_ledger_empty", "proven_ledger_header", "standing_host_header",
+    "environment_screen_header",
+)
 
 
 def root_path(value: str | None, default: str = "") -> pathlib.Path:
-    raw = str(value or default)
-    raw = raw.replace("${ROOT}", str(ROOT)).replace("${HOME}", str(pathlib.Path.home()))
+    raw = str(value or default).replace("${ROOT}", str(ROOT)).replace("${HOME}", str(pathlib.Path.home()))
     p = pathlib.Path(raw)
     return p if p.is_absolute() else ROOT / p
 
 
-def load_wiring(path: str | None = None) -> dict[str, Any]:
-    source_path = root_path(path, "wiring.json").resolve()
-    cfg = load_json(source_path)
-    validate_wiring(cfg)
-    problems = coherence_problems(cfg)
-    if problems:
-        raise RuntimeError(f"wiring topology is incoherent: {problems}")
-    cfg["_source_path"] = str(source_path)
-    return cfg
-
-
 def load_json(path: pathlib.Path) -> dict[str, Any]:
-    import json
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise RuntimeError(f"malformed JSON in {path}: {exc}") from exc
-
-
-def _obj(obj: dict[str, Any], key: str) -> dict[str, Any]:
-    value = obj[key]
-    if not isinstance(value, dict):
-        raise RuntimeError(f"wiring.{key} must be object")
-    return value
 
 
 def _require(obj: dict[str, Any], path: str, typ: type | tuple[type, ...]) -> Any:
@@ -52,69 +36,11 @@ def _require(obj: dict[str, Any], path: str, typ: type | tuple[type, ...]) -> An
     return cur
 
 
-
 def _require_list_str(obj: dict[str, Any], path: str) -> list[str]:
     value = _require(obj, path, list)
     if not all(isinstance(item, str) and item for item in value):
         raise RuntimeError(f"wiring.{path} must be list[str]")
     return value
-
-
-def validate_wiring(cfg: dict[str, Any]) -> None:
-    for key in ("schema", "model", "paths", "exploration", "topology", "prompts", "shared_prompt_prefix", "record_contracts"):
-        if key not in cfg:
-            raise RuntimeError(f"wiring missing required key: {key}")
-    _obj(cfg, "model")
-    transport = _require(cfg, "model.transport", str)
-    transport_cfg = _require(cfg, "model.transport_config", dict)
-    if transport not in transport_cfg:
-        raise RuntimeError(f"wiring.model.transport_config missing selected transport {transport!r}")
-    selected_transport = _require(cfg, f"model.transport_config.{transport}", dict)
-    _require(cfg, f"model.transport_config.{transport}.request", dict)
-    _require(cfg, f"model.transport_config.{transport}.url", str)
-    request_profiles = selected_transport.get("request_profiles", {})
-    if not isinstance(request_profiles, dict) or not all(isinstance(name, str) and name and isinstance(body, dict) for name, body in request_profiles.items()):
-        raise RuntimeError(f"wiring.model.transport_config.{transport}.request_profiles must map names to request objects")
-    for path in (
-        "model.global", "model.organs",
-        "exploration",
-        "topology.edges",
-    ):
-        _require(cfg, path, dict)
-    for path in (
-        "paths.nodes",
-        "paths.brains",
-        "paths.guidance",
-        "topology.cycle_start",
-    ):
-        _require(cfg, path, str)
-    numeric_paths = (
-        "exploration.step_px",
-        "exploration.max_subtree_nodes_per_point",
-        "exploration.max_environment_chars",
-    )
-    for path in numeric_paths:
-        value = _require(cfg, path, int)
-        if isinstance(value, bool) or value <= 0:
-            raise RuntimeError(f"wiring.{path} must be a positive count")
-    nodes = _require_list_str(cfg, "topology.nodes")
-    edges = _require(cfg, "topology.edges", dict)
-    _require(cfg, "prompts", dict)
-    _require(cfg, "shared_prompt_prefix", str)
-    templates = _require(cfg, "prompt_templates", dict)
-    for key in ("living_word_header", "living_word_goal_row", "living_word_empty_row",
-                "proven_ledger_empty", "proven_ledger_header", "standing_host_header",
-                "environment_screen_header"):
-        if not isinstance(templates.get(key), str) or not templates[key].strip():
-            raise RuntimeError(f"wiring.prompt_templates.{key} must be a non-empty string")
-    validate_record_contracts(cfg)
-    if len(nodes) != len(set(nodes)):
-        raise RuntimeError("wiring.topology.nodes contains duplicates")
-    if cfg["topology"]["cycle_start"] not in nodes:
-        raise RuntimeError("wiring.topology.cycle_start must name a topology node")
-    missing = [node for node in nodes if node not in edges]
-    if missing:
-        raise RuntimeError(f"wiring missing edges for nodes: {missing}")
 
 
 def validate_record_contracts(cfg: dict[str, Any]) -> None:
@@ -133,7 +59,10 @@ def validate_record_contracts(cfg: dict[str, Any]) -> None:
             raise RuntimeError(f"wiring.record_contracts.{record_type}.required must be list[str]")
         if not isinstance(enums, dict):
             raise RuntimeError(f"wiring.record_contracts.{record_type}.enums must be object")
-        if not isinstance(types, dict) or not all(isinstance(key, str) and value in {"string", "boolean", "array", "object", "number", "integer"} for key, value in types.items()):
+        if not isinstance(types, dict) or not all(
+            isinstance(key, str) and value in {"string", "boolean", "array", "object", "number", "integer"}
+            for key, value in types.items()
+        ):
             raise RuntimeError(f"wiring.record_contracts.{record_type}.types must map keys to supported JSON types")
         if not isinstance(non_empty, list) or not all(isinstance(key, str) and key for key in non_empty):
             raise RuntimeError(f"wiring.record_contracts.{record_type}.non_empty must be list[str]")
@@ -152,7 +81,55 @@ def validate_record_contracts(cfg: dict[str, Any]) -> None:
             raise RuntimeError(f"wiring.model.organs.{record_type} has no matching wiring.record_contracts entry")
 
 
-def _contract_coherence(w: dict[str, Any]) -> list[str]:
+def validate_wiring(cfg: dict[str, Any]) -> None:
+    for key in ("schema", "model", "paths", "exploration", "topology", "prompts", "shared_prompt_prefix", "record_contracts"):
+        if key not in cfg:
+            raise RuntimeError(f"wiring missing required key: {key}")
+    if not isinstance(cfg["model"], dict):
+        raise RuntimeError("wiring.model must be object")
+    transport = _require(cfg, "model.transport", str)
+    transport_cfg = _require(cfg, "model.transport_config", dict)
+    if transport not in transport_cfg:
+        raise RuntimeError(f"wiring.model.transport_config missing selected transport {transport!r}")
+    selected = _require(cfg, f"model.transport_config.{transport}", dict)
+    _require(cfg, f"model.transport_config.{transport}.request", dict)
+    _require(cfg, f"model.transport_config.{transport}.url", str)
+    profiles = selected.get("request_profiles", {})
+    if not isinstance(profiles, dict) or not all(isinstance(n, str) and n and isinstance(b, dict) for n, b in profiles.items()):
+        raise RuntimeError(f"wiring.model.transport_config.{transport}.request_profiles must map names to request objects")
+    _require(cfg, "model.global", dict)
+    _require(cfg, "model.organs", dict)
+    _require(cfg, "exploration", dict)
+    _require(cfg, "topology.edges", dict)
+    _require(cfg, "paths.guidance", str)
+    _require(cfg, "topology.cycle_start", str)
+    for path in ("exploration.step_px", "exploration.max_subtree_nodes_per_point", "exploration.max_environment_chars"):
+        value = _require(cfg, path, int)
+        if isinstance(value, bool) or value <= 0:
+            raise RuntimeError(f"wiring.{path} must be a positive count")
+    nodes = _require_list_str(cfg, "topology.nodes")
+    _require(cfg, "prompts", dict)
+    _require(cfg, "shared_prompt_prefix", str)
+    templates = _require(cfg, "prompt_templates", dict)
+    for key in _TEMPLATE_KEYS:
+        if not isinstance(templates.get(key), str) or not templates[key].strip():
+            raise RuntimeError(f"wiring.prompt_templates.{key} must be a non-empty string")
+    validate_record_contracts(cfg)
+    if len(nodes) != len(set(nodes)):
+        raise RuntimeError("wiring.topology.nodes contains duplicates")
+    if cfg["topology"]["cycle_start"] not in nodes:
+        raise RuntimeError("wiring.topology.cycle_start must name a topology node")
+    missing = [node for node in nodes if node not in cfg["topology"]["edges"]]
+    if missing:
+        raise RuntimeError(f"wiring missing edges for nodes: {missing}")
+
+
+def coherence_problems(w: dict[str, Any]) -> list[str]:
+    import core_nodes as nodes
+
+    topo = w["topology"]
+    edges = topo["edges"]
+    node_set = set(topo["nodes"])
     problems: list[str] = []
     try:
         validate_record_contracts(w)
@@ -167,38 +144,25 @@ def _contract_coherence(w: dict[str, Any]) -> list[str]:
     for record_type in w.get("model", {}).get("organs", {}):
         if record_type not in contracts:
             problems.append(f"model.organs.{record_type} has no record_contracts entry")
-    return problems
-
-
-def coherence_problems(w: dict[str, Any]) -> list[str]:
-    topo = w["topology"]
-    edges = topo["edges"]
-    nodes = set(topo["nodes"])
-    problems: list[str] = _contract_coherence(w)
-
-    if topo["cycle_start"] not in nodes:
+    if topo["cycle_start"] not in node_set:
         problems.append(f"cycle_start '{topo['cycle_start']}' not in topology.nodes")
-
     for src, sigmap in edges.items():
-        if src not in nodes:
+        if src not in node_set:
             problems.append(f"edge source '{src}' not in topology.nodes")
         for sig, target in sigmap.items():
             if not isinstance(target, str) or not target:
                 problems.append(f"{src}.{sig} has no valid target: {target!r}")
                 continue
-            if target not in SENTINELS and target not in nodes:
+            if target not in SENTINELS and target not in node_set:
                 problems.append(f"{src}.{sig} -> '{target}' is not a known node")
             if target in SENTINELS and sig != target:
                 problems.append(f"{src}.{sig} targets terminal name '{target}' instead of emitting terminal signal '{target}'")
-
-    node_dir = root_path(w["paths"]["nodes"])
-    for n in nodes:
+    for n in node_set:
         if n not in edges:
             problems.append(f"node '{n}' has no edges")
         base = n.split(":", 1)[0]
-        if not (node_dir / f"{base}.py").is_file():
-            problems.append(f"node '{n}' has no plugin file {(node_dir / f'{base}.py')}")
-
+        if base not in nodes.FACULTIES:
+            problems.append(f"node '{n}' has no faculty in core_nodes.FACULTIES")
     seen: set[str] = set()
     stack = [topo["cycle_start"]]
     while stack:
@@ -209,10 +173,21 @@ def coherence_problems(w: dict[str, Any]) -> list[str]:
         for target in edges.get(cur, {}).values():
             if isinstance(target, str) and target:
                 stack.append(target)
-    unreachable = nodes - seen
+    unreachable = node_set - seen
     if unreachable:
         problems.append(f"unreachable nodes from '{topo['cycle_start']}': {sorted(unreachable)}")
     return problems
+
+
+def load_wiring(path: str | None = None) -> dict[str, Any]:
+    source_path = root_path(path, "wiring.json").resolve()
+    cfg = load_json(source_path)
+    validate_wiring(cfg)
+    problems = coherence_problems(cfg)
+    if problems:
+        raise RuntimeError(f"wiring topology is incoherent: {problems}")
+    cfg["_source_path"] = str(source_path)
+    return cfg
 
 
 def prompt(cfg: dict[str, Any], key: str) -> str:
@@ -226,48 +201,7 @@ def get_transport_config(wiring: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     model = wiring["model"]
     transport = model["transport"].strip()
     cfg = dict(model["transport_config"][transport])
-    for key in ("timeout",):
-        if key not in cfg:
-            cfg[key] = model["global"][key]
+    if "timeout" not in cfg:
+        cfg["timeout"] = model["global"]["timeout"]
     cfg["transport"] = transport
     return transport, cfg
-
-
-class PluginKind(NamedTuple):
-    paths_key: str
-    module_prefix: str
-    export: str
-
-
-KINDS: dict[str, PluginKind] = {
-    "node": PluginKind(paths_key="nodes", module_prefix="endgame_node_", export="run"),
-    "transport": PluginKind(paths_key="brains", module_prefix="endgame_brain_transport_", export="call"),
-}
-
-
-def split_instance(name: str) -> tuple[str, str | None]:
-    if ":" in name:
-        base, instance = name.split(":", 1)
-        if not base or not instance:
-            raise RuntimeError(f"malformed plugin name '{name}': expected 'base:instance'")
-        return base, instance
-    return name, None
-
-
-def load(kind: str, name: str, w: dict[str, Any]):
-    spec_kind = KINDS.get(kind)
-    if spec_kind is None:
-        raise RuntimeError(f"unknown plugin kind '{kind}'; known: {', '.join(sorted(KINDS))}")
-    base, _instance = split_instance(name)
-    plugin_dir = root_path(w["paths"][spec_kind.paths_key])
-    path = plugin_dir / f"{base}.py"
-    if not path.exists():
-        raise RuntimeError(f"{kind} plugin '{base}' has no module at {path}; no fallback was attempted")
-    spec = importlib.util.spec_from_file_location(f"{spec_kind.module_prefix}{base}", path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"cannot load {kind} plugin module: {path}")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    if not hasattr(mod, spec_kind.export):
-        raise RuntimeError(f"{kind} plugin '{base}' does not export {spec_kind.export}(...)")
-    return mod

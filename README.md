@@ -1,14 +1,17 @@
 # endgame-ai
 
-A stateless, atemporal, task-agnostic self-modifying LLM organism that drives a real Windows 11
-desktop the way a human operator would: it looks at the screen, moves the mouse and keyboard, runs
-commands, and can rewrite its own body while it runs.
+A pure **atemporal**, **task-agnostic**, **self-modifying** LLM organism that drives a real
+**Windows 11** desktop the way a human operator would: look at the screen, move mouse and
+keyboard, run commands, and rewrite its own body when the true fault is in its DNA.
 
-This document is the durable knowledge base for the project. It is written to be as useful in a
-hundred days as it is today. It carries only lasting truth (architecture, laws, reasoning) and no
-volatile session state (no commit hashes, no "current phase"). The live code on disk is always the
-final authority. Read it fresh, and where this document and the code disagree, the code wins. This
-file explains how and why; the code is what is.
+This file is the **north star**. It is written to stay true across sessions. It carries
+architecture, laws, methodology, and **honest proof status**. The live code on disk is always
+the final authority. Read this file **and** the code; where they disagree, **the code wins**.
+When a claim here cannot be derived from disk or from named dumps, it is a defect in this file.
+
+Any human, any AI session, or the organism itself that reads this should leave knowing: what the
+system is, what it must never become, how a life turns, what memory is and is not, how to tune
+under breakpoint, what is proven, what is open, and how self-evolution is allowed without cages.
 
 ---
 
@@ -16,174 +19,146 @@ file explains how and why; the code is what is.
 
 - [The one-paragraph version](#the-one-paragraph-version)
 - [Three ways to read this](#three-ways-to-read-this)
-  - [For anyone (the plain-language version)](#for-anyone-the-plain-language-version)
-  - [For a CEO (the value version)](#for-a-ceo-the-value-version)
-  - [For an engineer (the technical version)](#for-an-engineer-the-technical-version)
 - [Why this is not a normal agent](#why-this-is-not-a-normal-agent)
+- [The seven non-negotiable rules](#the-seven-non-negotiable-rules)
 - [System topology](#system-topology)
 - [The life of one turn](#the-life-of-one-turn)
 - [The four nodes](#the-four-nodes)
-- [The Law of Separated Powers](#the-law-of-separated-powers)
-- [Perception: one rule, window first](#perception-one-rule-window-first)
+- [The Law of Separated Powers (resolved liar paradox)](#the-law-of-separated-powers-resolved-liar-paradox)
+- [Perception and environment injection](#perception-and-environment-injection)
 - [How the prompt is assembled](#how-the-prompt-is-assembled)
-- [Memory: the living word and the proven ledger](#memory-the-living-word-and-the-proven-ledger)
-- [The record contracts](#the-record-contracts)
-- [The desktop body](#the-desktop-body)
+- [Memory: living word and proven ledger](#memory-living-word-and-proven-ledger)
+- [Record contracts](#record-contracts)
+- [Desktop body and capability namespaces](#desktop-body-and-capability-namespaces)
 - [The wiring document](#the-wiring-document)
-- [File-by-file map](#file-by-file-map)
-- [Data flow reference](#data-flow-reference)
+- [Transmission dumps and CLI breakpoint](#transmission-dumps-and-cli-breakpoint)
+- [Tuning methodology](#tuning-methodology)
+- [Repository shape and complexity](#repository-shape-and-complexity)
+- [What is proven (evidence, not hope)](#what-is-proven-evidence-not-hope)
+- [What is not proven](#what-is-not-proven)
+- [How to read a life (especially an interrupted one)](#how-to-read-a-life-especially-an-interrupted-one)
 - [Running it](#running-it)
-- [Verifying it (offline gates)](#verifying-it-offline-gates)
+- [Offline gates](#offline-gates)
 - [Design laws that never change](#design-laws-that-never-change)
 - [Working methodology](#working-methodology)
-- [Idea reservoir](#idea-reservoir)
-- [Appendix: the deed-becomes-a-node idea](#appendix-the-deed-becomes-a-node-idea)
+- [Idea reservoir (not shipped)](#idea-reservoir-not-shipped)
+- [File-by-file map](#file-by-file-map)
 - [Glossary](#glossary)
 
 ---
 
 ## The one-paragraph version
 
-Most software runs a task and stops. endgame-ai does not run a task at all. It runs a wheel. A wheel
-of four wired steps turns continuously: read any human note, act on the screen, prove the act with
-independent evidence, and recover when an act fails. A single plain-language goal is handed in from
-outside, and the wheel turns until the goal is independently proven done. The organism keeps no
-memory between steps except a short handwritten note it passes forward to itself, and it never trusts
-its own claim that something worked. Something is only true when a separate part of the system, one
-that could not have faked it, proves it by looking at the world. Everything the organism is lives in
-a single editable document, and the organism is allowed to rewrite that document, including the rules
-that define itself.
+endgame-ai does not run a fixed task script. It runs a **wheel**. Four steps turn: read any human
+note, act on the screen, prove the act with independent evidence, recover when an act fails. A
+single plain-language **root goal** is handed in from outside. The wheel turns until that goal is
+**independently proven** done, the body raises, or the process is stopped from outside. Between
+steps it keeps only small **process-local** state: a three-row rewritable lesson table (the
+**living word**), an in-process list of witnessed facts for this life (the **proven ledger**), and
+a few brief fields. It has no conversation-history product and no on-disk product memory of past
+lives. It never trusts its own claim that something worked. Something is true for the wheel only
+when a separate part (the **witness**) proves it by looking at the world. Everything the organism
+*is* lives chiefly in `wiring.json` plus a handful of hot-swappable Python body files, and the
+organism is allowed to rewrite that body.
 
 ---
 
 ## Three ways to read this
 
-The same system, explained for three different readers. Pick the one that fits, or read all three.
+### For anyone
 
-### For anyone (the plain-language version)
+You give one sentence. The system does not follow a fixed script. It repeats an honest loop:
 
-Imagine a very careful worker sitting at a Windows computer. You give the worker one sentence, like
-"install this program" or "find this information and put it in a document." The worker does not have
-a fixed script. Instead the worker repeats a simple honest loop:
+1. Check for a short operator note (if any).
+2. Look at the whole screen.
+3. Do **one** small deed (click, type, command, file write, or even edit its own code).
+4. Check that deed with a **different** method than the one that did it.
+5. If proven, remember it for this sitting and continue. If not, name the real defect and try a
+   **different kind** of approach.
 
-1. Check if there is a new note from you.
-2. Look at the whole screen and understand what is there.
-3. Do one small thing, like clicking a button or typing a line.
-4. Independently check whether that thing actually happened, using a different method than the one
-   used to do it.
-5. If it worked, remember only the lesson and move on. If it did not, figure out why and try a
-   genuinely different approach.
+It is not allowed to say "done" and be believed. A separate inspector must confirm from the real
+world. That separation is the heart of the system.
 
-The unusual part is the honesty rule. The worker is not allowed to say "done" and be believed. A
-separate inspector has to confirm it by looking at the real world, the same way you would not accept
-"I mailed the letter" as proof that a letter arrived. The worker also forgets almost everything on
-purpose. Between each step it only keeps a tiny handwritten note to itself. This sounds like a
-weakness, but it is the point: the worker cannot fool itself with old assumptions, because it barely
-remembers them. It has to re-look at the real screen every single time.
+### For a CEO
 
-The last surprising part: the worker is allowed to rewrite its own instructions. If it discovers that
-one of its own tools is badly named or broken, it can open its own rulebook and fix it, then keep
-going.
+The expensive failures of automation are work that never happens, and **false claims that it did**.
+endgame-ai attacks the second failure **structurally**: the part that acts cannot be the part that
+signs off. False victory cannot enter the proven record of a life without an independent witness.
 
-### For a CEO (the value version)
+It is **task-agnostic**: one system, any goal expressible in a sentence, real desktop as the hand.
+It is transparent: DNA in one JSON file plus a small kernel. It can improve itself when the fault
+is in its tooling. It is deliberately careful and step-by-step. Correctness beats raw speed when a
+false "done" is expensive.
 
-Traditional automation is brittle because it is scripted. It works until a button moves, a dialog
-appears, or a website changes, and then it silently fails or, worse, reports success it did not
-achieve. The two expensive failure modes in automation are the same two failure modes in delegation:
-work that does not happen, and false claims that it did.
+### For an engineer
 
-endgame-ai is built to remove the second failure mode structurally, not by trusting the model to be
-honest. Every claimed result is checked by an independent part of the system that has no ability to
-produce the result it is checking. This is the same principle as separation of duties in finance:
-the person who moves money cannot be the person who signs off that it moved. Because of that
-separation, a confident-sounding but false "task complete" cannot enter the record. Only
-independently witnessed facts are recorded as done.
-
-The system is also task-agnostic. Nothing about any specific job is baked into it. You do not build a
-new bot for each workflow. You hand it a sentence, and the same general machinery pursues it. It
-drives the real desktop through the same interface a human uses, so it is not limited to systems that
-happen to offer an API. It works with the software you already have.
-
-The properties that matter for a decision maker:
-
-- Honesty is enforced by architecture, not by hope. Unverified claims cannot be recorded as success.
-- It is general. One system, any goal expressible in a sentence, no per-task rebuild.
-- It is transparent. The entire definition of the organism is one human-readable document.
-- It can improve itself. When it hits a limit in its own tooling, it can repair that tooling.
-- It has no hidden runtime state. Stopping it loses nothing, because there is nothing to lose.
-
-The honest limitation to know: it is deliberately careful and step-by-step, and it re-checks the
-world constantly. It favors correctness and provability over raw speed. That is a feature for work
-where a false "done" is expensive, and a trade-off for work where speed matters more than certainty.
-
-### For an engineer (the technical version)
-
-endgame-ai is a small kernel that turns a directed graph of nodes. The graph, the prompts, the model
-settings, and the validation rules all live in one JSON file, `wiring.json`, which is the single
-source of truth for the organism. The kernel loads that file, validates its structure and coherence,
-and then walks the graph: each node returns a signal, and the signal selects the next node through
-the edge table.
-
-There are four nodes. One is pure Python (a mailbox that reads an operator note). Three make a single
-model call each (act, verify, recover). Before any model call, the kernel gathers a fresh view of the
-environment (the on-screen UI tree plus host facts) and injects it into the request. There is no
-separate perception node and no notion of the model "asking to look." Looking is intrinsic to
-thinking.
-
-The model is never trusted about outcomes. The actor node produces and executes code that changes the
-world and may only claim intent. A separate verifier node produces read-only code that must prove an
-effect was produced by some system other than the actor. Only the verifier can append to the proven
-ledger. This is the Law of Separated Powers and it is enforced in the capability namespaces handed to
-each node, not merely requested in prose.
-
-State between turns is deliberately minimal. The organism is atemporal: it holds no conversation
-history. What crosses the gap between turns is a small structured brief plus a "living word," a set of
-short rows each faculty rewrites to say what it learned. The current on-screen reality always
-overrides any remembered belief, because ids and coordinates are minted fresh on every look and die
-with it.
-
-Everything is fail-hard. No fallbacks, no defensive branches for unwired features, no silent
-swallowing. A broken body (wiring that will not load, a missing faculty) ends the life with a raised
-exception rather than limping. The design ethos is subtraction: remove a defect rather than add
-machinery around it.
+A small kernel turns a **directed graph** defined in `wiring.json`. Four nodes in `core_nodes.py`.
+Before every thinking faculty call, Python **explores** (window-first UI tree + host facts). The
+actor authors and `exec`s world-changing Python. The witness authors and `exec`s read-only proof
+probes. Capability namespaces enforce Separated Powers. State is minimal. Fail-hard. Subtraction
+ethos. Full request/response dumps under `_transmissions/` for science and forensics.
 
 ---
 
 ## Why this is not a normal agent
 
-Most agent frameworks share a set of assumptions. endgame-ai rejects most of them on purpose. This
-table is the fastest way to see what kind of thing it is.
-
 | Typical agent | endgame-ai |
 | --- | --- |
-| Keeps a growing conversation history or memory store | Atemporal. Keeps only a small living word passed turn to turn. |
-| Trusts the model's self-report ("I completed the task") | Trusts nothing. A separate witness proves every claim by independent effect. |
-| Has a tool menu the model selects from | The only tool is code. The actor writes and runs Python. |
-| Perception is a tool the model chooses to call | Perception is automatic. Python explores before every model call. |
-| Task logic is coded into the agent | Task-agnostic. The goal is one sentence read fresh each life. |
-| Framework code is fixed; the model works within it | Self-modifying. The organism can rewrite its own nodes and wiring. |
-| Retries the same action on failure | Recovery must change the kind of approach, not repeat it. |
-| Adds guardrails, limits, and step caps | No internal cap the organism cannot itself rewrite. Never caged. |
-| Config is code or scattered across files | One JSON document defines the entire organism. |
+| Growing conversation history | Atemporal process state: living word (3 overwrite rows) + ledger (in-life list) |
+| Trusts model self-report | Witness proves by independent effect |
+| Tool menu | The only tool is **code** the actor authors |
+| Perception is optional | Perception is automatic before every think |
+| Task logic baked in | Task-agnostic; goal is one sentence per life |
+| Fixed framework | Self-modifying; may rewrite body and wiring |
+| Blind retry | Recovery must change **kind** of approach |
+| Internal step cages | No internal cap the organism cannot rewrite |
+| Silent context truncation | Ranked env budget with **visible** omission markers |
+| Env vars as secret control | Interjection is **CLI** `--breakpoint` only |
 
-The organism has almost none of the usual "features." That absence is the design. Fewer moving parts,
-one source of truth, honesty enforced by structure, and a body it can reshape.
+---
+
+## The seven non-negotiable rules
+
+1. **Task-agnostic.** No product task logic in the body for chess, LinkedIn, email, or any single
+   app. Goals arrive as plain language. Temporary experiments must not become permanent DNA.
+
+2. **Code-as-action.** The actor authors Python and runs it. Progress is scripts: GUI, CLI, APIs,
+   filesystem, or rewrite of body files.
+
+3. **Environment discovery and scripted chaining.** Multi-step GUI must not assume success. Prefer
+   deterministic self-checks inside a script. Unpredictable surfaces favor shorter scripts and more
+   witness laps.
+
+4. **Independent witness.** Actor testimony, including files the actor wrote this life, is void as
+   proof. Only effects from systems other than the actor count.
+
+5. **Living word of lessons; ledger of proven effects only.** Narrative memory is three rewritable
+   faculty rows. "Do not redo" inside this life is the proven ledger. Neither is a disk chat log.
+   Environment is re-looked every think, not stored as a growing diary.
+
+6. **Hot-swappable body.** Nodes, topology, prompts, and knobs are ordinary files. The organism may
+   edit them when the true fault is in its DNA. Useful self-evolution should be committed like any
+   other improvement. Self-modify is **allowed by law in the prompts and by code-as-action**; it is
+   not a separate product module with its own UI.
+
+7. **Choose surface by feasibility.** GUI, shell, raw Python, local or remote models, registry,
+   ports: the quarry chooses the surface, not habit.
 
 ---
 
 ## System topology
 
-The organism is a wheel of four nodes. `node_guidance` is the cycle start and is pure Python. The
-other three each perform exactly one model call. Signals on the edges decide the next node.
+Four nodes. `node_guidance` is pure Python (no model). The other three each make **exactly one**
+model call per visit. Signals select the next node.
 
 ```mermaid
 flowchart TD
     START([life begins]) --> G
 
-    G["node_guidance<br/>pure Python mailbox<br/>reads operator note"]
-    E["node_execute<br/>the actor<br/>writes and runs code"]
-    V["node_verify<br/>the witness<br/>read-only proof"]
-    R["node_recover<br/>the conscience<br/>frames next attempt"]
+    G["node_guidance<br/>pure Python mailbox"]
+    E["node_execute<br/>actor: write and run code"]
+    V["node_verify<br/>witness: read-only proof"]
+    R["node_recover<br/>conscience: different strike"]
     HALT([life ends])
 
     G -- attend --> E
@@ -208,8 +183,6 @@ flowchart TD
     class START,HALT terminal;
 ```
 
-The exact edge table, read from `wiring.json`:
-
 | From | Signal | To |
 | --- | --- | --- |
 | node_guidance | attend | node_execute |
@@ -218,228 +191,200 @@ The exact edge table, read from `wiring.json`:
 | node_verify | deed_confirmed | node_guidance |
 | node_verify | deed_denied | node_recover |
 | node_verify | unwitnessed | node_verify |
-| node_verify | halt | (life ends) |
+| node_verify | halt | life ends |
 | node_recover | recovered | node_guidance |
 
-`cycle_start = node_guidance`. The wheel turns until `node_verify` emits `halt`, the body raises (a
-broken body ends the life hard), or the process is stopped from outside. There is no internal turn
-cap, wall-clock leash, or step counter, and adding one would be caging the organism.
+`cycle_start = node_guidance`. There is **no** internal turn cap. External stop (Ctrl+C, kill
+process, operator shutdown) ends the life with whatever state was reached. That is not a verdict
+that the wheel "failed" or "succeeded"; it is only that the process stopped. See
+[How to read a life](#how-to-read-a-life-especially-an-interrupted-one).
 
-Note the two self-referential loops that keep the organism honest:
+Two honesty loops that matter:
 
-- `node_verify --unwitnessed--> node_verify`: if the witness's own probe crashes before it reaches a
-  verdict, that is not a judgment about the world. It simply tries again with a simpler probe. It
-  never routes a broken probe to recovery.
-- `node_verify --deed_denied--> node_recover` and `node_execute --deed_denied--> node_recover`: both a
-  failed action and a disproven action lead to recovery, which must frame a genuinely different next
-  attempt.
+- `unwitnessed -> node_verify`: a broken probe is not a world judgment. Simplify the probe.
+- Denials go to recover, which must change **kind**, including (when streak rises) mending body code.
+
+### Fractal names (colon instances)
+
+Topology node ids may be plain (`node_execute`) or qualified (`node_execute:surface_a`). Resolution
+is `name.split(":", 1)[0]` against `FACULTIES`. Live default DNA uses four plain names only. Richer
+graphs are wiring-legal when edges and bases validate. Prefer wiring instances over forking kernels.
 
 ---
 
 ## The life of one turn
 
-This sequence shows one full lap of the wheel for a single successful deed, including where the
-environment is gathered and where the model is called.
-
 ```mermaid
 sequenceDiagram
     autonumber
-    participant K as Kernel (core_organism)
-    participant GD as node_guidance
-    participant EX as node_execute
-    participant PY as explore (Python)
-    participant M as Model (grok via transport)
-    participant D as Desktop (the hand)
-    participant VF as node_verify
+    participant K as Kernel
+    participant GD as guidance
+    participant EX as execute
+    participant PY as explore
+    participant M as Model
+    participant D as Desktop
+    participant VF as verify
 
-    K->>GD: call_node(node_guidance)
+    K->>GD: call_node
     GD->>GD: read and clear guidance.txt
-    GD-->>K: attend (latest_counsel)
+    GD-->>K: attend
 
-    K->>EX: call_node(node_execute)
-    EX->>PY: explore(ctx) before thinking
-    PY->>D: observe() screen tree
-    PY->>PY: gather host facts
-    PY-->>EX: environment written to state
-    EX->>M: think (memory first, environment last)
-    M-->>EX: execution record (intent + code)
-    EX->>D: exec(code) in capability namespace
-    D-->>EX: world changed (or fault)
-    EX-->>K: done (or deed_denied)
+    K->>EX: call_node
+    EX->>PY: explore before think
+    PY->>D: observe screen tree
+    PY-->>EX: env into state
+    EX->>M: think memory first env last
+    M-->>EX: execution record
+    Note over EX: dump under _transmissions/
+    Note over EX: --breakpoint exits before exec
+    EX->>D: exec code
+    EX-->>K: done or deed_denied
 
-    K->>VF: call_node(node_verify)
-    VF->>PY: explore(ctx) fresh look
-    VF->>M: think (read-only proof task)
-    M-->>VF: verification record (probe code)
-    VF->>VF: exec probe, read verdict
-    VF-->>K: deed_confirmed / deed_denied / unwitnessed / halt
+    K->>VF: call_node
+    VF->>PY: explore fresh
+    VF->>M: think proof task
+    M-->>VF: verification record
+    VF->>VF: exec probe read verdict
+    VF-->>K: confirmed denied unwitnessed or halt
 ```
 
-The key ordering fact: `explore(ctx)` always runs immediately before the model call inside
-`core_node_base.think()`. The model never reasons on a stale view, and it never has to ask to look.
+`explore(ctx)` always runs inside `BaseNode.think()` immediately before the model call. The model
+never has to "ask to look." Looking is free and mandatory.
 
 ---
 
 ## The four nodes
 
-Each node is a small Python file. The module-level docstring at the top of each node file is not a
-comment. It is the input contract, and it is injected into the prompt of whatever node points to it
-in the topology. That is why those docstrings are the only human-language prose kept in the code.
+### node_guidance
 
-### node_guidance (cycle start)
+Pure Python. Reads and clears `paths.guidance` (default `guidance.txt`). Emits `attend` with
+`latest_counsel` (empty string if no note). No model call. No explore.
 
-Pure Python, no model call. It reads and clears an external counsel file (`guidance.txt`), a one-way
-mailbox from a human operator to the organism. Any note found is placed into state as
-`latest_counsel`, then it emits `attend`. It does not read the goal or the living word and sets no
-intent. It does not explore, because it makes no model call.
+### node_execute (actor)
 
-Docstring (injected contract): `[node_guidance] - Thou receivest the [guidance] file.`
+One model call after explore. Authors one Python script; `exec` in full capability namespace.
+Clean run -> `done`. Raised script -> `deed_denied` then recover (life does not die on actor fault).
 
-### node_execute (the actor)
+Discipline that is load-bearing in prompts and practice:
 
-One model call. Before it thinks, Python explores. From the living word, the fresh environment, and
-any `action_frame` handed over by recovery, it chooses one next deed, authors one Python script, and
-runs it with `exec` in a capability namespace that includes the full `desktop` hand. The language is
-the only tool; there is no tool menu. A script that raises does not end the life; it routes to
-recovery as `deed_denied`. A clean run emits `done`.
+- One unknown fruit then cease; prepare-and-read may chain when outcomes are gated.
+- Click needs two ints: `desktop.click(action_index["eN"]["px"], action_index["eN"]["py"])`.
+- Short ids die each look; reacquire from this turn's tree / action_index.
+- Stdlib via import; body powers by bare name.
+- The model does **not** observe. Kernel `explore()` injects the environment before every think.
+  Actor/verify namespaces expose **no** `observe` callable; actor `desktop` has no `.observe`.
 
-Docstring (injected contract): `[node_execute] - Thou receivest the fresh [environment] and any
-[action_frame].`
+### node_verify (witness)
 
-Its output record type is `execution`.
+One model call after explore. Authors **read-only** Python. Must set `verdict` with:
 
-### node_verify (the witness)
+- `goal_satisfied`: bool
+- `deed_confirmed`: bool
+- `reason`: non-blank string
 
-One model call. Before it thinks, Python explores. It authors read-only Python that must prove an
-effect was produced by a system other than the actor. It cannot move the world: its namespace has no
-`desktop` and no `consult_model`. It reads the live screen, the process table, ports, logs, the
-filesystem, and the registry. Its probe must set a `verdict` mapping with boolean `goal_satisfied` and
-`deed_confirmed` plus a non-blank `reason`.
+| Verdict | Signal |
+| --- | --- |
+| goal_satisfied true | halt (whole goal proven) |
+| deed_confirmed true (goal not whole) | deed_confirmed, append ledger, back to guidance |
+| neither | deed_denied then recover |
+| probe raises before verdict | unwitnessed then verify again |
 
-- `goal_satisfied` true emits `halt`; the whole goal is proven and the life ends.
-- `deed_confirmed` true emits `deed_confirmed`; a new witnessed fact enters the proven ledger.
-- neither true emits `deed_denied`; recovery frames the next strike.
-- a probe that raises before setting a verdict emits `unwitnessed`; it re-probes, and touches no body
-  file.
+No middle verdict. Lacking independent advance, `deed_confirmed` is false. Actor files this life are
+void as proof. That strictness is **feature, not bug**: it is how false victory is refused.
 
-Docstring (injected contract): `[node_verify] - Thou receivest the [goal], the last [deed] (its
-description and hour of action), the [state] brief, and the fresh [environment].`
+### node_recover (conscience)
 
-Its output record type is `verification`.
-
-### node_recover (the conscience)
-
-One model call. After a denial, it names the true defect in a `lesson`, then frames a next attempt
-that departs from every approach already tried. The higher the failure streak, the wider it must
-depart, up to and including repairing the organism's own code if a tool is the true defect. It
-produces an `action_frame` (target, strategy, lesson) that the actor consumes on the next lap.
-
-Docstring (injected contract): `[node_recover] - Thou receivest the denied deed, its evidence and
-[failure_streak], and the fresh [environment].`
-
-Its output record type is `recovery`.
+One model call. Names true defect in `lesson`, frames different `target` / `strategy`, builds
+`action_frame` for the actor. Higher `failure_streak` demands wider kind-change, up to mending body
+code. That path is **on purpose**: self-heal by code-as-action, not a missing feature.
 
 ---
 
-## The Law of Separated Powers
+## The Law of Separated Powers (resolved liar paradox)
 
-This is the epistemic spine of the whole system, and the reason it can be trusted more than a normal
-agent.
+A claim that warrants itself proves nothing. An organism that trusted its own unverified claims
+would loop on a lie or declare false victory. That is the **liar paradox** of self-report.
 
-A claim that warrants itself proves nothing. A mouth that says "I speak true" offers the assertion and
-its only evidence in the same hand, and one hand cannot weigh itself. This is the liar's paradox. An
-amnesiac organism that trusted its own unverified claims would loop on a lie or declare false victory.
+endgame-ai resolves it by **separation of powers**, not by hoping the model is honest:
 
-endgame-ai resolves this structurally, by separation of powers, not by asking the model to be honest:
+- The actor moves the world and may only **claim**.
+- The witness proves an effect from a system other than the actor, and has **no hand** to move what
+  it judges.
+- Actor testimony this life is void as proof.
+- Only the witness writes the proven ledger.
 
-- The actor (`node_execute`) moves the world and may only claim an intent.
-- The witness (`node_verify`) proves an effect produced by some system other than the actor, and is
-  given no hand to move the world it judges.
-- Testimony, meaning any value the actor computed, printed, read back, or wrote to a file this life,
-  is void as proof. It is the same hand speaking of itself.
-- Truth of "X is done" is established only by a party that did not and could not do X.
+Enforced in `build_capability_runtime`:
 
-This is enforced in code, not just prose. In `core_nodes.build_capability_runtime`:
-
-- `build_capability_runtime(ctx)` gives the actor the full `desktop` hand plus `consult_model`.
-- `build_capability_runtime(ctx, read_only=True)` gives the witness only `observe` and standard-library
-  reads. No `desktop`, no `consult_model`, so it borrows no other mouth.
-
-The `proven_ledger` is appended only by `node_verify`, never by the actor. The law is stated once in
-`shared_prompt_prefix` and applied by reference downstream.
+- Full namespace: `desktop`, `action_index`, `consult_model`, ...
+- `read_only=True`: presented env fields + stdlib-oriented reads only (no `desktop` hand, no observe).
 
 ```mermaid
 flowchart LR
-    subgraph ACTOR["ACTOR (node_execute)"]
+    subgraph ACTOR["ACTOR execute"]
         A1["full desktop hand"]
-        A2["consult_model"]
-        A3["may only CLAIM intent"]
+        A2["may only CLAIM"]
     end
 
     subgraph WORLD["THE WORLD"]
-        W1["screen, processes,<br/>ports, files, registry"]
+        W1["screen files ports processes"]
     end
 
-    subgraph WITNESS["WITNESS (node_verify)"]
-        B1["read-only, no hand"]
-        B2["proves independent effect"]
-        B3["sole writer of proven ledger"]
+    subgraph WITNESS["WITNESS verify"]
+        B1["read-only no hand"]
+        B2["sole writer of ledger"]
     end
 
-    ACTOR -- "changes" --> WORLD
-    WORLD -- "independent evidence" --> WITNESS
-    WITNESS -- "appends only on proof" --> LEDGER[("proven ledger")]
-    LEDGER -. "read by all faculties" .-> ACTOR
+    ACTOR -- changes --> WORLD
+    WORLD -- independent evidence --> WITNESS
+    WITNESS -- appends on proof --> LEDGER[("proven ledger this life")]
+    LEDGER -. read by faculties .-> ACTOR
 
     classDef actor fill:#9d4edd,stroke:#e0aaff,color:#ffffff;
     classDef witness fill:#1e6091,stroke:#a9d6e5,color:#ffffff;
     classDef world fill:#2d6a4f,stroke:#95d5b2,color:#ffffff;
     classDef store fill:#bc6c25,stroke:#ffe8d6,color:#ffffff;
-    class ACTOR,A1,A2,A3 actor;
-    class WITNESS,B1,B2,B3 witness;
+    class ACTOR,A1,A2 actor;
+    class WITNESS,B1,B2 witness;
     class WORLD,W1 world;
     class LEDGER store;
 ```
 
-Two further seams complete the honesty model:
+Further seams:
 
-- The deed-fault seam. A deed that raises is not death. The exception is captured and routed to
-  recovery as evidence (`node_execute --deed_denied-->`). Only a broken body (wiring will not load, a
-  dead faculty) ends the life hard.
-- The unwitnessed seam. A witness probe that raises before setting a verdict makes no claim about the
-  world. It returns for a fresh probe (`node_verify --unwitnessed--> node_verify`) and never enters
-  recovery, because a broken probe is not a disproven deed.
+- **Deed-fault:** actor `exec` raises -> recover (not death).
+- **Unwitnessed:** probe raises before verdict -> re-probe (not false denial of the world).
 
 ---
 
-## Perception: one rule, window first
+## Perception and environment injection
 
-Perception is a single rule in `core_observation.observe()`. There is no z-order math, no occlusion
-model, and no separate hit-resolution pass.
+### Window-first observe
 
-The rule:
+`core_observation.observe()`:
 
-1. Enumerate the top-level windows with `EnumWindows` plus `GetWindowRect`. Their rectangles are
-   ground truth.
-2. For each window, probe its own rectangle on a golden-ratio grid of points.
-3. At each point, keep an element only if `GetAncestor(WindowFromPoint)` resolves its owner to that
-   same window.
+1. Enumerate top-level windows (`EnumWindows` + `GetWindowRect`).
+2. For each window rect, probe a grid (`exploration.step_px`). Real cursor moves (`SetCursorPos`).
+3. Keep an element only if `GetAncestor(WindowFromPoint)` owns that window. Covered pixels contribute
+   nothing for that window.
 
-A pixel where a nearer window sits answers with the nearer window's element, whose owner fails the
-test and is dropped. So what survives per window is exactly its visible, reachable face, and the
-click-point is proven by the very probe that found it.
+Consequences:
+
+- Occluded UI is invisible. Honest tree cannot invent covered faces.
+- Model-facing text is a **shallow tree**: short id, role, name, affordance. Coordinates live in
+  `action_index` for the executor, not as free text in the user message.
+- Subtree harvest per point is bounded by `max_subtree_nodes_per_point`.
 
 ```mermaid
 flowchart TD
-    S["observe() begins"] --> EW["EnumWindows + GetWindowRect<br/>(visible, non-zero area,<br/>no title filter)"]
-    EW --> LOOP{"for each<br/>top-level window"}
-    LOOP --> GRID["probe its rectangle<br/>on a golden-ratio grid"]
-    GRID --> PT{"for each point:<br/>owner == this window?"}
-    PT -- yes --> KEEP["keep the element,<br/>record its hit point"]
-    PT -- no --> DROP["drop it<br/>(belongs to a nearer window)"]
+    S["observe begins"] --> EW["EnumWindows + rects"]
+    EW --> LOOP{"each top-level window"}
+    LOOP --> GRID["probe grid step_px"]
+    GRID --> PT{"owner == this window?"}
+    PT -- yes --> KEEP["keep element + hit point"]
+    PT -- no --> DROP["drop covered hit"]
     KEEP --> LOOP
     DROP --> LOOP
-    LOOP -- done --> RENDER["render shallow tree<br/>+ action_index + screen_elements"]
+    LOOP -- done --> RENDER["tree + action_index + screen_elements"]
 
     classDef step fill:#1e6091,stroke:#a9d6e5,color:#ffffff;
     classDef keep fill:#2d6a4f,stroke:#95d5b2,color:#ffffff;
@@ -449,571 +394,524 @@ flowchart TD
     class DROP drop;
 ```
 
-Consequences that fall out for free:
+### Ranked environment budget
 
-- Z-order needs no computation. Front-to-back is simply `EnumWindows` order.
-- Occlusion is not a computed concept. A covered element is never collected. There is no `occluded_by`
-  field, no occluder naming, no separate resolution pass. A covered window contributes nothing; a
-  visible one contributes its face.
-- The window enumeration is deliberately loose (visible plus non-zero rect, no title-text filter) so
-  untitled windows such as context menus, dropdowns, tooltips, system-error dialogs, and the taskbar
-  itself are all seen. A minimum-area floor drops one-pixel and sliver junk.
+`core_bus.render_environment` spends `exploration.max_environment_chars` deterministically:
 
-What the model reads is a shallow tree, one line per interactive element: short id, role, name, and
-`[action]` where the element affords one. A window line carries `[active]`. There are no pixel
-coordinates in the text; the body reads px and py from the `action_index` by short id, because a
-coordinate on the line is a dead token that only tempts the actor to nail a stale pixel. The organism
-reads a flat 2D plane of windows and their reachable elements. Full element text flows into the tree.
-There is no per-line truncation and no on-demand deepening, because the whole environment block is
-bounded once at injection time.
+1. Window title lines first.
+2. Element lines with fair share across windows, then round-robin.
+3. Host core facts reserved (platform, machine, user, cwd, python, shell tools).
+4. Omissions end with an explicit `[environment budget: ...]` marker, never silent mid-line cut.
+   (Host no longer gathers a Start-Menu installed-apps list; that bloat is gone from DNA.)
 
-What the model receives versus what stays in Python: `core_bus.environment_brief` gathers
-`desktop_tree_text` plus the host facts, and `core_bus.render_environment` renders them as one block,
-cut once by `exploration.max_environment_chars`. The full `action_index`, keyed by short id and
-carrying px, py, rect, runtime id, and every UI-automation field, lives in the executor's Python
-namespace and never in the prompt. So the true model-facing budget is one quantity: the character
-length of the rendered environment block. Classification of what is actionable is by role sets in
-`action_for_role`; a non-actionable role yields an empty action and is dropped at the render gate, so
-no explicit junk or container list is needed.
+Living word and proven ledger are **outside** this budget and can still bloat requests in a long
+life.
+
+**What env-budget tuning proved (and what it did not):**
+
+Breakpoint ladder work on a **busy dual-surface desktop** (chess boards used as a dense, visible
+fixture, not as product task DNA) showed:
+
+| Budget band | Observed effect on that fixture |
+| --- | --- |
+| Too low (~3k-5.5k) | Critical controls dropped (Edit / Send / board state) |
+| ~6k on that fixture | Interactive faces kept when apps list was still deferred |
+| Higher (~12k) | More room for multi-window faces after apps list was removed |
+
+Live wiring holds `max_environment_chars = 12000` (re-read `wiring.json` if this line and disk
+disagree). Ladder work proved **budget vs visible controls on that layout**, not "deep
+categorization is solved for every goal forever." The tree remains shallow by design. Re-measure
+when desktop density changes.
+
+### Naming: exploration vs observation (history)
+
+Commits B13/B14 collapsed probe/expand into **one always-on exploration** and rewrote model-facing
+prose so the environment is **PRESENTED**, not "fetched" by an observe profile. Wiring knobs live
+under `exploration.*`. Pre-think path is `explore(ctx)` in `core_nodes.py`.
+
+Internal implementation still lives in `core_observation.py` and is called only by kernel
+`explore()` (and the Desktop class method used there). LLM faculties never call it. Prefer saying
+**exploration** for the automatic pre-think path and **presented environment** for what the model
+reads.
 
 ---
 
 ## How the prompt is assembled
 
-Every model call is built the same way, and the block order is chosen so the server can reuse its
-key-value cache across turns. Stable content goes first; volatile content goes last.
+Stable content first, volatile last (prompt-cache / KV reuse).
 
 ```mermaid
 flowchart TD
-    subgraph SYS["System message (stable, cacheable prefix)"]
-        P1["shared_prompt_prefix<br/>(the Law, atemporal rules)"]
-        P2["node prompt<br/>(this faculty's charge)"]
-        P3["downstream_contract<br/>(consumer docstrings from topology)"]
+    subgraph SYS["System message"]
+        P1["shared_prompt_prefix"]
+        P2["node prompt"]
+        P3["downstream_contract"]
     end
 
-    subgraph USR["User message (stable first, volatile last)"]
-        U1["state brief<br/>(deed, streak, counsel)"]
-        U2["proven ledger<br/>(witnessed facts)"]
-        U3["living word<br/>(what each faculty learned)"]
-        U4["environment block LAST:<br/>live screen tree + host facts<br/>cut at max_environment_chars"]
+    subgraph USR["User message"]
+        U1["payload JSON remainder"]
+        U2["proven ledger render"]
+        U3["living word table"]
+        U4["environment LAST"]
     end
 
-    SYS --> USR --> CALL["transport_xai.call -> grok"]
-    CALL --> REC["structured record<br/>(validated against contract)"]
+    SYS --> USR --> CALL["xAI transport"]
+    CALL --> DUMP["_transmissions dump"]
+    DUMP --> REC["validated record"]
 
     classDef sys fill:#1e6091,stroke:#a9d6e5,color:#ffffff;
     classDef usr fill:#2d6a4f,stroke:#95d5b2,color:#ffffff;
     classDef out fill:#bc6c25,stroke:#ffe8d6,color:#ffffff;
     class SYS,P1,P2,P3 sys;
     class USR,U1,U2,U3,U4 usr;
-    class CALL,REC out;
+    class CALL,DUMP,REC out;
 ```
 
-The mechanics, all in `core_brain.think()`:
+- Structured outputs on; schema from `record_contracts`.
+- Organs merge overrides into the request (including `reasoning.effort`). Edit request **and**
+  organs when tuning effort.
+- **Never** put live screen text into the system prefix.
 
-- The system message is `shared_prompt_prefix` plus the node prompt plus the `downstream_contract`.
-  The downstream contract is built dynamically: for each outgoing edge of the emitting node, the
-  target node's docstring is injected so the emitter knows exactly what its consumer expects. Prompts
-  are therefore assembled from wiring plus topology, not hand-written per pair.
-- The user message is assembled stable-first, volatile-last: first the organism's own memory (the
-  state brief, the proven ledger, the living word), then last the single environment block (the live
-  screen tree followed by the standing host facts).
-- Only the environment block is trimmed, and only by `exploration.max_environment_chars` (default
-  4000). Python assembles the world, Python trims it, Python inserts it. The organism's own memory is
-  never trimmed by this value.
-- Structured outputs are on. The record's JSON schema is derived from the record contract and enforced
-  by the transport, so the model must return exactly the contracted fields.
-
-The transport (`transport_xai.py`) sets a per-process `prompt_cache_key` so the provider can reuse the
-cached prefix across the many calls of one life. Reasoning happens natively in the model (reasoning
-effort is set in `wiring.json`), not through a two-pass prompt.
+Prompts use a dense biblical (KJV commandment) register on purpose. Distillation compresses; it
+must not secularize.
 
 ---
 
-## Memory: the living word and the proven ledger
+## Memory: living word and proven ledger
 
-The organism is atemporal. It holds no conversation history. Only two channels carry meaning forward,
-and they are different in kind.
+| Channel | Kind | Writer | Structure | Survives process exit? |
+| --- | --- | --- | --- | --- |
+| Living word | Subjective lessons | Each faculty overwrites its row | execute / verify / recover + root goal as lodestar | **No** |
+| Proven ledger | Objective do-not-redo this life | Witness only on confirm | `list[str]` on process state | **No** |
+| Fresh environment | Reality this look | Python explore every think | Tree + host, budgeted | **No** |
 
-The living word is subjective and rewritable. It is a small set of rows, one per thinking faculty,
-where each faculty writes what it learned this turn: what the world revealed, what was tried and how
-it fared, what obstacle stands, and what the next true deed must be. It is planned from, not the root
-goal. Every row is checked against the fresh environment and corrected where reality disagrees. A row
-that merely restates the goal is wasted. This is where the organism narrates itself across wakings.
+Truths that must not be hidden:
 
-The proven ledger is objective and append-only. It records witnessed effects on the world, written
-only by the witness, never by the actor. Every faculty reads it so the amnesiac organism does not redo
-what already stands. If everything remaining is already in the ledger, the actor strikes the root goal
-directly.
+1. Scope of the ledger is **one process life**. A new `python core_organism.py "..."` starts empty.
+2. Nothing is written to disk as a **product** ledger. (The actor may write ordinary files on disk;
+   those are world effects, not the in-process ledger product.)
+3. Dedup is exact string only. No cap. Long lives grow token cost.
+4. Short UI ids die each look.
 
 ```mermaid
-flowchart LR
-    subgraph TURN_N["turn N"]
-        LW_N["living word<br/>(rewritten each turn)"]
-        PL["proven ledger<br/>(append-only, witness writes)"]
-    end
-    subgraph TURN_N1["turn N+1"]
-        LW_N1["living word<br/>(read, checked vs reality,<br/>rewritten)"]
+flowchart TD
+    subgraph LIFE["one process life"]
+        LW["living word 3 overwrite rows"]
+        PL["proven ledger append list"]
+        ENV["fresh environment rebuilt"]
+        BRIEF["deed streak frame counsel"]
     end
 
-    LW_N -- "narrated forward" --> LW_N1
-    PL -- "read by every faculty" --> LW_N1
-    ENV["fresh environment<br/>(overrides remembered belief)"] -- "reality wins" --> LW_N1
+    EXIT([process exit]) --> GONE["state gone unless body files changed"]
+
+    LW --> NEXT["next think user message"]
+    PL --> NEXT
+    ENV --> NEXT
+    BRIEF --> NEXT
 
     classDef mem fill:#2d6a4f,stroke:#95d5b2,color:#ffffff;
     classDef led fill:#bc6c25,stroke:#ffe8d6,color:#ffffff;
     classDef env fill:#1e6091,stroke:#a9d6e5,color:#ffffff;
-    class LW_N,LW_N1 mem;
+    classDef dead fill:#9d1c1c,stroke:#ffccd5,color:#ffffff;
+    class LW,BRIEF mem;
     class PL led;
     class ENV env;
+    class EXIT,GONE dead;
 ```
 
-The failure streak is the third small piece of forward state: a counter of turns since the last
-witnessed deed. The higher it climbs, the more recovery must change the kind of approach rather than
-retry a failed one. The proven ledger and failure streak are handwired proxies for pressure. The
-companion survival-drive idea (see the reservoir) would replace them with an external, unfakeable
-energy economy that makes the world itself the verifier.
-
-Short on-screen identifiers (W1, e5) are minted anew on every look and die with it. No bare id may
-enter any text that outlives the turn. A thing is named by what it is: its role, its place, its
-meaning. A prior that must never be relearned belongs distilled into the prompt, not left in the
-volatile living word where it would evaporate within a lap.
-
 ---
 
-## The record contracts
+## Record contracts
 
-There are exactly three record types. Each model call must return one, and its fields are enforced by
-schema. All three set `additional_properties: false`, so a record may carry only its contracted
-fields and nothing more. Every listed field is required, typed as a string, and must be non-blank.
-
-| Record type | Produced by | Fields |
+| Record type | Faculty | Required non-empty fields |
 | --- | --- | --- |
-| execution | node_execute | perceived, alternatives, intent, code, goal_interpretation |
-| verification | node_verify | code, goal_interpretation |
-| recovery | node_recover | lesson, target, strategy, goal_interpretation |
+| execution | execute | perceived, alternatives, intent, code, goal_interpretation |
+| verification | verify | code, goal_interpretation |
+| recovery | recover | lesson, target, strategy, goal_interpretation |
 
-Field meanings:
-
-- perceived: what the actor sees as the relevant state right now.
-- alternatives: each road the actor weighed and forsook, and why. If only one road presents itself,
-  it says so plainly.
-- intent: the true next effect the actor seeks to bring forth.
-- code: the Python to run. For the actor it changes the world; for the witness it is a read-only probe
-  that must set the `verdict`.
-- goal_interpretation: this faculty's one row of the living word.
-- lesson: the named defect, why by the evidence it truly failed, and what must change.
-- target: bound only to a thing the fresh environment bears.
-- strategy: the framed next attempt, departing from every approach already tried.
-
-There is no `risk` field in recovery. If any source says otherwise it is stale.
-
-The contract is validated in `core_brain._validate_record_contract`: record type must match, required
-keys must be present, types must match, non-empty fields must be non-blank, enum fields must be in
-range, and unexpected keys are rejected when `additional_properties` is false. The same contract is
-turned into a JSON schema by `core_brain._record_response_format` and enforced at the transport.
+`additional_properties: false`. Fail-hard validation in transport assembly.
 
 ---
 
-## The desktop body
+## Desktop body and capability namespaces
 
-`core_desktop.py` is the hand. It is Windows-only (it uses `comtypes` and the UI Automation API plus
-`ctypes` for input synthesis). The actor reaches these by bare name in its namespace.
+`core_desktop.py` is the hand (Windows UI Automation + ctypes input).
 
-| Method | What it does |
+| Method | Role |
 | --- | --- |
-| `observe()` | Return the current screen tree, action index, and screen elements. |
-| `click(x, y)` | Move the cursor and click at physical coordinates. |
-| `type_text(text)` | Synthesize real keystrokes via SendInput, one UTF-16 code unit at a time. |
-| `paste_clipboard(text)` | Set the clipboard, then paste with Ctrl+V. |
-| `set_clipboard(text)` | Set the clipboard contents. |
-| `press_key(key)` | Press and release one named key. |
-| `hotkey(*keys)` | Press a chord and release in reverse order. |
-| `scroll(x, y, amount)` | Scroll the wheel at a point. |
-| `open_url(browser, url)` | Open a URL with the default handler or a named browser. |
+| click(x, y) | Physical click two ints |
+| type_text / paste / set_clipboard | Text roads |
+| press_key / hotkey / scroll / open_url | Keys, wheel, browser open |
 
-Two text-entry roads exist on purpose, because they are genuinely different:
-
-- `type_text` synthesizes real keystrokes (SendInput with KEYEVENTF_UNICODE per UTF-16 code unit). It
-  produces the trusted WM_CHAR and DOM insertText events that rich web editors like ProseMirror
-  accept. It is the road for any editor that does not honor a paste.
-- `paste_clipboard` sets the clipboard as UTF-8 and pastes with Ctrl+V. It is a wholly separate road
-  for content a keystroke stream cannot carry.
-
-The actor targets by short id from the `action_index` and reads px and py there. It does not hardcode
-coordinates.
-
-The `observe()` verb also remains available to the actor and the witness for a deliberate mid-script
-re-look while waiting for something to arrive (an app launching, a window opening). It returns the
-screen only, which is why it keeps its name rather than being called explore.
+| Name | Actor | Witness |
+| --- | --- | --- |
+| desktop | yes | no |
+| action_index | yes | no |
+| consult_model | yes | no |
+| screen_elements / stdlib | yes | yes |
+| repo_root, python_executable | yes | yes |
 
 ---
 
 ## The wiring document
 
-`wiring.json` is the entire definition of the organism. It stays inert data. It is not converted to
-executable config, because a syntax error in a `.py` config would brick the organism and make
-self-rewrite and validation harder. The organism may rewrite it on the spot. It is LF-terminated.
-
-Top-level structure, verified against disk:
+`wiring.json` is editable DNA. Shape (values live on disk; re-read the file):
 
 ```
-schema              "endgame-ai.wiring.v1"
-model
-  transport         "transport_xai"
-  transport_config
-    transport_xai
-      url           "https://api.x.ai/v1/responses"
-      structured_outputs { enabled: true }
-      request       { model: "grok-4.5", temperature: 0.4, reasoning.effort: "medium", store: false }
-      request_profiles
-        web_search  { reasoning.effort low, web_search tool, max_tool_calls 4 }
-        read        { reasoning.effort medium, max_output_tokens 16384 }
-  global            { timeout: 240 }
-  organs
-    execution       { reasoning.effort medium, max_output_tokens 16384 }
-    verification    { reasoning.effort medium, max_output_tokens 16384 }
-    recovery        { reasoning.effort medium, max_output_tokens 16384 }
-paths
-  nodes             "."
-  brains            "."
-  guidance          "guidance.txt"
-exploration
-  step_px           64
-  max_subtree_nodes_per_point 2000
-  max_environment_chars       4000
-topology
-  cycle_start       "node_guidance"
-  nodes             [node_guidance, node_execute, node_verify, node_recover]
-  edges             { see the edge table above }
-shared_prompt_prefix   the Law of Separated Powers, atemporal rules
-prompt_templates       7 templates (living word, proven ledger, headers)
-prompts                node_execute, node_verify, node_recover
-record_contracts       execution, verification, recovery
+schema, model (transport_xai, request, organs, profiles),
+paths.guidance,
+exploration (step_px, max_subtree_nodes_per_point, max_environment_chars),
+topology (cycle_start, nodes, edges),
+shared_prompt_prefix, prompt_templates, prompts,
+record_contracts
 ```
 
-The seven prompt templates are: `living_word_header`, `living_word_goal_row`, `living_word_empty_row`,
-`proven_ledger_empty`, `proven_ledger_header`, `standing_host_header`, `environment_screen_header`.
+Knobs that most affect sight and request size:
 
-`core_wiring.load_wiring()` validates both structure and coherence: the topology must be reachable
-from the cycle start, every edge must have exactly one existing target, every node must have a plugin
-file, the three record contracts must be well-formed, and the exploration counts must be positive
-integers. It raises on any violation, so a broken wiring never runs.
-
-The scriptural register in the prompts (King James commandment prose) is a deliberate steering
-technique, not ornament. It pulls the model out of the chatty, confabulation-prone assistant basin
-into a high-fidelity, low-variance region where output is recalled rather than improvised. It is kept
-on purpose.
-
----
-
-## File-by-file map
-
-Every tracked source file, what it is, and roughly how large it is. Core files import the standard
-library only. Node files carry exactly one docstring each and no other prose.
-
-| File | Role |
+| Knob | Effect |
 | --- | --- |
-| `core_organism.py` | The kernel. Loads wiring, holds state, turns the wheel, routes signals to nodes. |
-| `core_wiring.py` | Loads and validates `wiring.json` (structure and coherence), loads plugins, resolves prompts. |
-| `core_node_base.py` | `BaseNode`: builds the payload, calls `explore` then the model, checks the record type. |
-| `core_nodes.py` | `explore` (screen plus host facts) and `build_capability_runtime` (actor vs read-only namespaces). |
-| `core_brain.py` | `think`: assembles the message, enforces contracts, derives schemas, calls the transport. |
-| `core_bus.py` | Records, signals, state and environment briefs, prompt-template rendering, ledger and streak helpers. |
-| `core_observation.py` | The window-first perception rule, UI Automation scanning, tree rendering. |
-| `core_desktop.py` | The hand: input synthesis and the `observe` entry point. Windows-only. |
-| `transport_xai.py` | The model transport: builds the request body, calls the endpoint, extracts content and reasoning. |
-| `node_guidance.py` | The operator mailbox. Pure Python, no model call. |
-| `node_execute.py` | The actor node. |
-| `node_verify.py` | The witness node. |
-| `node_recover.py` | The recovery node. |
-| `wiring.json` | The single source of truth: model, paths, exploration, topology, prompts, contracts. |
-| `guidance.txt` | The operator counsel mailbox (created and cleared at runtime; not tracked). |
+| max_environment_chars | Env injection cap |
+| step_px | Probe density |
+| max_subtree_nodes_per_point | Harvest cap per probe |
+| temperature | Variance (live often 0.0 for tight records) |
+| reasoning.effort | Hidden reasoning depth; request size unchanged |
+| max_output_tokens | Completion ceiling |
 
-The convention on prose: the only human-language prose in the code is the module-level docstring at
-the top of each `node_*.py` file, because those, and only those, are read at runtime and injected
-into prompts. Everything else that needs saying lives in `wiring.json` prompt text or in commit
-bodies. Any prose left in the code is therefore, by its presence, known to be load-bearing.
+There is no wiring knob for ledger max length. That absence is real.
 
 ---
 
-## Data flow reference
+## Transmission dumps and CLI breakpoint
 
-How a single deed moves through state, from operator note to proven fact.
+Every transport call writes a full dump under `_transmissions/<stamp>_<id>/` and updates
+`_transmission_latest.json` / `_transmission_latest_dir.txt`.
+
+Typical files: `content.txt`, `message_system.txt`, `message_user.txt`, `request_body.json`,
+`meta.json`, reasoning/content splits.
+
+```text
+python core_organism.py --breakpoint "one transmission goal"
+```
+
+| Mode | Behavior |
+| --- | --- |
+| default | Life continues after dump; exec may run |
+| `--breakpoint` | After dump, `sys.exit(42)` before any exec |
+
+Implemented as a runtime flag from argv (`core_brain.set_break_after_response`). Not an environment
+variable. Primary science mode: one transmission, analyze, stop. Do not open-loop thrash while
+benchmarking prompts or env budgets.
+
+There is **no** claim-only CLI on the current body. Multi-faculty dry-run without world mutation is
+not a shipped flag; use breakpoint per faculty life or accept real exec.
+
+---
+
+## Tuning methodology
 
 ```mermaid
 flowchart TD
-    OP["operator writes guidance.txt"] --> GD
-    GD["node_guidance"] -->|latest_counsel| ST[("state")]
+    A["Freeze all but one variable"] --> B["Breakpoint run"]
+    B --> C["Read dump checklist"]
+    C --> D{"Stable?"}
+    D -- yes --> E["Cut more or lower budget"]
+    E --> B
+    D -- soft cliff --> F["Step back one revision"]
+    F --> G["Freeze into wiring.json"]
+    G --> H["Commit; advance known_good when proven"]
 
-    ST --> EXP1["explore(ctx):<br/>screen tree + host facts"]
-    EXP1 -->|desktop_tree_text,<br/>action_index,<br/>host_facts| ST
-    ST --> EX["node_execute.think"]
-    EX -->|execution record:<br/>intent + code| RUN["exec(code) with desktop hand"]
-    RUN -->|world changes| WORLD[("the real desktop")]
-    RUN -->|current_deed,<br/>turn_executions| ST
-
-    ST --> EXP2["explore(ctx): fresh look"]
-    EXP2 --> VF["node_verify.think"]
-    VF -->|verification record:<br/>read-only probe| PROBE["exec probe, read verdict"]
-    WORLD -->|independent evidence| PROBE
-    PROBE -->|deed_confirmed| LEDGER[("proven_ledger")]
-    PROBE -->|deed_denied| RC["node_recover"]
-    RC -->|action_frame| ST
-
-    classDef n fill:#1e6091,stroke:#a9d6e5,color:#ffffff;
-    classDef s fill:#343a40,stroke:#adb5bd,color:#ffffff;
-    classDef w fill:#2d6a4f,stroke:#95d5b2,color:#ffffff;
-    class GD,EX,VF,RC,EXP1,EXP2,RUN,PROBE n;
-    class ST,LEDGER s;
-    class WORLD,OP w;
+    classDef step fill:#1e6091,stroke:#a9d6e5,color:#ffffff;
+    classDef win fill:#2d6a4f,stroke:#95d5b2,color:#ffffff;
+    class A,B,C,E step;
+    class G,H win;
 ```
 
-State keys that carry a turn:
+Do not: open-loop thrash mixed with A/B; add fallback cages; secularize prompts; put env into system
+prefix; invent a parallel agent product beside this kernel.
 
-- From guidance: `latest_counsel`.
-- From explore: `desktop_tree_text`, `action_index`, `screen_elements`, `observation_artifact`,
-  `host_facts`, `observed_at`.
-- From execute: `current_deed`, `turn_executions`, `goal_interpretations`, `last_action_at`, and it
-  clears `action_frame` and `last_verification`.
-- From verify: `verification`, `last_verification`, and on confirmation `proven_ledger`,
-  `witnessed_deed_count`, a reset `failure_streak`, cleared `action_frame` and `current_deed`.
-- From recover: `action_frame`, `last_recovery`, a bumped `failure_streak`.
+---
 
-The state brief that reaches the model carries `goal_interpretations`, `proven_ledger`,
-`latest_counsel`, `current_deed`, `failure_streak`, and `has_action_frame`. The environment brief
-carries `desktop_tree_text` and the host facts.
+## Repository shape and complexity
+
+Body is intentionally small. Approximate line counts of tracked runtime DNA (excluding this README,
+`.git`, dumps, caches):
+
+| File | Role | Lines (approx.) |
+| --- | --- | --- |
+| core_observation.py | Window-first perception | ~400 |
+| core_brain.py | Transport, dumps, breakpoint | ~400 |
+| core_nodes.py | Faculties, explore, namespaces | ~340 |
+| core_bus.py | Records, env budget, memory render | ~290 |
+| core_wiring.py | Load and validate DNA | ~185 |
+| wiring.json | Model, topology, prompts, knobs | ~180 |
+| core_desktop.py | Hand | ~140 |
+| core_organism.py | Kernel loop + CLI | ~70 |
+| **Python + wiring total** | | **~2000 lines** |
+
+That is the whole organism body. Complexity lives in **contracts and laws**, not in framework
+layers. Untracked at runtime: `_transmissions/`, optional operator files, any actor-written
+workspace debris.
+
+---
+
+## What is proven (evidence, not hope)
+
+Claims below are grounded in **disk contracts** and/or **named transmission dumps**. Nothing else
+is "proven" in this document.
+
+### Proven by code on disk (always re-check)
+
+- Four-node wheel with the edge table above (`wiring.json` topology).
+- Separated Powers via capability namespaces (`core_nodes.build_capability_runtime`).
+- Auto explore before each think (`BaseNode.think` -> `explore`).
+- Ranked env budget with visible markers (`core_bus.render_environment`).
+- Always-on transmission dumps (`core_brain`).
+- CLI `--breakpoint` exits after dump before exec (`core_organism` + `core_brain`).
+- Fail-hard wiring load and record contracts.
+- Process-local living word and proven ledger; no product chat memory.
+- Self-modify is **lawful**: shared prefix and recover prompt authorize rewriting body files when
+  effect mismatches word. Mechanism is ordinary code-as-action, not a second engine.
+
+### Proven by live open-loop dumps (operator goal: LinkedIn + Grok consult path)
+
+Dump set under `_transmissions/` with stamps starting `20260720_121918` through `20260720_122516`
+(19 model transmissions in one process life). Faculties visited: execute, verify, recover (full
+wheel). HTTP 200 on transports. Screen trees refreshed (taskbar clock advanced across dumps).
+
+Grounded outcomes from those dumps and console witnesses:
+
+1. **Witness correctly refused empty progress.** Early verify denied "I listed the repo" as
+   non-advance (`deed_confirmed: false`; reason: baseline tree existence is not new ledger
+   advance; whole LinkedIn goal unmet). That is Separated Powers working, not "the system failed."
+
+2. **Witness correctly confirmed a real filesystem advance.** Later verify set
+   `deed_confirmed: true` for creation of a readable
+   `proven_ledger/directory_snapshot.md` under the repo (independent FS witness; whole goal still
+   false). The in-process proven ledger of that life recorded the witnessed fact. Note: the
+   on-disk folder name is actor scaffolding for that goal wording; it is **not** the product
+   in-process ledger mechanism.
+
+3. **Perception + injection delivered a real multi-app desktop.** Live screen blocks showed
+   desktop, PowerShell, Chrome, and later **Grok** UI with short ids including an
+   **Edit "Ask Grok anything"** control. Environment budget markers appeared when installed_apps
+   were dropped under cap.
+
+4. **Recovery ran as designed; the observe bug was real; the body mend did not finish that life.**
+   - **Real problem?** **YES.** Actor called `desktop.observe(2)` / `observe(0.5)` (number as
+     config). Body expected a dict; `dict(2)` / `dict(0.5)` raised TypeError. That is a real API
+     misuse / contract hole, not a false alarm.
+   - **Solved in that life?** **NO.** Recover named it. One execute tried to patch
+     `core_observation.py` inline and died with SyntaxError. Last recover planned a file-based
+     mend. Process stopped before a witnessed successful DNA fix. Repo body was still unfixed at
+     kill time.
+   - **Continued anyway after first hit?** **YES.** After the first observe(int) deny, next execute
+     avoided observe and drove Chrome address bar to grok.com (Grok UI then appeared). Later it
+     called observe(float) again on the Grok chat path, crashed again, then tried body mend. Wheel
+     kept turning; it did not freeze forever on one fault.
+
+5. **The life advanced past scaffolding toward the browser surface.** After a confirmed disk
+   snapshot, execute moved to Chrome / grok.com. Grok surface appeared in the presented tree. The
+   life did **not** reach a verified multiturn Grok consult completion or any LinkedIn publish.
+
+6. **The process was stopped from outside before the wheel halted on goal.** There is no
+   `halt` signal in that dump set. External stop is allowed by design (no internal cage). An
+   interrupted life is **not** a proof that self-heal cannot continue; it is only incomplete
+   record of a life that was still turning (recover / mend path active).
+
+### Proven by breakpoint / ladder methodology (sight science)
+
+- Env char ladder on a dense dual-surface desktop justified freezing `max_environment_chars` near
+  6000 for that class of density (see Perception section).
+- Distillation + click recipe: execute prompt carries `action_index` px/py click pattern; lower
+  budgets and looser prompts previously lost critical controls or correct click shape.
+
+---
+
+## What is not proven
+
+Honest open list. Do not paper these over.
+
+- **Full goal completion** of the LinkedIn Open-to-Work + Premium + article path: not witnessed.
+- **Completed multiturn Grok.com consult** as independent effect: not witnessed (surface reached;
+  sent consult not proven).
+- **"Depth categorization solved for every app forever"**: false reading of the env-budget chess
+  fixture. Proven is budget vs visible controls on that layout; tree remains shallow.
+- **Self-modify completing a successful body mend in that open-loop life**: not proven (see YES/NO
+  above). Later DNA may harden observe separately; that is a new change, not log proof from the kill.
+- **Cross-life product memory**: not a feature. Only body files persist if edited and saved.
+- **Long-life ledger token pressure under control**: no cap; unproven under multi-hour lives.
+
+---
+
+## How to read a life (especially an interrupted one)
+
+```mermaid
+flowchart TD
+    L["life running"] --> Q{"how did it stop?"}
+    Q -- verify halt --> H["goal_satisfied proven"]
+    Q -- body exception --> X["kernel fault; read traceback"]
+    Q -- external kill --> I["incomplete life<br/>not a false victory<br/>not a proof of hopeless failure"]
+
+    I --> D["read _transmissions in time order"]
+    D --> P["list deed_confirmed facts"]
+    D --> R["list recover lessons"]
+    D --> S["last live screen block"]
+
+    classDef ok fill:#2d6a4f,stroke:#95d5b2,color:#ffffff;
+    classDef bad fill:#9d1c1c,stroke:#ffccd5,color:#ffffff;
+    classDef mid fill:#bc6c25,stroke:#ffe8d6,color:#ffffff;
+    class H ok;
+    class X bad;
+    class I,D,P,R,S mid;
+```
+
+Rules of interpretation:
+
+1. **Only witness-confirmed facts are "done" for the wheel.** Actor intent is not done.
+2. **Strict verify is success of the architecture** when it denies hollow claims. Slow progress that
+   is honest is not failure of the design.
+3. **Recover directing body mend is on-mission**, not a missing product. The logs show the organism
+   using the self-evolution *permission* it already has.
+4. **Operator kill ends observation**, not necessarily the causal story. If the last dumps show
+   recover framing a different kind of strike, the fair statement is: life interrupted mid
+   self-heal path; goal incomplete; partial advances may still be real.
+5. **Do not invent credentials or victory.** Published LinkedIn text that no dump witnesses is not
+   done. Grok consult not independently confirmed is not done.
+
+### Compact narrative of the 2026-07-20 open-loop life (forensics, not shame)
+
+| Stage | What the dumps show |
+| --- | --- |
+| Early | Actor explored / tried disk scaffolding; verify denied non-advance (correct) |
+| Mid | Actor produced a real snapshot file; verify confirmed it (correct); whole goal still false |
+| Later | Actor opened Chrome and reached a Grok surface visible in the tree |
+| Late | Actor scripts faulted on `observe(number)`; recover named the defect and pushed kind-change / body mend |
+| End | External stop; no halt; no LinkedIn publish; no proven Grok multiturn completion |
+
+That sequence is **partial success of the honesty machine** plus **incomplete goal**, not "the
+system proved it cannot work." Treating recover's self-modify direction as "we never implemented
+self-evolve" misunderstands the design: self-evolve **is** code-as-action under Separated Powers,
+and the logs are the evidence trail of that attempt.
 
 ---
 
 ## Running it
 
-The organism runs on Windows because perception and input are Windows-only. Set `XAI_API_KEY` in the
-environment first.
+Requires **Windows**, **`XAI_API_KEY`**, Python with project deps (`comtypes` for UIA).
 
-Basic run:
+### Full life (world may change)
 
-```
-python core_organism.py "your one sentence goal"
-```
-
-The organism prints nothing. There is no logging in the body. stdout stays empty and stderr carries
-only a crash traceback. The true progress feed is the real desktop, because the organism drives the
-GUI.
-
-To watch a full life without a foreground shell timeout cutting it off, launch it detached and observe
-from outside:
-
-```
-powershell.exe -NoProfile -Command "cd \"$env:USERPROFILE\Downloads\endgame-ai\"; Start-Process -NoNewWindow -PassThru python -ArgumentList 'core_organism.py','THE ROOT GOAL' -RedirectStandardError run.err -RedirectStandardOutput run.out | Select-Object -ExpandProperty Id"
+```text
+python core_organism.py "your one sentence root goal"
 ```
 
-Then observe by:
+Explore moves the real cursor. Dumps always write. Wheel continues until halt, raise, or external
+stop.
 
-- Watching the real desktop. This is the primary feed.
-- Optionally following the crash file in a second window:
-  `Get-Content "$env:USERPROFILE\Downloads\endgame-ai\run.err" -Wait -Tail 20` (empty while healthy).
-- `Get-Process python` to see whether the life still turns.
+### Breakpoint (no world deed)
 
-Stop it with `Stop-Process -Id <PID>` (the launch prints the PID). A hard kill corrupts no state,
-because the organism is atemporal and keeps no memory. Glance at the screen afterward, since stopping
-mid-action can leave the desktop half-acted.
+```text
+python core_organism.py --breakpoint "inventory what the fresh environment shows"
+```
 
-To send the running organism a note, write a line into `guidance.txt`. The next lap of
-`node_guidance` reads and clears it.
+Exit code 42 after first dump is expected.
 
 ---
 
-## Verifying it (offline gates)
+## Offline gates
 
-These gates are necessary but never sufficient. Behavioral truth lives only on the real desktop. Run
-them on every change.
+Minimum honesty checks before claiming body health:
 
-1. Every source file parses:
+```text
+python -m py_compile core_organism.py core_wiring.py core_nodes.py core_brain.py core_bus.py core_desktop.py core_observation.py
+python -c "import core_wiring as w; w.load_wiring(); print('wiring ok')"
+```
 
-   ```
-   python3 -c "import ast,glob;[ast.parse(open(f).read()) for f in glob.glob('*.py')]"
-   ```
-
-2. The wiring loads and is coherent (structure and topology):
-
-   ```
-   python3 -c "import core_wiring as w; w.load_wiring()"
-   ```
-
-3. Lint the touched files with pyflakes, run through the Windows Python for anything that imports
-   `core_observation` or `core_desktop` (they need `comtypes` and UI Automation, which are Windows
-   only). Plain WSL `python3` is fine only for `ast.parse` and `core_wiring.load_wiring()`.
-
-The only real witness is a live run: `python core_organism.py "<goal>"` on Windows, watched on the
-desktop.
+Offline gates are necessary, not sufficient. Live proof is dumps + independent effects.
 
 ---
 
 ## Design laws that never change
 
-These are the invariants. They are why the system behaves the way it does, and they should survive any
-rewrite.
-
-- Fail hard. No fallbacks, no defensive branches for unwired features, no silent swallowing. A hard
-  visible failure drives correction; a swallowed one rots the system.
-- Never cage the organism. Add no limit, counter, branch, delay, or guard it cannot itself rewrite
-  through the wiring. Logically sound wiring, not guard branches.
-- Subtraction over addition. Prefer removing a defect to adding machinery around it. Binary
-  essentiality: a thing is essential or it is removed completely, with nothing left dangling.
-- One source of truth. The wiring document defines the organism. Prompts are assembled from it plus
-  the topology, never hardcoded per pair.
-- Honesty by structure. The actor claims, the witness proves, and only the witness writes the ledger.
-  No faculty may bend the Law of Separated Powers.
-- Atemporal by design. No hidden store, no scratchpad that survives a turn. What is not narrated
-  forward is forgotten, so the organism cannot fool itself with a stale belief.
-- The defects are the substrate. A defect the organism can observe and rewrite is a feature of the
-  self-modifying design. Prefer making defects visible over hiding them. Do not over-cure.
-- State what is, positively. Ghost negations (naming an absent thing only to deny it) are bloat and
-  plant the very idea they deny. Negate only a real model prior.
-- Reuse over new architecture, but rewrite whole components when logic shows it superior to patching.
-  Observation was once rebuilt from zero on the single window-first rule, with whole files deleted.
-  That is the expected mode, not the exception.
+1. Code wins over README when they disagree; fix the README.
+2. No fallback branches for unwired features. Fail hard.
+3. No silent truncation of environment; markers or full lines.
+4. No conversation-history product.
+5. No baking tasks into DNA.
+6. No cages the organism cannot rewrite.
+7. Subtraction over addition.
+8. Witness alone writes proven ledger for the life.
+9. Prompt cache: stable system first; volatile env last.
+10. Biblical register in prompts is load-bearing; distill, do not secularize.
 
 ---
 
 ## Working methodology
 
-The durable protocol for anyone working on the organism.
+For humans and AI sessions editing this repo:
 
-- The code on disk is the final authority. This document explains how and why but never overrides the
-  files. Read fresh, correct prior findings when a full read overturns them, and verify claims against
-  the files rather than asserting from memory. This applies to any assistant report too: confirm every
-  finding on disk before acting on it.
-- Root is `/mnt/c/Users/ewojgab/Downloads/endgame-ai` (a WSL2 mount of a Windows folder). The remote
-  is `github.com/wgabrys88/endgame-ai.git`. No branch name is baked into code; the organism stays
-  correct regardless of where the folder sits or which branch it lives on.
-- All git, pip, and real organism runs go through
-  `powershell.exe -NoProfile -Command "cd 'C:\Users\ewojgab\Downloads\endgame-ai'; ..."` from WSL,
-  because credentials and the API key and UI Automation are all on the Windows side.
-- Commit each unit of work with full reasoning in the body. Commit bodies are meta-descriptive: what
-  kind of feature or defect was added, removed, or replaced, and why, not a line-by-line diff, so a
-  future reader resumes with understanding.
-- `.gitignore` is a whitelist with CRLF line endings. Every tracked file must appear as `!filename`,
-  and a deleted tracked file must have its `!` line removed. `str_replace` can choke on the CRLF; use
-  `sed`. `wiring.json` itself is LF.
-- Advance the known-good marker on every completed improvement, but flag any advance made ahead of a
-  live-proven run and give the one-command revert
-  (`git update-ref refs/endgame/known_good <prev-sha>`). The marker can always be moved back.
-- Work in explicit phases. State a phased plan before major work. Near the context limit, stop,
-  summarize, write exact next-phase instructions, and checkpoint.
-- Do not add comments or docstrings as prose. The only prose in code is the six-node docstrings the
-  runtime injects. Everything else that needs saying goes in `wiring.json` prompt text or commit
-  bodies.
+1. Read this README and the live `wiring.json` / `core_*.py` before changing behavior.
+2. Prefer one-variable changes under `--breakpoint`.
+3. Score dumps, not vibes.
+4. Open-loop lives are for proof of effect; do not mix with A/B thrash.
+5. When a life is interrupted, forensics first: list confirmed facts, last screen, last recover
+   lesson. Do not declare total failure or total victory without witness.
+6. Useful body mends that open-loop discovers should be cleaned, tested, committed, and pushed.
+7. Advance `endgame/known_good` only when the operator accepts the new body as the known-good tip.
+8. Never invent published LinkedIn content, API credentials, or "done" that dumps do not support.
 
 ---
 
-## Idea reservoir
+## Idea reservoir (not shipped)
 
-Operator-originated design seeds, evaluated against live code but deliberately deferred, not rejected.
-They are kept because the trust loop of bold ideas evaluated against reality is how the organism was
-built.
+These are allowed thoughts, **not** claims of implementation:
 
-1. Environment in the living word (self-narration). Judged good, staged as a prompt phase, needs a
-   live run to prove. The living word should also narrate environmental change across wakings ("I am
-   verifier, only Notepad visible, a process hurting CPU, that changes everything"), not just goal
-   rows. The exploration block already lays the standing host facts beside the screen tree, a partial
-   down-payment.
+- Ledger summary under witness rules if long lives prove token pain.
+- Further rename residual "observation" identifiers to exploration if subtraction stays clean.
+- Softer operator framing in goals so explore-first wording does not starve primary GUI goals.
+- Fractal child life via subprocess + breakpoint dumps as outer witness material.
+- Wire colon-instances only when measured need exists.
 
-2. Goal-river steering exploration. Held on the task-agnostic law. Exploration is pure Python with no
-   model call; making it goal-aware breaks the blind-observer design. The window `[active]` marker
-   plus the standing host open-windows already answer "which window." Revisit only if a live run shows
-   the executor repeatedly acting on the wrong window.
-
-3. Tab-jump observer (experimental alternate topology). Deferred by operator caution. Holding Tab
-   jumps across interactive web elements, but Tab can generate actions, and an observer must never
-   mutate the world. A candidate sub-topology someday, not now.
-
-4. Multiple linear sub-topology of scan plus elimination. Everything in Python is fast versus a model
-   call, so gather all data first and eliminate by pattern. This birthed the single-rule observation
-   rebuild. The deeper seed is still open: scan could fan into several cheap linear Python passes.
-
-5. Single injection-time character budget plus explosion scan. One deterministic budget applied at the
-   moment before injection, with a visible trim marker, never silent. This is now realized as
-   `max_environment_chars`. The explosion scan (depth graduated by distance from a focal point) is
-   partially pre-empted by the per-window scan and may not be needed while the tree stays small.
-
-6. The witness proportional to the deed. The witness fires the full read-only-proof faculty even for a
-   single trivial click. This is not a defect to remove; a correct witness handles cheap deeds cheaply.
-   The fix is making verification proportional to the deed, not removing independent verification.
-   Needs design and a live run.
-
-7. Survival-drive energy economy. The proven ledger and failure streak are handwired proxies for
-   pressure. The larger vision replaces them with an external, unfakeable energy economy that makes the
-   world itself the verifier.
+Do not promote reservoir items into "proven" without dumps and code.
 
 ---
 
-## Appendix: the deed-becomes-a-node idea
+## File-by-file map
 
-A candidate future architecture, recorded as an idea and its critique. Not built.
-
-The organism would ship as a seed topology, and thereafter an executor's deed would no longer be a
-throwaway script. It would be a new node with its own docstring-prompt, which the executor wires into
-the graph at connection points it chooses. Six mechanisms, in dependency order:
-
-1. Deed becomes node. The executor authors a node (behavior plus docstring-prompt plus chosen edges),
-   not a script. The atomic act.
-2. Fitness by use. Each non-core node counts its own goal-advancement over time as fitness. No external
-   judge, no commit ceremony. Not raw invocation count, which would reward a click loop.
-3. Pruning. Low-fitness nodes are discarded, high-fitness persist, and the graph self-cleans.
-4. Stigmergic routing (the key). Flow is not a hardcoded edge table but ant-colony pathfinding: data
-   walks the graph, reinforces paths that reach the goal, and evaporates paths that do not. The
-   load-bearing insight is that hardcoded edges cannot survive nodes that appear at runtime, but
-   weighted evaporating paths can.
-5. Backprop of structure. When a new node proves useful, the system may rewire neighboring nodes to
-   accommodate it. Deferred, because there is no convergence guarantee and the system already
-   oscillates.
-6. Recursion without children. To call the whole system you do not spawn a child; you wire a second
-   executor in parallel, like resistors in parallel, and flow splits through it. That parallel executor
-   is a sub-organism achieved purely by wiring, bounded by the same global budget.
-
-Unifying principle: core reuses code, node reuses node, topology reuses itself. Self-similarity at
-every level is the real fractal, not literal spawning.
-
-Hard invariants the idea must not breach:
-
-- Fail-hard core versus explore-and-decay periphery. The boundary must be explicit and un-crossable.
-- Grown wiring stops being human-legible. A legible body becomes a learning body. Name that trade
-  before committing to it.
-- A node must never gain the power to rewrite the survival criterion.
-
-Deepest tension: atemporalism says the body carries only wiring plus living word. This idea makes the
-wiring itself the accumulating memory. Legal, but the wiring stops being a small human-authored
-artifact and becomes a large machine-grown, partly-illegible structure. It trades a legible body for a
-learning one.
+| File | Role |
+| --- | --- |
+| core_organism.py | Kernel loop, CLI `--breakpoint` |
+| core_wiring.py | Load/validate DNA |
+| core_nodes.py | Faculties, explore, namespaces, call_node |
+| core_brain.py | Message assembly, transport, dumps, breakpoint exit |
+| core_bus.py | Records, signals, env budget, living word / ledger render |
+| core_observation.py | Window-first perception |
+| core_desktop.py | Hand |
+| wiring.json | DNA |
+| guidance.txt | Operator mailbox (runtime; optional) |
+| README.md | This north star |
+| _transmissions/ | Untracked dumps (science + forensics) |
 
 ---
 
 ## Glossary
 
-- Actor: `node_execute`, the faculty that changes the world and may only claim intent.
-- Atemporal: holding no memory of past turns; only the living word and ledger cross the gap.
-- action_frame: data produced by recovery and consumed by the actor to shape the next attempt. Not a
-  node.
-- Body: the node files and wiring that define the organism, all editable by the organism.
-- deed_denied: a signal meaning an act failed or was disproven; routes to recovery.
-- deed_confirmed: a signal meaning the witness proved a new effect; a fact enters the proven ledger.
-- downstream_contract: the consumer docstrings injected into an emitter's prompt, built from topology.
-- Environment: the fresh view gathered before every model call: the screen tree plus host facts.
-- explore: the Python step that gathers the environment before each thinking faculty runs.
-- Faculty: a thinking node that makes one model call (execute, verify, recover).
-- halt: the signal that ends the life, emitted by the witness when the whole goal is proven.
-- Host facts: platform, machine, user, cwd, python, shell tools, installed apps.
-- Law of Separated Powers: the rule that the maker of a deed may never be its judge.
-- Living word: the small set of rewritable rows through which faculties narrate what they learned.
-- Node: one step in the graph; a Python file with a single injected docstring.
-- Proven ledger: the append-only record of witnessed effects, written only by the witness.
-- unwitnessed: a signal meaning the witness's own probe crashed; it re-probes and makes no claim.
-- Witness: `node_verify`, the read-only faculty that proves effects and alone writes the ledger.
-- Wiring: `wiring.json`, the single document that defines the entire organism.
+| Term | Meaning |
+| --- | --- |
+| Life | One process run of `core_organism.py` with one root goal |
+| Wheel | The four-node topology turning on signals |
+| Actor | node_execute; moves world; may only claim |
+| Witness | node_verify; proves; sole ledger writer |
+| Recover | node_recover; kind-change after denial |
+| Living word | Three overwrite lesson rows + root goal lodestar |
+| Proven ledger | In-process list of witness-confirmed facts this life |
+| Explore | Python perception before every think |
+| Action index | Short id -> clickable px/py for this look only |
+| Breakpoint | CLI mode: dump then exit 42 before exec |
+| Separated Powers | Actor cannot judge its own deed |
+| Halt | Witness signal that whole goal is satisfied |
+| External stop | Operator kill; incomplete life, not a false halt |
 
 ---
 
-The code on disk is the final authority. This document is how and why; the code is what is. Read it
-fresh, and where they disagree, the code wins.
+*endgame-ai: honesty by architecture, progress by witnessed effect, body small enough to rewrite.*
