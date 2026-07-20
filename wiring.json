@@ -85,7 +85,7 @@
       },
       "node_execute": {
         "done": "node_verify",
-        "deed_denied": "node_recover"
+        "deed_denied": "node_execute"
       },
       "node_verify": {
         "halt": "halt",
