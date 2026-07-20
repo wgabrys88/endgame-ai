@@ -83,6 +83,13 @@ def render_interpretation_table(goal: str, interps: JsonDict | None, templates: 
     return "\n".join(lines)
 
 
+def render_proven_ledger(ledger: list | None, templates: JsonDict) -> str:
+    entries = [str(e).strip() for e in (ledger or []) if str(e).strip()]
+    if not entries:
+        return templates["proven_ledger_empty"]
+    return templates["proven_ledger_header"] + "\n" + "\n".join(f"  - {e}" for e in entries)
+
+
 def with_interpretation(interps: JsonDict | None, faculty: str, sentence: str) -> JsonDict:
     merged = dict(interps or {})
     merged[faculty] = str(sentence or "").strip()
@@ -301,6 +308,7 @@ def state_brief(state: JsonDict) -> JsonDict:
     current_deed = state.get("current_deed") or {}
     return {
         "goal_interpretations": dict(state.get("goal_interpretations") or {}),
+        "proven_ledger": list(state.get("proven_ledger") or []),
         "latest_counsel": state.get("latest_counsel") or "",
         "current_deed": {"description": current_deed.get("description", "")},
         "failure_streak": state.get("failure_streak", {}),

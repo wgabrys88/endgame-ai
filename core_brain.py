@@ -412,9 +412,11 @@ def think(
     environment = payload.pop("environment", None)
     brief = payload.get("state")
     interps = brief.pop("goal_interpretations", None) if isinstance(brief, dict) else None
+    ledger = brief.pop("proven_ledger", None) if isinstance(brief, dict) else None
     templates = w["prompt_templates"]
     memory_text = (
         f"{json.dumps(payload, ensure_ascii=False, default=str)}\n\n"
+        f"{bus.render_proven_ledger(ledger, templates)}\n\n"
         f"{bus.render_interpretation_table(goal, interps, templates)}"
     )
     max_chars = int(w["exploration"]["max_environment_chars"])
