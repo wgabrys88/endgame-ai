@@ -7,8 +7,7 @@ ROOT = pathlib.Path(__file__).parent.resolve()
 SENTINELS = {"halt"}
 _TEMPLATE_KEYS = (
     "living_word_header", "living_word_goal_row", "living_word_empty_row",
-    "proven_ledger_empty", "proven_ledger_header", "standing_host_header",
-    "environment_screen_header",
+    "standing_host_header", "environment_screen_header",
 )
 
 

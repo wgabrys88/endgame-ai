@@ -206,14 +206,8 @@ class VerifyNode(BaseNode):
             ),
         }
         if confirmed:
-            proven = list(state.get("proven_ledger") or [])
-            fact = f"{desc.strip()} — witnessed: {reason.strip()}" if desc.strip() else reason.strip()
-            if fact and fact not in proven:
-                proven.append(fact)
             patch.update({
-                "witnessed_deed_count": int(state.get("witnessed_deed_count") or 0) + 1,
                 "failure_streak": {"count": 0},
-                "proven_ledger": proven,
                 "action_frame": None,
                 "current_deed": None,
             })
