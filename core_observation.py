@@ -342,6 +342,11 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
     screen = {"width": sw, "height": sh}
 
     windows = enum_windows()
+    focus_hwnds = {int(h) for h in cfg.get("focus_hwnds") or [] if isinstance(h, int)}
+    if focus_hwnds:
+        focused = [w for w in windows if int(w["hwnd"]) in focus_hwnds]
+        if focused:
+            windows = focused
 
     scanner = UiaScanner(cfg, desktop)
     saved = wintypes.POINT()

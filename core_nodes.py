@@ -134,6 +134,7 @@ class ExecuteNode(BaseNode):
                 "intent": intent,
                 "reasoning": str(record.reasoning or ""),
                 "fault": deed_fault,
+                "focus_hwnds": _hwnds_referenced(code, state.get("action_index") or {}),
             }
             return bus.emit("deed_retry", base_patch)
         base_patch["deed_retry"] = None
@@ -301,6 +302,19 @@ def call_node(node_name: str, ctx: JsonDict) -> tuple[str, JsonDict]:
     return signal, dict(patch)
 
 
+def _hwnds_referenced(code: str, action_index: dict[str, Any]) -> list[int]:
+    import re
+
+    hwnds: list[int] = []
+    for sid in re.findall(r"""["']([a-zA-Z]\w*)["']""", str(code or "")):
+        entry = action_index.get(sid)
+        if isinstance(entry, dict):
+            hwnd = entry.get("owner_hwnd") or entry.get("hwnd")
+            if isinstance(hwnd, int) and hwnd and hwnd not in hwnds:
+                hwnds.append(hwnd)
+    return hwnds
+
+
 def _host_facts() -> dict[str, Any]:
     return {
         "platform": platform.platform(),
@@ -319,7 +333,11 @@ def _host_facts() -> dict[str, Any]:
 def explore(ctx: dict[str, Any]) -> None:
     import core_desktop as desktop
 
-    config = ctx["wiring"]["exploration"]
+    config = dict(ctx["wiring"]["exploration"])
+    retry = ctx["state"].get("deed_retry") or {}
+    focus = retry.get("focus_hwnds") if isinstance(retry, dict) else None
+    if focus:
+        config["focus_hwnds"] = list(focus)
     obs = desktop.get_desktop(config).observe(config)
     ctx["state"].update({
         "observed_at": obs.get("observed_at"),
