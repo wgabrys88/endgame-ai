@@ -5,7 +5,6 @@ from typing import Any
 JsonDict = dict[str, Any]
 _INTERP_ORDER = ["execute", "verify", "recover"]
 _HOST_CORE = ("platform", "machine", "hostname", "user", "cwd", "repo_root", "python", "shell_tools")
-_HOST_DEFER = ("installed_apps",)
 
 
 def deep_merge(base: JsonDict, override: JsonDict) -> JsonDict:
@@ -154,9 +153,8 @@ def render_environment(environment: JsonDict | None, templates: JsonDict, max_ch
     windows = _parse_tree(tree) if tree else []
     core = [_host_line(k, host[k]) for k in _HOST_CORE if k in host and host[k] not in ("", None, [])]
     for k, v in host.items():
-        if k not in _HOST_CORE and k not in _HOST_DEFER and v not in ("", None, []):
+        if k not in _HOST_CORE and v not in ("", None, []):
             core.append(_host_line(k, v))
-    deferred = [_host_line(k, host[k]) for k in _HOST_DEFER if k in host and host[k] not in ("", None, [])]
     host_block = "\n".join([host_header, *core]) if core else ""
     marker_reserve = min(180, max(40, budget // 20))
     screen_budget = max(0, budget - (len(host_block) + 2 if host_block else 0) - marker_reserve)
@@ -243,14 +241,7 @@ def render_environment(environment: JsonDict | None, templates: JsonDict, max_ch
             text = f"{text}\n\n{hb}" if text else hb
             host_kept = True
 
-    apps_omitted = bool(deferred)
-    if deferred and host_kept:
-        apps = "\n".join(deferred)
-        if fits(text, apps):
-            text = f"{text}\n{apps}"
-            apps_omitted = False
-
-    truncated = bool(omitted_w or omitted_e or apps_omitted or (core and not host_kept))
+    truncated = bool(omitted_w or omitted_e or (core and not host_kept))
     if truncated:
         while True:
             parts = []
@@ -258,8 +249,6 @@ def render_environment(environment: JsonDict | None, templates: JsonDict, max_ch
                 parts.append(f"omitted windows {','.join(omitted_w)}")
             if omitted_e:
                 parts.append(f"omitted {omitted_e} elements")
-            if apps_omitted and deferred:
-                parts.append("host.installed_apps dropped")
             if core and not host_kept:
                 parts.append("host core dropped")
             parts.append(f"kept {kept_e} elements")

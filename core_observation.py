@@ -334,7 +334,8 @@ def _probe_points(rect: dict[str, int], step_px: int) -> list[tuple[int, int]]:
 
 
 def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any]:
-    cfg = dict(config or {})
+    # Mid-script callers sometimes pass a number meaning "wait"; config is mapping-only.
+    cfg = dict(config) if isinstance(config, dict) else {}
     step_px = int(cfg.get("step_px", 64))
     max_subtree = int(cfg.get("max_subtree_nodes_per_point", 2000))
     sw, sh = int(user32.GetSystemMetrics(0)), int(user32.GetSystemMetrics(1))

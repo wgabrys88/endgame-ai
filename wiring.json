@@ -69,7 +69,7 @@
   "exploration": {
     "step_px": 64,
     "max_subtree_nodes_per_point": 1000,
-    "max_environment_chars": 6000
+    "max_environment_chars": 12000
   },
   "topology": {
     "cycle_start": "node_guidance",

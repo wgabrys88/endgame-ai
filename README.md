@@ -271,8 +271,9 @@ Discipline that is load-bearing in prompts and practice:
 - Click needs two ints: `desktop.click(action_index["eN"]["px"], action_index["eN"]["py"])`.
 - Short ids die each look; reacquire from this turn's tree / action_index.
 - Stdlib via import; body powers by bare name.
-- Mid-script re-look is `desktop.observe(config)` where config is a **dict or None**, not a sleep
-  duration. The prompt phrase "Await in-script with observe" means re-scan, not `time.sleep`.
+- Mid-script re-look is `desktop.observe(config)` (legacy method name). Config is a **dict or
+  None**. Non-dict args are ignored and defaults used (harden so a bare number no longer
+  TypeErrors). Prefer explicit `time.sleep` for waiting; do not treat observe as sleep.
 
 ### node_verify (witness)
 
@@ -401,8 +402,8 @@ flowchart TD
 1. Window title lines first.
 2. Element lines with fair share across windows, then round-robin.
 3. Host core facts reserved (platform, machine, user, cwd, python, shell tools).
-4. Bulk `installed_apps` only if room remains (deferred; often dropped under pressure).
-5. Omissions end with an explicit `[environment budget: ...]` marker, never silent mid-line cut.
+4. Omissions end with an explicit `[environment budget: ...]` marker, never silent mid-line cut.
+   (Host no longer gathers a Start-Menu installed-apps list; that bloat is gone from DNA.)
 
 Living word and proven ledger are **outside** this budget and can still bloat requests in a long
 life.
@@ -415,13 +416,24 @@ fixture, not as product task DNA) showed:
 | Budget band | Observed effect on that fixture |
 | --- | --- |
 | Too low (~3k-5.5k) | Critical controls dropped (Edit / Send / board state) |
-| Practical floor (~6k) | Interactive faces kept; bulk installed_apps dropped |
-| Much higher (~12k) | Same useful face plus app-list bloat |
+| ~6k on that fixture | Interactive faces kept when apps list was still deferred |
+| Higher (~12k) | More room for multi-window faces after apps list was removed |
 
-Live wiring holds `max_environment_chars = 6000` (re-read `wiring.json` if this line and disk
-disagree). That proves **budget vs visible controls on that layout**, not "deep categorization is
-solved for every goal forever." The tree remains shallow by design. Re-measure when desktop density
-changes.
+Live wiring holds `max_environment_chars = 12000` (re-read `wiring.json` if this line and disk
+disagree). Ladder work proved **budget vs visible controls on that layout**, not "deep
+categorization is solved for every goal forever." The tree remains shallow by design. Re-measure
+when desktop density changes.
+
+### Naming: exploration vs observation (history)
+
+Commits B13/B14 collapsed probe/expand into **one always-on exploration** and rewrote model-facing
+prose so the environment is **PRESENTED**, not "fetched" by an observe profile. Wiring knobs live
+under `exploration.*`. Pre-think path is `explore(ctx)` in `core_nodes.py`.
+
+Legacy names still exist on disk for the **hand re-look API**: file `core_observation.py`, method
+`desktop.observe(...)`, witness bare name `observe()`. Those are mid-script re-scans of the screen,
+not a separate perception faculty. Prefer saying **exploration** for the automatic pre-think path
+and **presented environment** for what the model reads.
 
 ---
 
@@ -687,9 +699,18 @@ Grounded outcomes from those dumps and console witnesses:
    **Edit "Ask Grok anything"** control. Environment budget markers appeared when installed_apps
    were dropped under cap.
 
-4. **Recovery ran as designed.** After denials and script faults, recover produced lessons and
-   action frames (kind-change), including naming the true defect when `observe` was called with a
-   bare number (int/float treated as config) and when verify probes raised before verdict.
+4. **Recovery ran as designed; the observe bug was real; the body mend did not finish that life.**
+   - **Real problem?** **YES.** Actor called `desktop.observe(2)` / `observe(0.5)` (number as
+     config). Body expected a dict; `dict(2)` / `dict(0.5)` raised TypeError. That is a real API
+     misuse / contract hole, not a false alarm.
+   - **Solved in that life?** **NO.** Recover named it. One execute tried to patch
+     `core_observation.py` inline and died with SyntaxError. Last recover planned a file-based
+     mend. Process stopped before a witnessed successful DNA fix. Repo body was still unfixed at
+     kill time.
+   - **Continued anyway after first hit?** **YES.** After the first observe(int) deny, next execute
+     avoided observe and drove Chrome address bar to grok.com (Grok UI then appeared). Later it
+     called observe(float) again on the Grok chat path, crashed again, then tried body mend. Wheel
+     kept turning; it did not freeze forever on one fault.
 
 5. **The life advanced past scaffolding toward the browser surface.** After a confirmed disk
    snapshot, execute moved to Chrome / grok.com. Grok surface appeared in the presented tree. The
@@ -698,7 +719,7 @@ Grounded outcomes from those dumps and console witnesses:
 6. **The process was stopped from outside before the wheel halted on goal.** There is no
    `halt` signal in that dump set. External stop is allowed by design (no internal cage). An
    interrupted life is **not** a proof that self-heal cannot continue; it is only incomplete
-   observation of a life that was still turning (recover / mend path active).
+   record of a life that was still turning (recover / mend path active).
 
 ### Proven by breakpoint / ladder methodology (sight science)
 
@@ -718,12 +739,9 @@ Honest open list. Do not paper these over.
   sent consult not proven).
 - **"Depth categorization solved for every app forever"**: false reading of the env-budget chess
   fixture. Proven is budget vs visible controls on that layout; tree remains shallow.
-- **Self-modify completing a successful body mend in that life**: not proven. Recover *authorized
-  and directed* mending (value of the logs); the life was interrupted during that path. Authorization
-  and attempt are not the same as a witnessed successful DNA fix committed and re-proven.
+- **Self-modify completing a successful body mend in that open-loop life**: not proven (see YES/NO
+  above). Later DNA may harden observe separately; that is a new change, not log proof from the kill.
 - **Cross-life product memory**: not a feature. Only body files persist if edited and saved.
-- **installed_apps as useful host fact**: often pure bloat under budget; deferred and frequently
-  dropped. Candidate for removal; still present in host fact gathering on disk.
 - **Long-life ledger token pressure under control**: no cap; unproven under multi-hour lives.
 
 ---
@@ -851,10 +869,8 @@ For humans and AI sessions editing this repo:
 
 These are allowed thoughts, **not** claims of implementation:
 
-- Remove `installed_apps` host fact entirely (bloat under budget).
-- Coerce or reject non-dict `observe` args so mid-script re-look cannot TypeError on a bare number;
-  or teach await as explicit sleep without overloading observe.
 - Ledger summary under witness rules if long lives prove token pain.
+- Further rename residual "observation" identifiers to exploration if subtraction stays clean.
 - Softer operator framing in goals so explore-first wording does not starve primary GUI goals.
 - Fractal child life via subprocess + breakpoint dumps as outer witness material.
 - Wire colon-instances only when measured need exists.

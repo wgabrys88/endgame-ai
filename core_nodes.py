@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-import glob
 import hashlib
 import json
 import os
@@ -294,22 +293,6 @@ def call_node(node_name: str, ctx: JsonDict) -> tuple[str, JsonDict]:
     return signal, dict(patch)
 
 
-def _installed_apps() -> list[str]:
-    roots = [
-        os.path.join(os.environ.get("ProgramData", ""), "Microsoft", "Windows", "Start Menu", "Programs"),
-        os.path.join(os.environ.get("APPDATA", ""), "Microsoft", "Windows", "Start Menu", "Programs"),
-    ]
-    names: set[str] = set()
-    for root in roots:
-        if not root or not os.path.isdir(root):
-            continue
-        for lnk in glob.glob(os.path.join(root, "**", "*.lnk"), recursive=True):
-            stem = pathlib.Path(lnk).stem.strip()
-            if stem and not stem.lower().startswith(("uninstall", "readme", "help")):
-                names.add(stem)
-    return sorted(names)
-
-
 def _host_facts() -> dict[str, Any]:
     return {
         "platform": platform.platform(),
@@ -322,7 +305,6 @@ def _host_facts() -> dict[str, Any]:
         "shell_tools": sorted(
             t for t in ("powershell", "pwsh", "cmd", "git", "pip", "node", "npm", "curl") if shutil.which(t)
         ),
-        "installed_apps": _installed_apps(),
     }
 
 
