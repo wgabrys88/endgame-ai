@@ -15,7 +15,7 @@ _SESSION_CACHE_KEY = f"endgame-{uuid.uuid4()}"
 _ROOT = pathlib.Path(__file__).resolve().parent
 _DUMP_DIR = _ROOT / "_transmissions"
 # Full raw req/resp dumps always. Break after first response unless ENDGAME_NO_BREAK=1.
-_BREAK_AFTER_RESPONSE = os.environ.get("ENDGAME_NO_BREAK", "").strip() not in {"1", "true", "yes"}
+_BREAK_AFTER_RESPONSE = os.environ.get("ENDGAME_NO_BREAK", "1").strip() not in {"1", "true", "yes"}
 
 
 def _messages(system_prompt: str, user_text: str, stable_context: str = "") -> list[dict[str, str]]:
