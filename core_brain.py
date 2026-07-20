@@ -99,7 +99,7 @@ def downstream_contract(w: dict[str, Any], emitting_node: str | None) -> str:
     seen = [
         (signal, target)
         for signal, target in edges.items()
-        if signal != "error" and isinstance(target, str) and target != "halt"
+        if signal != "error" and isinstance(target, str) and target != "halt" and target != emitting_node
     ]
     if not seen:
         return ""
