@@ -10,18 +10,18 @@
         },
         "request": {
           "model": "grok-4.5",
-          "temperature": 0.0,
+          "temperature": 0.2,
           "reasoning": {
-            "effort": "low"
+            "effort": "medium"
           },
           "store": false
         },
         "request_profiles": {
           "web_search": {
             "reasoning": {
-              "effort": "low"
+              "effort": "medium"
             },
-            "max_output_tokens": 8000,
+            "max_output_tokens": 800,
             "max_tool_calls": 4,
             "tools": [
               {
@@ -34,7 +34,7 @@
             "reasoning": {
               "effort": "low"
             },
-            "max_output_tokens": 8000
+            "max_output_tokens": 800
           }
         }
       }
@@ -45,21 +45,21 @@
     "organs": {
       "execution": {
         "reasoning": {
-          "effort": "low"
+          "effort": "medium"
         },
-        "max_output_tokens": 8000
+        "max_output_tokens": 800
       },
       "verification": {
         "reasoning": {
-          "effort": "low"
+          "effort": "medium"
         },
-        "max_output_tokens": 8000
+        "max_output_tokens": 800
       },
       "recovery": {
         "reasoning": {
-          "effort": "low"
+          "effort": "medium"
         },
-        "max_output_tokens": 8000
+        "max_output_tokens": 800
       }
     }
   },
@@ -68,8 +68,8 @@
   },
   "exploration": {
     "step_px": 64,
-    "max_subtree_nodes_per_point": 1000,
-    "max_environment_chars": 12000
+    "max_subtree_nodes_per_point": 100,
+    "max_environment_chars": 1200
   },
   "topology": {
     "cycle_start": "node_guidance",
