@@ -8,7 +8,6 @@ import core_bus as bus
 import core_nodes as nodes
 import core_wiring as wiring
 
-# Sentinel: --breakpoint with no path → brain-only (exit 42 after first dump).
 _BREAK_ONLY = object()
 _ROOT = pathlib.Path(__file__).resolve().parent
 
@@ -55,11 +54,6 @@ def run(goal: str | None) -> dict[str, Any]:
             if signal_name == "halt":
                 st["_phase"] = "halted"
                 return st
-            # Body-only: after inject queue is empty, stop before next faculty calls live LLM.
-            if brain.inject_mode() and brain.inject_remaining() == 0:
-                st["_phase"] = "inject_exhausted"
-                st["halt_reason"] = "breakpoint inject queue exhausted after faculty use"
-                return st
             current = next_node_for(w, current, signal_name)
             st["_phase"] = "node_complete"
     except KeyboardInterrupt:
@@ -70,10 +64,9 @@ def run(goal: str | None) -> dict[str, Any]:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description=(
-            "endgame-ai organism kernel. Dumps flat under _transmissions/ "
-            "({timestamp}_{uid}_*.txt|json). "
-            "--breakpoint: brain-only (exit 42 before exec). "
-            "--breakpoint PATH: body-only inject from content file or directory walk."
+            "endgame-ai. Dumps under _transmissions/. "
+            "--breakpoint: fuse on next live LLM transmission (exit 42). "
+            "--breakpoint FILE: inject that full reply once, body runs, fuse still on for next live LLM."
         )
     )
     ap.add_argument(
@@ -81,19 +74,18 @@ def main(argv: list[str] | None = None) -> int:
         nargs="?",
         const=_BREAK_ONLY,
         default=None,
-        metavar="PATH",
+        metavar="FILE",
         help=(
-            "science mode. No PATH: after first live LLM dump, exit 42 before exec. "
-            "PATH file: inject that content as the brain commit and run the body. "
-            "PATH directory: feed every content.txt / *_content.txt (sorted, recursive) "
-            "one-by-one as successive brain commits (no LLM)."
+            "fuse: stop after next live LLM dump (exit 42). "
+            "FILE: inject one content.txt / transmission.json / record as the next think reply; "
+            "hands run; next live LLM still hits the fuse."
         ),
     )
     ap.add_argument(
         "goal",
         nargs="?",
         default="",
-        help="one-sentence root goal for this life (use any label in body-only inject)",
+        help="root goal (or label when injecting)",
     )
     args = ap.parse_args(argv)
     import sys
@@ -101,39 +93,30 @@ def main(argv: list[str] | None = None) -> int:
     goal = str(args.goal or "").strip()
 
     if args.breakpoint is _BREAK_ONLY:
-        # Bare --breakpoint → brain-only; goal is the positional (or missing → error later).
-        brain.set_break_after_response(True)
+        brain.set_fuse(True)
     elif args.breakpoint is not None:
-        # Optional PATH after --breakpoint. If that string is not an existing file/dir,
-        # treat it as the goal (common: --breakpoint "click once...") → still brain-only.
         candidate = pathlib.Path(args.breakpoint).expanduser()
         resolved = candidate if candidate.is_absolute() else (_ROOT / candidate)
-        if resolved.exists():
-            n = brain.set_inject_path(resolved)
-            sys.stderr.write(
-                f"BREAKPOINT body-only inject: {n} content file(s) queued from {str(resolved)!r}\n"
-            )
+        if resolved.is_file():
+            brain.set_fuse(True)
+            brain.set_inject(resolved)
+            sys.stderr.write(f"FUSE+INJECT from {str(resolved)!r}\n")
             if not goal:
-                goal = "body-only inject replay"
+                goal = "inject"
         else:
-            brain.set_break_after_response(True)
+            brain.set_fuse(True)
             if goal:
-                # Both a positional goal and a non-path token — prefer positional goal.
                 sys.stderr.write(
-                    f"BREAKPOINT brain-only; ignored non-path token after flag: {args.breakpoint!r}\n"
+                    f"FUSE on; ignored non-file after flag: {args.breakpoint!r}\n"
                 )
             else:
                 goal = str(args.breakpoint).strip()
-                sys.stderr.write(
-                    "BREAKPOINT brain-only (argument after flag is goal text, not a path)\n"
-                )
+                sys.stderr.write("FUSE on (token after flag is goal text)\n")
 
     if not goal:
-        ap.error("goal is required for brain-only runs (e.g. --breakpoint \"THE_GOAL\")")
+        ap.error('goal required (e.g. --breakpoint "THE_GOAL" or a goal positional)')
 
-    st = run(goal)
-    if st.get("_phase") == "inject_exhausted":
-        return 0
+    run(goal)
     return 0
 
 
