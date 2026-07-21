@@ -77,15 +77,14 @@ def main(argv: list[str] | None = None) -> int:
         metavar="FILE",
         help=(
             "fuse: stop after next live LLM dump (exit 42). "
-            "FILE: inject one content.txt / transmission.json / record as the next think reply; "
-            "hands run; next live LLM still hits the fuse."
+            "FILE: inject that file raw as the next think reply; hands run; next live LLM still hits the fuse."
         ),
     )
     ap.add_argument(
         "goal",
         nargs="?",
         default="",
-        help="root goal (or label when injecting)",
+        help="root goal (not needed when injecting a file)",
     )
     args = ap.parse_args(argv)
     import sys

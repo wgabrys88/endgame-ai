@@ -33,33 +33,8 @@ def set_inject(path: str | pathlib.Path) -> None:
     text = p.read_text(encoding="utf-8-sig").strip()
     if not text:
         raise RuntimeError(f"inject file empty: {p}")
-    content = _content_from_file(p, text)
-    if not content.strip():
-        raise RuntimeError(f"inject file has no usable content: {p}")
-    _INJECT_CONTENT = content
+    _INJECT_CONTENT = text
     _INJECT_FROM = str(p)
-
-
-def _content_from_file(path: pathlib.Path, text: str) -> str:
-    name = path.name
-    if name.endswith("transmission.json") or name == "transmission.json":
-        obj = json.loads(text)
-        if not isinstance(obj, dict):
-            raise RuntimeError(f"transmission.json must be object: {path}")
-        return str(obj.get("extracted_content") or "")
-    try:
-        obj = json.loads(text)
-    except json.JSONDecodeError:
-        return text
-    if not isinstance(obj, dict):
-        return text
-    if "extracted_content" in obj:
-        return str(obj.get("extracted_content") or "")
-    if isinstance(obj.get("record_type"), str) and isinstance(obj.get("data"), dict):
-        return text
-    if "content" in obj and isinstance(obj["content"], str):
-        return obj["content"]
-    return text
 
 
 def _messages(system_prompt: str, user_text: str, stable_context: str = "") -> list[dict[str, str]]:
