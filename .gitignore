@@ -12,3 +12,11 @@
 !core_observation.py
 !core_organism.py
 !core_wiring.py
+
+!entity/
+!entity/entity.md
+!entity/entity.py
+!entity/capabilities.py
+!entity/README.md
+entity/.body_cache/
+entity/__pycache__/
