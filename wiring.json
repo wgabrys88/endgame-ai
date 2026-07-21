@@ -21,7 +21,7 @@
             "reasoning": {
               "effort": "medium"
             },
-            "max_output_tokens": 800,
+            "max_output_tokens": 4000,
             "max_tool_calls": 4,
             "tools": [
               {
@@ -34,7 +34,7 @@
             "reasoning": {
               "effort": "low"
             },
-            "max_output_tokens": 800
+            "max_output_tokens": 4000
           }
         }
       }
@@ -47,19 +47,19 @@
         "reasoning": {
           "effort": "medium"
         },
-        "max_output_tokens": 800
+        "max_output_tokens": 4000
       },
       "verification": {
         "reasoning": {
           "effort": "medium"
         },
-        "max_output_tokens": 800
+        "max_output_tokens": 4000
       },
       "recovery": {
         "reasoning": {
           "effort": "medium"
         },
-        "max_output_tokens": 800
+        "max_output_tokens": 4000
       }
     }
   },

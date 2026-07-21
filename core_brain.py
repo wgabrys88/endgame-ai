@@ -14,14 +14,69 @@ import core_wiring as wiring
 _SESSION_CACHE_KEY = f"endgame-{uuid.uuid4()}"
 _ROOT = pathlib.Path(__file__).resolve().parent
 _DUMP_DIR = _ROOT / "_transmissions"
-# Full raw req/resp dumps always. Break after first dump only when CLI --breakpoint is set.
+# Full raw req/resp dumps always. Break after first dump only when CLI --breakpoint is set (no path).
 _BREAK_AFTER_RESPONSE = False
+# Body-only science: skip LLM; pop committed record JSON from this queue (file or dir walk of *content*).
+_INJECT_QUEUE: list[str] = []
+_INJECT_MODE = False
+_INJECT_SOURCES: list[str] = []
 
 
 def set_break_after_response(enabled: bool) -> None:
-    """Primary tune interjection: dump then sys.exit(42) before faculty uses content."""
+    """Brain-only tune: dump then sys.exit(42) before faculty uses content."""
     global _BREAK_AFTER_RESPONSE
     _BREAK_AFTER_RESPONSE = bool(enabled)
+
+
+def set_inject_path(path: str | pathlib.Path) -> int:
+    """Body-only tune: load content file(s) to feed as successive brain commits (no LLM)."""
+    global _INJECT_QUEUE, _INJECT_MODE, _INJECT_SOURCES, _BREAK_AFTER_RESPONSE
+    root = pathlib.Path(path).expanduser()
+    if not root.is_absolute():
+        root = (_ROOT / root).resolve()
+    else:
+        root = root.resolve()
+    files = discover_content_files(root)
+    if not files:
+        raise RuntimeError(f"breakpoint inject: no content files under {root}")
+    texts: list[str] = []
+    sources: list[str] = []
+    for f in files:
+        # utf-8-sig strips BOM (common when content was saved from PowerShell/editors)
+        text = f.read_text(encoding="utf-8-sig").strip()
+        if not text:
+            raise RuntimeError(f"breakpoint inject: empty content file {f}")
+        texts.append(text)
+        sources.append(str(f))
+    _INJECT_QUEUE = texts
+    _INJECT_SOURCES = sources
+    _INJECT_MODE = True
+    _BREAK_AFTER_RESPONSE = False  # must reach faculty exec
+    return len(texts)
+
+
+def discover_content_files(path: pathlib.Path) -> list[pathlib.Path]:
+    """File → that file. Directory → every content.txt or *_content.txt (sorted), recursive."""
+    if path.is_file():
+        return [path]
+    if not path.is_dir():
+        raise RuntimeError(f"breakpoint inject path not found: {path}")
+    found: list[pathlib.Path] = []
+    for p in sorted(path.rglob("*")):
+        if not p.is_file():
+            continue
+        name = p.name
+        if name == "content.txt" or name.endswith("_content.txt"):
+            found.append(p)
+    return found
+
+
+def inject_remaining() -> int:
+    return len(_INJECT_QUEUE)
+
+
+def inject_mode() -> bool:
+    return _INJECT_MODE
 
 
 def _messages(system_prompt: str, user_text: str, stable_context: str = "") -> list[dict[str, str]]:
@@ -180,6 +235,13 @@ def _write_full(path: pathlib.Path, text: str) -> None:
     path.write_text(text, encoding="utf-8", newline="\n")
 
 
+def _new_transmission_prefix() -> str:
+    """One stamp+uid for every file of a single transmission (flat _transmissions/)."""
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    uid = uuid.uuid4().hex[:8]
+    return f"{stamp}_{uid}"
+
+
 def _dump_transmission(
     *,
     url: str,
@@ -191,13 +253,15 @@ def _dump_transmission(
     reasoning: str,
     http_status: int | None,
     error: str | None,
-) -> pathlib.Path:
-    """Write untruncated request/response artifacts for offline analysis."""
+    source: str = "live",
+    inject_from: str | None = None,
+) -> str:
+    """Write untruncated artifacts flat under _transmissions/ with shared filename prefix."""
     _DUMP_DIR.mkdir(parents=True, exist_ok=True)
-    stamp = time.strftime("%Y%m%d_%H%M%S")
-    uid = uuid.uuid4().hex[:8]
-    run_dir = _DUMP_DIR / f"{stamp}_{uid}"
-    run_dir.mkdir(parents=True, exist_ok=True)
+    prefix = _new_transmission_prefix()
+
+    def pref(name: str) -> pathlib.Path:
+        return _DUMP_DIR / f"{prefix}_{name}"
 
     request_json = json.dumps(payload, ensure_ascii=False, indent=2, default=str)
     response_json = (
@@ -207,6 +271,9 @@ def _dump_transmission(
     )
     meta = {
         "dumped_at": time.time(),
+        "prefix": prefix,
+        "source": source,
+        "inject_from": inject_from,
         "url": url,
         "http_status": http_status,
         "error": error,
@@ -217,6 +284,7 @@ def _dump_transmission(
         "message_roles": [m.get("role") for m in messages],
         "message_char_counts": {m.get("role", "?"): len(m.get("content") or "") for m in messages},
         "break_after_response": _BREAK_AFTER_RESPONSE,
+        "inject_mode": _INJECT_MODE,
     }
     bundle = {
         "meta": meta,
@@ -227,23 +295,18 @@ def _dump_transmission(
         "extracted_content": content,
         "extracted_reasoning": reasoning,
     }
-    # Full bundle + side files (no truncation).
-    _write_full(run_dir / "transmission.json", json.dumps(bundle, ensure_ascii=False, indent=2, default=str))
-    _write_full(run_dir / "request_body.json", request_json)
-    _write_full(run_dir / "response_raw.json", response_json if response_obj is not None else (raw_response_text or ""))
-    _write_full(run_dir / "response_raw.txt", raw_response_text or "")
-    _write_full(run_dir / "content.txt", content or "")
-    _write_full(run_dir / "reasoning.txt", reasoning or "")
+    # Flat side files: {prefix}_{kind} — same prefix for the whole transmission.
+    _write_full(pref("transmission.json"), json.dumps(bundle, ensure_ascii=False, indent=2, default=str))
+    _write_full(pref("request_body.json"), request_json)
+    _write_full(pref("response_raw.json"), response_json if response_obj is not None else (raw_response_text or ""))
+    _write_full(pref("response_raw.txt"), raw_response_text or "")
+    _write_full(pref("content.txt"), content or "")
+    _write_full(pref("reasoning.txt"), reasoning or "")
     for m in messages:
         role = str(m.get("role") or "unknown")
-        _write_full(run_dir / f"message_{role}.txt", str(m.get("content") or ""))
-    _write_full(run_dir / "meta.json", json.dumps(meta, ensure_ascii=False, indent=2))
-
-    latest = _ROOT / "_transmission_latest.json"
-    _write_full(latest, json.dumps(bundle, ensure_ascii=False, indent=2, default=str))
-    # Pointer for quick open
-    _write_full(_ROOT / "_transmission_latest_dir.txt", str(run_dir))
-    return run_dir
+        _write_full(pref(f"message_{role}.txt"), str(m.get("content") or ""))
+    _write_full(pref("meta.json"), json.dumps(meta, ensure_ascii=False, indent=2))
+    return prefix
 
 
 def _texts_from_parts(parts: Any) -> list[str]:
@@ -307,7 +370,7 @@ def _transport_call(messages: list[dict[str, str]], cfg: dict[str, Any], *, body
         if not isinstance(response_obj, dict):
             raise RuntimeError(f"xai transport expected JSON object, got {type(response_obj).__name__}")
         content, reasoning = _extract_content_reasoning(response_obj)
-        dump_dir = _dump_transmission(
+        prefix = _dump_transmission(
             url=url,
             payload=payload,
             messages=messages,
@@ -319,8 +382,7 @@ def _transport_call(messages: list[dict[str, str]], cfg: dict[str, Any], *, body
             error=None,
         )
         sys.stderr.write(
-            f"TRANSMISSION DUMP (full, no truncation): {dump_dir}\n"
-            f"  also: {_ROOT / '_transmission_latest.json'}\n"
+            f"TRANSMISSION DUMP (full, no truncation): {_DUMP_DIR} prefix={prefix}\n"
             f"  request_chars={len(raw_bytes)} response_chars={len(raw_response_text)} "
             f"content_chars={len(content)} reasoning_chars={len(reasoning)}\n"
         )
@@ -338,7 +400,7 @@ def _transport_call(messages: list[dict[str, str]], cfg: dict[str, Any], *, body
             response_obj = json.loads(raw_response_text) if raw_response_text else None
         except json.JSONDecodeError:
             response_obj = None
-        dump_dir = _dump_transmission(
+        prefix = _dump_transmission(
             url=url,
             payload=payload,
             messages=messages,
@@ -349,14 +411,14 @@ def _transport_call(messages: list[dict[str, str]], cfg: dict[str, Any], *, body
             http_status=http_status,
             error=error,
         )
-        sys.stderr.write(f"TRANSMISSION DUMP (HTTP error): {dump_dir}\n")
+        sys.stderr.write(f"TRANSMISSION DUMP (HTTP error): {_DUMP_DIR} prefix={prefix}\n")
         if _BREAK_AFTER_RESPONSE:
             sys.stderr.write("BREAKPOINT after failed response (omit --breakpoint to continue)\n")
             sys.exit(42)
         raise RuntimeError(f"xai transport HTTP {exc.code}: {raw_response_text}") from exc
     except urllib.error.URLError as exc:
         error = f"URL error: {getattr(exc, 'reason', exc)}"
-        dump_dir = _dump_transmission(
+        prefix = _dump_transmission(
             url=url,
             payload=payload,
             messages=messages,
@@ -367,7 +429,7 @@ def _transport_call(messages: list[dict[str, str]], cfg: dict[str, Any], *, body
             http_status=None,
             error=error,
         )
-        sys.stderr.write(f"TRANSMISSION DUMP (URL error): {dump_dir}\n")
+        sys.stderr.write(f"TRANSMISSION DUMP (URL error): {_DUMP_DIR} prefix={prefix}\n")
         if _BREAK_AFTER_RESPONSE:
             sys.stderr.write("BREAKPOINT after failed response (omit --breakpoint to continue)\n")
             sys.exit(42)
@@ -405,6 +467,35 @@ def think(
     emitting_node: str | None = None,
     body_override: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    # Body-only science: next queued disk content stands in for the LLM commit.
+    if _INJECT_QUEUE:
+        content = _INJECT_QUEUE.pop(0)
+        src = _INJECT_SOURCES.pop(0) if _INJECT_SOURCES else None
+        prefix = _dump_transmission(
+            url="inject://local",
+            payload={"injected": True, "emitting_node": emitting_node, "expected_record_type": expected_record_type},
+            messages=[],
+            raw_response_text="",
+            response_obj={"source": "inject", "inject_from": src},
+            content=content,
+            reasoning="",
+            http_status=None,
+            error=None,
+            source="inject",
+            inject_from=src,
+        )
+        sys.stderr.write(
+            f"INJECT brain content from {src!r} → {_DUMP_DIR} prefix={prefix} "
+            f"remaining={len(_INJECT_QUEUE)}\n"
+        )
+        record = _commit_record(content, w, expected_record_type)
+        return bus.Record(record.record_type, record.data, record.reasoning).to_json()
+    if _INJECT_MODE:
+        raise RuntimeError(
+            "breakpoint inject queue exhausted; refusing live LLM in body-only mode "
+            "(provide more content files or end the life)"
+        )
+
     _, cfg = wiring.get_transport_config(w)
     organ = w["model"]["organs"].get(expected_record_type) if expected_record_type else None
     organ_tuning = dict(organ) if isinstance(organ, dict) else {}

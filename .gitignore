@@ -12,3 +12,6 @@
 !core_observation.py
 !core_organism.py
 !core_wiring.py
+!tools/
+!tools/breakpoint_wheel.py
+!tools/README.md
