@@ -16,6 +16,7 @@
 !entity/
 !entity/entity.md
 !entity/entity.py
+!entity/entity_main.md
 !entity/capabilities.py
 !entity/README.md
 entity/.body_cache/
