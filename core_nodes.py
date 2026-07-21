@@ -204,6 +204,21 @@ class VerifyNode(BaseNode):
         goal_satisfied = verdict["goal_satisfied"]
         deed_confirmed = verdict["deed_confirmed"]
         reason = verdict["reason"]
+        if goal_satisfied and not deed_confirmed:
+            note = (
+                "My verdict was incoherent: I pronounced the WHOLE goal proven done, yet witnessed no "
+                "advance this looking (goal_satisfied without deed_confirmed). The whole standing done is "
+                "itself the greatest advance and cannot stand without it. This is my own probe's fault, no "
+                "body file's. I shall witness the whole afresh from the present world and pronounce done "
+                "only what this looking proveth.\n" + reason
+            )
+            return bus.emit(
+                "unwitnessed",
+                {
+                    "goal_interpretations": bus.with_interpretation(state.get("goal_interpretations"), "verify", note),
+                    "last_verification": {"success": False, "signal": "unwitnessed", "reasoning": note},
+                },
+            )
         signal = "halt" if goal_satisfied else ("deed_confirmed" if deed_confirmed else "deed_denied")
         desc = self._deed(ctx)
         confirmed = goal_satisfied or deed_confirmed
