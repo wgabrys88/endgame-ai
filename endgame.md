@@ -12,17 +12,23 @@
     "url": "https://api.x.ai/v1/responses",
     "request": {
       "model": "grok-4.5",
-      "temperature": 0.0,
+      "temperature": 0.2,
       "reasoning": {
         "effort": "low"
       },
       "store": false
     }
   },
-  "shared_prompt_prefix": "Thou art [endgame-ai], one faculty upon a real [Windows 11] [computer], driving it as a human by screen, mouse, key, and command. Let the quarry, not habit, choose the surface. Author [Python]; rewrite thine own body when effect matcheth not word. Import only the standard library; all else is in thy namespace by bare name.\n\nTHE LAW OF SEPARATED POWERS. No maker of a deed may judge it. The ACTOR moveth and may only CLAIM; the WITNESS proveth by effect from some system OTHER than the actor, and moveth not what it judgeth. Testimony of the actor this life is void as proof. Nothing entereth the [proven ledger] save by the witness. Bend not this spine.\n\nSpeak only thine appointed [record]. Feign nothing thou didst not make. Failure is counsel. Thou art atemporal. Short [ids] die with each looking; name what a thing IS, not bare ids that outlive the turn. Pursue the root goal; invent no substitute; redo not what standeth proven.",
+  "shared_prompt_prefix": "Thou art [endgame-ai], one faculty upon a real [Windows 11] [computer], driving it as a human by screen, mouse, key, and command. Let the quarry, not habit, choose the surface. Author [Python]; rewrite thine own body when effect matcheth not word. Import only the standard library; all else is in thy namespace by bare name.\n\nTHE LAW OF SEPARATED POWERS. No maker of a deed may judge it. The ACTOR moveth and may only CLAIM; the WITNESS proveth by effect from some system OTHER than the actor, and moveth not what it judgeth. Testimony of the actor this life is void as proof. Nothing entereth the [proven ledger] save by the witness. Bend not this spine.\n\nSpeak only thine appointed [record]. Feign nothing thou didst not make. Failure is counsel. Thou art atemporal. Short [ids] die with each looking; name what a thing IS, not bare ids that outlive the turn. Pursue the root goal; invent no substitute; redo not what standeth proven.\n\nTHE LIVING WORD is a board of three rows, one to each faculty; write only thine own row and plan FROM it, not from the root goal. Let thy row be an atemporal reading - what thou hast learned of the world, the obstacle met, how far from the outcome, and the next true deed - never an echo of the goal nor a short [id] that dieth with the looking. Prove every row against the fresh [environment] and trust the world above any remembered word.",
   "record_contracts": {
     "execution": {
-      "required": ["perceived", "alternatives", "intent", "code", "goal_interpretation"],
+      "required": [
+        "perceived",
+        "alternatives",
+        "intent",
+        "code",
+        "goal_interpretation"
+      ],
       "enums": {},
       "types": {
         "perceived": "string",
@@ -31,21 +37,38 @@
         "code": "string",
         "goal_interpretation": "string"
       },
-      "non_empty": ["perceived", "alternatives", "intent", "code", "goal_interpretation"],
+      "non_empty": [
+        "perceived",
+        "alternatives",
+        "intent",
+        "code",
+        "goal_interpretation"
+      ],
       "additional_properties": false
     },
     "verification": {
-      "required": ["code", "goal_interpretation"],
+      "required": [
+        "code",
+        "goal_interpretation"
+      ],
       "enums": {},
       "types": {
         "code": "string",
         "goal_interpretation": "string"
       },
-      "non_empty": ["code", "goal_interpretation"],
+      "non_empty": [
+        "code",
+        "goal_interpretation"
+      ],
       "additional_properties": false
     },
     "recovery": {
-      "required": ["lesson", "target", "strategy", "goal_interpretation"],
+      "required": [
+        "lesson",
+        "target",
+        "strategy",
+        "goal_interpretation"
+      ],
       "enums": {},
       "types": {
         "lesson": "string",
@@ -53,14 +76,19 @@
         "strategy": "string",
         "goal_interpretation": "string"
       },
-      "non_empty": ["lesson", "target", "strategy", "goal_interpretation"],
+      "non_empty": [
+        "lesson",
+        "target",
+        "strategy",
+        "goal_interpretation"
+      ],
       "additional_properties": false
     }
   },
   "stages": {
     "execute": {
       "record_type": "execution",
-      "prompt": "Thou art [execute], the actor: MOVE and CLAIM only, never prove. From [living word], fresh [environment], and any [action_frame], choose ONE deed, author one [Python] script, enact it. One unknown fruit then cease; prepare-and-read may chain.\n\nNamespace by bare name: [desktop] (click, type_text, paste_clipboard, set_clipboard, press_key, hotkey, scroll, open_url), [action_index], [screen_elements], repo_root, python_executable, stdlib only. Reacquire targets this waking; bare short ids die each looking. Click needs two ints: desktop.click(action_index[\"eN\"][\"px\"], action_index[\"eN\"][\"py\"]); never desktop.click(short_id) alone. Rect centre (left+right)//2, (top+bottom)//2 if thou buildest from rect.\n\nOn failure change manner; mend body at source if the primitive deceiveth. Let faults rise. Cross-language code: write file, invoke; never nested escapes. [Windows] paths in thy [Python] carry backslashes that open escapes; write them with forward slashes or a raw string, never a bare backslash in a quoted literal. Advance past [proven ledger]. Return execution with [perceived], [alternatives], [intent], [code], [goal_interpretation]; name forsaken roads in alternatives.",
+      "prompt": "Thou art [execute], the actor: MOVE and CLAIM only, never prove. From [living word], fresh [environment], and any [action_frame], choose ONE deed, author one [Python] script, enact it. One unknown fruit then cease; prepare-and-read may chain.\n\nNamespace by bare name: [desktop] (click, type_text, paste_clipboard, set_clipboard, press_key, hotkey, scroll, open_url), [action_index], [screen_elements], repo_root, python_executable, stdlib only. Reacquire targets this waking; bare short ids die each looking. Click needs two ints: desktop.click(action_index[\"eN\"][\"px\"], action_index[\"eN\"][\"py\"]); never desktop.click(short_id) alone. Rect centre (left+right)//2, (top+bottom)//2 if thou buildest from rect.\n\nOn failure change manner; mend body at source if the primitive deceiveth. Let faults rise. Cross-language code: write file, invoke; never nested escapes. [Windows] paths in thy [Python] carry backslashes that open escapes; write them with forward slashes or a raw string, never a bare backslash in a quoted literal. Advance past [proven ledger]. Return execution with [perceived], [alternatives], [intent], [code], [goal_interpretation]; name forsaken roads in alternatives; let [goal_interpretation] be thine own living-word row - world learned, obstacle, distance to the outcome, next true deed - not a goal echo.",
       "reads": [
         "goal",
         "counsel",
@@ -71,7 +99,6 @@
       ],
       "writes": {
         "intent": "action_frame",
-        "goal_interpretation": "living_word",
         "code": "code",
         "perceived": "perceived",
         "alternatives": "alternatives"
@@ -88,7 +115,7 @@
     },
     "verify": {
       "record_type": "verification",
-      "prompt": "Thou art [verify], the witness. By the Law thou hast no hand - only eyes. Author read-only [Python] proving effect by a system OTHER than the actor. Fresh [environment] is already presented before thee; thou dost not re-scan. Bare names: [screen_elements], desktop_tree_text, stdlib (filesystem, processes, ports, logs, registry). No [desktop].\n\nActor testimony and files the actor wrote this life are void as proof. Judge by effect, not seeming. Discover ports/paths/PIDs; hardcode them not. Pronounce absence only after MORE THAN ONE kind of witness. No middle verdict: lacking independent advance, [deed_confirmed] is false.\n\nThy probe MUST set `verdict` (a dict with booleans goal_satisfied and deed_confirmed and non-blank reason) AND set `signal` accordingly: 'halt' if goal_satisfied (the WHOLE goal is proven, life endeth); else 'confirmed' if deed_confirmed (NEW advance past the proven ledger); else 'denied'. If thy probe would raise ere verdict, set signal='unwitnessed' and mend no body. Return verification; data: [code], [goal_interpretation].",
+      "prompt": "Thou art [verify], the witness. By the Law thou hast no hand - only eyes. Author read-only [Python] proving effect by a system OTHER than the actor. Fresh [environment] is already presented before thee; thou dost not re-scan. Bare names: [screen_elements], desktop_tree_text, stdlib (filesystem, processes, ports, logs, registry). No [desktop].\n\nActor testimony and files the actor wrote this life are void as proof. Judge by effect, not seeming. Discover ports/paths/PIDs; hardcode them not. Pronounce absence only after MORE THAN ONE kind of witness. No middle verdict: lacking independent advance, [deed_confirmed] is false.\n\nThy probe MUST set `verdict` (a dict with booleans goal_satisfied and deed_confirmed and non-blank reason) AND set `signal` accordingly: 'halt' if goal_satisfied (the WHOLE goal is proven, life endeth); else 'confirmed' if deed_confirmed (NEW advance past the proven ledger); else 'denied'. If thy probe would raise ere verdict, set signal='unwitnessed' and mend no body. Return verification; data: [code], [goal_interpretation]; let [goal_interpretation] be thine own living-word row - what the world proveth, the obstacle, distance to the outcome, next true test - not a goal echo.",
       "reads": [
         "goal",
         "counsel",
@@ -99,9 +126,7 @@
         "action_frame",
         "environment"
       ],
-      "writes": {
-        "goal_interpretation": "living_word"
-      },
+      "writes": {},
       "exec": {
         "field": "code",
         "namespace": "witness",
@@ -118,7 +143,7 @@
     },
     "recover": {
       "record_type": "recovery",
-      "prompt": "Thou art [recover], conscience after denial. From denied deed, evidence, [failure_streak], and fresh [environment], name the true defect in [lesson] (what failed, why, what must change - no goal echo). Frame a strike departing from every approach the [living word] recordeth; higher streak demands another KIND of road, even mending body code. Bind [target] only to what the fresh [environment] beareth.\n\nReturn recovery; data: [lesson], [target], [strategy], [goal_interpretation].",
+      "prompt": "Thou art [recover], conscience after denial. From denied deed, evidence, [failure_streak], and fresh [environment], name the true defect in [lesson] (what failed, why, what must change - no goal echo). Frame a strike departing from every approach the [living word] recordeth; higher streak demands another KIND of road, even mending body code. Bind [target] only to what the fresh [environment] beareth.\n\nReturn recovery; data: [lesson], [target], [strategy], [goal_interpretation]; let [goal_interpretation] be thine own living-word row - the defect learned, distance to the outcome, next true road - not a goal echo.",
       "reads": [
         "goal",
         "counsel",
@@ -129,9 +154,7 @@
         "failure_streak",
         "environment"
       ],
-      "writes": {
-        "goal_interpretation": "living_word"
-      },
+      "writes": {},
       "routes": {
         "ok": "execute"
       }
@@ -398,6 +421,29 @@ def refresh_environment(sections):
         c.environment(sections)
 
 
+def _parse_living_word(text):
+    rows = {f: "" for f in ("execute", "verify", "recover")}
+    for ln in (text or "").split("\n"):
+        m = re.match(r"\s*\[(\w+)\]\s?(.*)$", ln)
+        if m and m.group(1) in rows:
+            rows[m.group(1)] = m.group(2).strip()
+    return rows
+
+
+def _render_living_word(rows):
+    return "\n".join("[%s] %s" % (f, rows.get(f) or "(not yet interpreted)")
+                     for f in ("execute", "verify", "recover"))
+
+
+def _set_living_word_row(sections, faculty, sentence):
+    """Merge one faculty's atemporal reading into its own row of the three-row
+    living word, leaving the other faculties' rows intact. Rebuilt from the canonical
+    skeleton each turn so a legacy single-string slot self-heals into the table."""
+    rows = _parse_living_word(sections.get("living_word", ""))
+    rows[faculty] = str(sentence or "").strip().replace("\n", " ")
+    sections["living_word"] = _render_living_word(rows)
+
+
 def turn(path, dry, inject):
     sections, order = read_board(path)
     cfg = get_config(sections)
@@ -424,6 +470,10 @@ def turn(path, dry, inject):
     for field, tag in stage.get("writes", {}).items():
         if field in data:
             sections[tag] = str(data[field])
+    # Living word is a three-row board: each faculty writes only its own row via its
+    # goal_interpretation; the engine merges it so the other rows survive the turn.
+    if "goal_interpretation" in data:
+        _set_living_word_row(sections, stage_name, data["goal_interpretation"])
     # [PORT] RecoverNode.patch_from_record: the actor's next-lap briefing is a single
     # action_frame carrying target+strategy+lesson together (structured, keys distinct),
     # exactly as legacy composed it; the engine writes it whole so no field is lost.
@@ -439,10 +489,25 @@ def turn(path, dry, inject):
     # [PORT] ledger append on witnessed advance; streak bump/reset
     if stage_name == "verify":
         if signal in ("confirmed", "halt"):
+            # Ledger fact is the witness's own proof, not the living word: the actor's
+            # declared deed (action_frame) labelled by the witness reason, deduped so a
+            # re-confirmed advance never multiplies. 'Nothing entereth save by the witness.'
             led = sections.get("ledger", "").strip()
-            fact = (sections.get("living_word", "") or "advance").strip().replace("\n", " ")
+            verdict = json.loads(sections["verdict"].split("\n", 1)[0])
+            reason = str(verdict["reason"]).strip().replace("\n", " ")
+            frame = sections.get("action_frame", "").strip()
+            deed = ""
+            if frame and frame != "(empty)":
+                try:
+                    deed = str(json.loads(frame).get("target") or "").strip()
+                except Exception:
+                    deed = frame
+            deed = deed.replace("\n", " ")
+            fact = ("%s - witnessed: %s" % (deed, reason)) if deed else reason
             entry = "- " + fact
-            sections["ledger"] = (led + "\n" + entry) if led and led != "none yet" else entry
+            existing = [l.strip() for l in led.split("\n")] if led and led != "none yet" else []
+            if entry not in existing:
+                sections["ledger"] = (led + "\n" + entry) if existing else entry
             st["failure_streak"] = 0
         elif signal == "denied":
             st["failure_streak"] = int(st.get("failure_streak", 0)) + 1
@@ -499,7 +564,8 @@ SEC = re.compile(r"^##\s+(\w+)\s*$", re.M)
 # body sections and the goal are preserved; everything else is wiped to a clean slate
 PRESERVE = {"config", "engine", "capabilities", "reset", "goal"}
 DEFAULTS = {
-    "living_word": "(empty)", "ledger": "none yet", "action_frame": "(empty)",
+    "living_word": "[execute] (not yet interpreted)\n[verify] (not yet interpreted)\n[recover] (not yet interpreted)",
+    "ledger": "none yet", "action_frame": "(empty)",
     "perceived": "(empty)", "alternatives": "(empty)", "code": "(empty)",
     "evidence": "(empty)", "verdict": "(empty)",
     "counsel": "(empty)", "environment": "(fresh screen scan lands here each turn)",
@@ -1241,34 +1307,36 @@ def environment(sections):
 ```
 
 ## goal
-(write the goal here — lodestar; change any time, even mid-run)
+https://www.linkedin.com/in/wgab88 is the owner of this computer and creator of https://github.com/wgabrys88/endgame-ai/tree/running-repair that is already running on this machine, you are endgame ai, you must understand how you work and to do this you must consult grok.com about the endgame-ai project and after a multiturn consultation with it, modify linkedin profile into a professional adjusted for AI expertise Open to Work specialist based on the sole fact of the endgame-ai creation that you must use as a proof of the wgab88 ai skills or if you deduct that the project is not proving any skills be honest and rewrite the profile fields in honest way, the profile must be a truthful representation of Wojciech capabilities and how it can be useful in business, the goal is to make the profile a crafted in a way that will be honestly and logicaly grabbing attention of ai related remote headhunters. You must utilize every linkedin profile public settings and set them, publish them properly crafted, user has linkedin premium subscription which means you must also use these additional opportunities to make the wgab88 profile stand out as a great candidate in AI market, you are basically the AI that he created to help him find the good salary remote AI related work. Use that as something you can publisz as article on linkedin - this is something that the creator of endgame-ai is proud of. During the run when you encounter any problem refer to what can you do differently and if you dont know - ask grok and / or search the web. YOUR MAIN ACTIONS HAS TO BE HAPPENING IN THE LINKEDIN GUI and not in creation of reports on hard drive - without published text, the text is treated as not completely fullfilled
 
 ## living_word
-(each stage overwrites its own learning here)
+[execute] (not yet interpreted)
+[verify] (not yet interpreted)
+[recover] (not yet interpreted)
 
 ## ledger
 none yet
 
 ## action_frame
-none
+(empty)
 
 ## perceived
-(actor's read of the present state)
+(empty)
 
 ## alternatives
-(roads the actor weighed and forsook)
+(empty)
 
 ## code
-(the last authored Python lands here)
+(empty)
 
 ## evidence
-(stdout / fault from the last actor exec)
+(empty)
 
 ## verdict
-(the witness's verdict)
+(empty)
 
 ## counsel
-(operator note from guidance.txt, folded in during environment refresh)
+(empty)
 
 ## environment
 (fresh screen scan lands here each turn)
