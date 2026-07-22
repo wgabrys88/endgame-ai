@@ -9,15 +9,12 @@
     "failure_streak": 0
   },
   "model": {
-    "api": "file_proxy",
+    "api": "responses",
     "responses": {
       "url": "http://localhost:1234/v1/responses",
       "request": {
         "model": "grok-4.5",
         "temperature": 0.2,
-        "reasoning": {
-          "effort": "low"
-        },
         "store": false
       }
     },
