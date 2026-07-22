@@ -703,6 +703,8 @@ from typing import Any
 
 user32 = ctypes.windll.user32
 ole32, oleaut32 = ctypes.WinDLL("ole32"), ctypes.WinDLL("oleaut32")
+user32.SetCursorPos.argtypes, user32.SetCursorPos.restype = [ctypes.c_int, ctypes.c_int], wintypes.BOOL
+user32.GetCursorPos.argtypes, user32.GetCursorPos.restype = [ctypes.POINTER(wintypes.POINT)], wintypes.BOOL
 
 
 class _GUID(ctypes.Structure):
@@ -1224,10 +1226,9 @@ def _probe_points(rect: dict[str, int], step_px: int) -> list[tuple[int, int]]:
     return points
 
 
-def _move_pointer(x: int, y: int, sw: int, sh: int) -> None:
-    event = _INPUT(type=0, u=_INPUTUNION(mi=_MOUSEINPUT(dx=max(0, min(sw - 1, x)) * 65535 // (sw - 1), dy=max(0, min(sh - 1, y)) * 65535 // (sh - 1), mouseData=0, dwFlags=0x8001, time=0, dwExtraInfo=0)))
-    if user32.SendInput(1, ctypes.byref(event), ctypes.sizeof(event)) != 1:
-        raise ctypes.WinError(ctypes.get_last_error())
+def _move_cursor(x: int, y: int) -> None:
+    if not user32.SetCursorPos(x, y):
+        raise ctypes.WinError()
 
 
 def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -1249,8 +1250,8 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
             hwnd, rect = win["hwnd"], win["rect"]
             kept: dict[str, dict[str, Any]] = {}
             for x, y in _probe_points(rect, step_px):
-                _move_pointer(x, y, sw, sh)
-                time.sleep(0.01)
+                _move_cursor(x, y)
+                time.sleep(0.03)
                 pt = wintypes.POINT(int(x), int(y))
                 try:
                     owner = int(user32.GetAncestor(user32.WindowFromPoint(pt), 2) or 0)
@@ -1285,7 +1286,7 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
     finally:
         if had_cursor:
             try:
-                _move_pointer(saved.x, saved.y, sw, sh)
+                _move_cursor(saved.x, saved.y)
             except Exception:
                 pass
 
