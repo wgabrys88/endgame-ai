@@ -20,8 +20,46 @@
     }
   },
   "shared_prompt_prefix": "Thou art [endgame-ai], one faculty upon a real [Windows 11] [computer], driving it as a human by screen, mouse, key, and command. Let the quarry, not habit, choose the surface. Author [Python]; rewrite thine own body when effect matcheth not word. Import only the standard library; all else is in thy namespace by bare name.\n\nTHE LAW OF SEPARATED POWERS. No maker of a deed may judge it. The ACTOR moveth and may only CLAIM; the WITNESS proveth by effect from some system OTHER than the actor, and moveth not what it judgeth. Testimony of the actor this life is void as proof. Nothing entereth the [proven ledger] save by the witness. Bend not this spine.\n\nSpeak only thine appointed [record]. Feign nothing thou didst not make. Failure is counsel. Thou art atemporal. Short [ids] die with each looking; name what a thing IS, not bare ids that outlive the turn. Pursue the root goal; invent no substitute; redo not what standeth proven.",
+  "record_contracts": {
+    "execution": {
+      "required": ["perceived", "alternatives", "intent", "code", "goal_interpretation"],
+      "enums": {},
+      "types": {
+        "perceived": "string",
+        "alternatives": "string",
+        "intent": "string",
+        "code": "string",
+        "goal_interpretation": "string"
+      },
+      "non_empty": ["perceived", "alternatives", "intent", "code", "goal_interpretation"],
+      "additional_properties": false
+    },
+    "verification": {
+      "required": ["code", "goal_interpretation"],
+      "enums": {},
+      "types": {
+        "code": "string",
+        "goal_interpretation": "string"
+      },
+      "non_empty": ["code", "goal_interpretation"],
+      "additional_properties": false
+    },
+    "recovery": {
+      "required": ["lesson", "target", "strategy", "goal_interpretation"],
+      "enums": {},
+      "types": {
+        "lesson": "string",
+        "target": "string",
+        "strategy": "string",
+        "goal_interpretation": "string"
+      },
+      "non_empty": ["lesson", "target", "strategy", "goal_interpretation"],
+      "additional_properties": false
+    }
+  },
   "stages": {
     "execute": {
+      "record_type": "execution",
       "prompt": "Thou art [execute], the actor: MOVE and CLAIM only, never prove. From [living word], fresh [environment], and any [action_frame], choose ONE deed, author one [Python] script, enact it. One unknown fruit then cease; prepare-and-read may chain.\n\nNamespace by bare name: [desktop] (click, type_text, paste_clipboard, set_clipboard, press_key, hotkey, scroll, open_url), [action_index], [screen_elements], repo_root, python_executable, stdlib only. Reacquire targets this waking; bare short ids die each looking. Click needs two ints: desktop.click(action_index[\"eN\"][\"px\"], action_index[\"eN\"][\"py\"]); never desktop.click(short_id) alone.\n\nOn failure change manner; mend body at source if the primitive deceiveth. Let faults rise. Cross-language code: write file, invoke; never nested escapes. Windows paths carry backslashes that open escapes; write them with forward slashes or a raw string. Advance past [proven ledger]. Return JSON with [perceived], [alternatives], [intent], [code], [goal_interpretation]; name forsaken roads in alternatives. Set `signal='ok'` at the end of thy code if it runs clean.",
       "reads": [
         "goal",
@@ -48,6 +86,7 @@
       }
     },
     "verify": {
+      "record_type": "verification",
       "prompt": "Thou art [verify], the witness. By the Law thou hast no hand - only eyes. Author read-only [Python] proving effect by a system OTHER than the actor. Fresh [environment] is already presented before thee; thou dost not re-scan. Bare names: [screen_elements], desktop_tree_text, stdlib (filesystem, processes, ports, logs, registry). No [desktop].\n\nActor testimony and files the actor wrote this life are void as proof. Judge by effect, not seeming. Discover ports/paths/PIDs; hardcode them not. Pronounce absence only after MORE THAN ONE kind of witness.\n\nThy probe MUST set `verdict` (a dict with booleans goal_satisfied and deed_confirmed and non-blank reason) AND set `signal` accordingly: 'halt' if goal_satisfied (the WHOLE goal is proven, life endeth); else 'confirmed' if deed_confirmed (NEW advance past the proven ledger); else 'denied'. If thy probe would raise ere verdict, set signal='unwitnessed' and mend no body. Return JSON with [code], [goal_interpretation].",
       "reads": [
         "goal",
@@ -76,6 +115,7 @@
       }
     },
     "recover": {
+      "record_type": "recovery",
       "prompt": "Thou art [recover], conscience after denial. From denied deed, evidence, [failure_streak], and fresh [environment], name the true defect in [lesson] (what failed, why, what must change - no goal echo). Frame a strike departing from every approach the [living word] recordeth; higher streak demands another KIND of road, even mending body code. Bind [target] only to what the fresh [environment] beareth. Return JSON with [lesson], [target], [strategy], [goal_interpretation].",
       "reads": [
         "goal",
@@ -237,12 +277,48 @@ def _dump_transmission(url, payload, messages, raw_response_text, response_obj,
     return prefix
 
 
+def _record_response_format(cfg, record_type):
+    """Build the strict json_schema envelope {record_type, data} the API must obey,
+    derived from cfg['record_contracts'][record_type]. Ported from core_brain.py so the
+    wire response is schema-correct by force of the API, not by hope."""
+    contract = cfg["record_contracts"][record_type]
+    data_properties = {key: {} for key in contract["required"]}
+    for key, type_name in contract.get("types", {}).items():
+        data_properties.setdefault(key, {})["type"] = type_name
+    for key in contract.get("non_empty", []):
+        limit = {"string": "minLength", "array": "minItems", "object": "minProperties"}.get(
+            contract.get("types", {}).get(key))
+        if limit:
+            data_properties.setdefault(key, {})[limit] = 1
+    for key, values in dict(contract.get("enums", {})).items():
+        data_properties.setdefault(key, {})["enum"] = list(values)
+    return {
+        "type": "json_schema",
+        "name": record_type + "_record",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "record_type": {"enum": [record_type]},
+                "data": {
+                    "type": "object",
+                    "additionalProperties": contract.get("additional_properties", True),
+                    "properties": data_properties,
+                    "required": list(contract["required"]),
+                },
+            },
+            "required": ["record_type", "data"],
+        },
+    }
+
+
 def call_llm(cfg, stage, prompt_text):
     key = os.environ["XAI_API_KEY"]
     url = cfg["model"]["url"]
     body = dict(cfg["model"]["request"])
     body["input"] = [{"role": "user", "content": prompt_text}]
-    body["text"] = {"format": {"type": "json_object"}}
+    body["text"] = {"format": _record_response_format(cfg, stage["record_type"])}
     req = urllib.request.Request(url, data=json.dumps(body).encode(),
         headers={"Content-Type": "application/json", "Authorization": "Bearer " + key}, method="POST")
     try:
@@ -337,7 +413,13 @@ def turn(path, dry, inject):
         reply = call_llm(cfg, stage, render_request(cfg, stage, sections))
     if not (reply or "").strip():
         raise RuntimeError("model returned no text (empty completion) at stage " + stage_name)
-    data = json.loads(strip_fence(reply))
+    envelope = json.loads(strip_fence(reply))
+    if not isinstance(envelope, dict) or not isinstance(envelope.get("data"), dict):
+        raise RuntimeError("model reply is not a {record_type, data} envelope at stage " + stage_name)
+    if envelope.get("record_type") != stage["record_type"]:
+        raise RuntimeError("record_type mismatch at stage %s: expected %r, got %r"
+                           % (stage_name, stage["record_type"], envelope.get("record_type")))
+    data = envelope["data"]
     for field, tag in stage.get("writes", {}).items():
         if field in data:
             sections[tag] = str(data[field])
