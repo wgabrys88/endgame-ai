@@ -211,6 +211,8 @@ def turn(path, dry, inject):
     cfg = get_config(sections)
     st = cfg["state"]
     stage_name = st.get("stage") or cfg["start"]
+    if stage_name not in cfg["stages"]:
+        stage_name = cfg["start"]
     stage = cfg["stages"][stage_name]
     sections["failure_streak"] = str(st.get("failure_streak", 0))
     refresh_environment(sections)
@@ -240,7 +242,7 @@ def turn(path, dry, inject):
         elif signal == "denied":
             st["failure_streak"] = int(st.get("failure_streak", 0)) + 1
     nxt = stage["routes"].get(signal) or stage["routes"].get("ok")
-    st["stage"] = nxt; st["last_signal"] = signal; st["turn"] = int(st.get("turn", 0)) + 1
+    st["stage"] = cfg["start"] if nxt in (None, "halt") else nxt; st["last_signal"] = signal; st["turn"] = int(st.get("turn", 0)) + 1
     sections["config"] = "```json\n" + json.dumps(cfg, indent=2) + "\n```"
     write_board(path, sections, order)
     sys.stderr.write("turn %d: stage=%s signal=%s -> %s (streak=%s)\n"
