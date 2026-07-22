@@ -9,7 +9,7 @@
     "failure_streak": 0
   },
   "model": {
-    "api": "responses",
+    "api": "chat_completions",
     "responses": {
       "url": "https://api.x.ai/v1/responses",
       "request": {
@@ -1431,5 +1431,6 @@ none yet
 {"verify":"Root ## goal is empty while verify must still judge goal_satisfied and pursue-the-root-goal without substitutes; empty goal makes halt unreachable and confuses deed vs goal. Least amendment: render a non-empty goal or sentinel UNSET into the prompt for all faculties, and treat goal_satisfied=true only for explicit UNSET-when-idle policy if that is desired, else keep false."}
 {"execute":"Root ## goal section in the execute prompt is empty while the response contract still demands goal_interpretation and pursuit of the root goal without substitutes; that contradiction forces either paralysis or hallucinated quarry. Least amendment: guarantee a non-empty goal string (or explicit sentinel like UNSET) in the rendered prompt before invoking execute, and allow execute to return a no-op claim when goal is UNSET without violating pursue-the-root-goal."}
 {"verify":"Root ## goal is empty while verify must still judge goal_satisfied and pursue-the-root-goal without substitutes; empty goal makes halt unreachable and confuses deed vs goal. Least amendment: render a non-empty goal or sentinel UNSET into the prompt for all faculties, and treat goal_satisfied=true only for explicit UNSET-when-idle policy if that is desired, else keep false."}
+{"execute":""}
 {"execute":""}
 {"execute":""}
