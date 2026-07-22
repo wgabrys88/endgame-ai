@@ -730,6 +730,7 @@ ole32.CoInitialize.argtypes, ole32.CoInitialize.restype = [ctypes.c_void_p], cty
 ole32.CoCreateInstance.argtypes = [ctypes.POINTER(_GUID), ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(_GUID), ctypes.POINTER(ctypes.c_void_p)]
 ole32.CoCreateInstance.restype = ctypes.c_long
 oleaut32.VariantClear.argtypes = [ctypes.POINTER(_VARIANT)]
+oleaut32.SysFreeString.argtypes = [ctypes.c_void_p]
 oleaut32.SafeArrayGetLBound.argtypes = [ctypes.c_void_p, wintypes.UINT, ctypes.POINTER(wintypes.LONG)]
 oleaut32.SafeArrayGetUBound.argtypes = [ctypes.c_void_p, wintypes.UINT, ctypes.POINTER(wintypes.LONG)]
 oleaut32.SafeArrayAccessData.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
@@ -766,43 +767,169 @@ def _value(raw):
         oleaut32.VariantClear(ctypes.byref(raw))
 
 
-class _Element:
-    def __init__(self, ptr, automation):
-        self.ptr, self.automation = ptr, automation
+def _release(ptr):
+    ctypes.WINFUNCTYPE(wintypes.ULONG, ctypes.c_void_p)(ctypes.cast(ptr, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p))).contents[2])(ptr)
 
-    def GetCurrentPropertyValue(self, prop):
-        raw = _VARIANT()
-        _check(_call(self.ptr, 10, ctypes.c_int, ctypes.POINTER(_VARIANT))(self.ptr, prop, ctypes.byref(raw)))
-        return _value(raw)
 
-    def release(self):
+def _bstr(ptr, slot, *args):
+    out = ctypes.c_void_p()
+    _check(_call(ptr, slot, *(type(arg) for arg in args), ctypes.POINTER(ctypes.c_void_p))(ptr, *args, ctypes.byref(out)))
+    try:
+        return ctypes.wstring_at(out) if out else ""
+    finally:
+        oleaut32.SysFreeString(out)
+
+
+class _Object:
+    def __init__(self, ptr):
+        self.ptr = ptr
+
+    def __del__(self):
         if self.ptr:
-            ctypes.WINFUNCTYPE(wintypes.ULONG, ctypes.c_void_p)(ctypes.cast(self.ptr, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p))).contents[2])(self.ptr)
+            _release(self.ptr)
             self.ptr = None
 
 
-class _Automation:
+class _Array(_Object):
+    def __init__(self, ptr, item):
+        super().__init__(ptr)
+        self.item = item
+
+    @property
+    def Length(self):
+        out = ctypes.c_int()
+        _check(_call(self.ptr, 3, ctypes.POINTER(ctypes.c_int))(self.ptr, ctypes.byref(out)))
+        return out.value
+
+    def GetElement(self, index):
+        out = ctypes.c_void_p()
+        _check(_call(self.ptr, 4, ctypes.c_int, ctypes.POINTER(ctypes.c_void_p))(self.ptr, index, ctypes.byref(out)))
+        return self.item(out)
+
+
+class _CacheRequest(_Object):
+    def AddProperty(self, prop):
+        _check(_call(self.ptr, 3, ctypes.c_int)(self.ptr, prop))
+
+    def AddPattern(self, pattern):
+        _check(_call(self.ptr, 4, ctypes.c_int)(self.ptr, pattern))
+
+    @property
+    def TreeScope(self):
+        out = ctypes.c_int()
+        _check(_call(self.ptr, 6, ctypes.POINTER(ctypes.c_int))(self.ptr, ctypes.byref(out)))
+        return out.value
+
+    @TreeScope.setter
+    def TreeScope(self, scope):
+        _check(_call(self.ptr, 7, ctypes.c_int)(self.ptr, scope))
+
+
+class _ValuePattern(_Object):
+    def __init__(self, ptr, cached):
+        super().__init__(ptr)
+        self.cached = cached
+
+    @property
+    def Value(self):
+        return _bstr(self.ptr, 6 if self.cached else 4)
+
+
+class _TextRange(_Object):
+    def GetText(self, length):
+        return _bstr(self.ptr, 12, ctypes.c_int(length))
+
+
+class _TextPattern(_Object):
+    @property
+    def DocumentRange(self):
+        out = ctypes.c_void_p()
+        _check(_call(self.ptr, 7, ctypes.POINTER(ctypes.c_void_p))(self.ptr, ctypes.byref(out)))
+        return _TextRange(out)
+
+    def GetVisibleRanges(self):
+        out = ctypes.c_void_p()
+        _check(_call(self.ptr, 6, ctypes.POINTER(ctypes.c_void_p))(self.ptr, ctypes.byref(out)))
+        return _Array(out, _TextRange)
+
+
+class _LegacyPattern(_Object):
+    def __init__(self, ptr, cached):
+        super().__init__(ptr)
+        self.cached = cached
+
+    @property
+    def Name(self):
+        return _bstr(self.ptr, 17 if self.cached else 7)
+
+    @property
+    def Value(self):
+        return _bstr(self.ptr, 18 if self.cached else 8)
+
+    @property
+    def Description(self):
+        return _bstr(self.ptr, 19 if self.cached else 9)
+
+
+PATTERNS = {
+    10002: (_ValuePattern, _guid(0xA94CD8B1, 0x0844, 0x4CD6, 0x9D, 0x2D, 0x64, 0x05, 0x37, 0xAB, 0x39, 0xE9)),
+    10014: (_TextPattern, _guid(0x32EBA289, 0x3583, 0x42C9, 0x9C, 0x59, 0x3B, 0x6D, 0x9A, 0x1E, 0x9B, 0x6A)),
+    10018: (_LegacyPattern, _guid(0x828055AD, 0x355B, 0x4435, 0x86, 0xD5, 0x3B, 0x51, 0xC1, 0x4A, 0x9B, 0x1B)),
+}
+
+
+class _Element(_Object):
+    def _property(self, slot, prop):
+        raw = _VARIANT()
+        _check(_call(self.ptr, slot, ctypes.c_int, ctypes.POINTER(_VARIANT))(self.ptr, prop, ctypes.byref(raw)))
+        return _value(raw)
+
+    def GetCurrentPropertyValue(self, prop):
+        return self._property(10, prop)
+
+    def GetCachedPropertyValue(self, prop):
+        return self._property(12, prop)
+
+    def _pattern(self, slot, pattern):
+        wrapper, iid = PATTERNS[pattern]
+        out = ctypes.c_void_p()
+        _check(_call(self.ptr, slot, ctypes.c_int, ctypes.POINTER(_GUID), ctypes.POINTER(ctypes.c_void_p))(self.ptr, pattern, ctypes.byref(iid), ctypes.byref(out)))
+        return wrapper(out, slot == 15) if wrapper is not _TextPattern else wrapper(out)
+
+    def GetCurrentPattern(self, pattern):
+        return self._pattern(14, pattern)
+
+    def GetCachedPattern(self, pattern):
+        return self._pattern(15, pattern)
+
+    def BuildUpdatedCache(self, request):
+        out = ctypes.c_void_p()
+        _check(_call(self.ptr, 9, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p))(self.ptr, request.ptr, ctypes.byref(out)))
+        return _Element(out)
+
+    def GetCachedChildren(self):
+        out = ctypes.c_void_p()
+        _check(_call(self.ptr, 19, ctypes.POINTER(ctypes.c_void_p))(self.ptr, ctypes.byref(out)))
+        return _Array(out, _Element) if out else None
+
+
+class _Automation(_Object):
     def __init__(self):
-        self.ptr, self.walker = ctypes.c_void_p(), ctypes.c_void_p()
+        ptr = ctypes.c_void_p()
         clsid = _guid(0xFF48DBA4, 0x60EF, 0x4201, 0xAA, 0x87, 0x54, 0x10, 0x3E, 0xEF, 0x59, 0x4E)
         iid = _guid(0x30CBE57D, 0xD9D0, 0x452A, 0xAB, 0x13, 0x7A, 0xC5, 0xAC, 0x48, 0x25, 0xEE)
-        _check(ole32.CoCreateInstance(ctypes.byref(clsid), None, 1, ctypes.byref(iid), ctypes.byref(self.ptr)))
-        _check(_call(self.ptr, 14, ctypes.POINTER(ctypes.c_void_p))(self.ptr, ctypes.byref(self.walker)))
+        _check(ole32.CoCreateInstance(ctypes.byref(clsid), None, 1, ctypes.byref(iid), ctypes.byref(ptr)))
+        super().__init__(ptr)
 
-    def element_from_point(self, point):
-        ptr = ctypes.c_void_p()
-        _check(_call(self.ptr, 7, wintypes.POINT, ctypes.POINTER(ctypes.c_void_p))(self.ptr, point, ctypes.byref(ptr)))
-        return _Element(ptr, self) if ptr else None
+    def CreateCacheRequest(self):
+        out = ctypes.c_void_p()
+        _check(_call(self.ptr, 20, ctypes.POINTER(ctypes.c_void_p))(self.ptr, ctypes.byref(out)))
+        return _CacheRequest(out)
 
-    def children(self, element):
-        out, children = ctypes.c_void_p(), []
-        _check(_call(self.walker, 4, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p))(self.walker, element.ptr, ctypes.byref(out)))
-        while out:
-            child = _Element(out, self)
-            children.append(child)
-            out = ctypes.c_void_p()
-            _check(_call(self.walker, 6, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p))(self.walker, child.ptr, ctypes.byref(out)))
-        return children
+    def ElementFromPointBuildCache(self, point, request):
+        out = ctypes.c_void_p()
+        _check(_call(self.ptr, 11, wintypes.POINT, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p))(self.ptr, point, request.ptr, ctypes.byref(out)))
+        return _Element(out) if out else None
 
 
 AUTOMATION = _Automation()
@@ -810,8 +937,11 @@ AUTOMATION = _Automation()
 PID_RUNTIME_ID, PID_BOUNDING_RECT, PID_CONTROL_TYPE, PID_NAME = 30000, 30001, 30003, 30005
 PID_ENABLED, PID_AUTOMATION_ID, PID_CLASS_NAME, PID_CONTENT_ELEMENT = 30010, 30011, 30012, 30017
 PID_HWND, PID_OFFSCREEN, PID_FRAMEWORK, PID_ITEM_STATUS = 30020, 30022, 30024, 30026
-PID_VALUE, PID_WINDOW_INTERACTION_STATE = 30045, 30076
-PID_LEGACY_NAME, PID_LEGACY_VALUE, PID_LEGACY_DESCRIPTION = 30092, 30093, 30094
+PID_WINDOW_INTERACTION_STATE = 30076
+SCAN_PROPERTY_IDS = [PID_RUNTIME_ID, PID_BOUNDING_RECT, PID_CONTROL_TYPE, PID_NAME, PID_AUTOMATION_ID, PID_CLASS_NAME, PID_ENABLED, PID_OFFSCREEN, PID_HWND, PID_FRAMEWORK, PID_CONTENT_ELEMENT, PID_WINDOW_INTERACTION_STATE, PID_ITEM_STATUS]
+PID_VALUE_PATTERN, PID_TEXT_PATTERN, PID_LEGACY_PATTERN = PATTERNS
+SCAN_PATTERN_IDS = list(PATTERNS)
+TreeScope_Element, TreeScope_Subtree = 1, 7
 CONTROL_TYPE_NAMES = dict(enumerate("Button Calendar CheckBox ComboBox Edit Hyperlink Image ListItem List Menu MenuBar MenuItem ProgressBar RadioButton ScrollBar Slider Spinner StatusBar Tab TabItem Text ToolBar ToolTip Tree TreeItem Custom Group Thumb DataGrid DataItem Document SplitButton Window Pane Header HeaderItem Table TitleBar Separator SemanticZoom AppBar".split(), 50000))
 CLICK_ROLES = {"Button", "Calendar", "CheckBox", "Hyperlink", "ListItem", "MenuItem", "RadioButton", "Tab", "TabItem", "TreeItem", "DataItem", "SplitButton"}
 WRITE_ROLES = {"Edit", "ComboBox", "Spinner", "Document"}
@@ -950,7 +1080,7 @@ def _pattern(element: Any, pattern_id: int) -> Any:
 class UiaScanner:
     def __init__(self, config: dict[str, Any], desktop_instance: Any = None):
         self.cfg = config
-        self.automation = desktop_instance.automation if desktop_instance and hasattr(desktop_instance, "automation") else comtypes.client.CreateObject(uia.CUIAutomation, interface=uia.IUIAutomation)
+        self.automation = desktop_instance.automation if desktop_instance and hasattr(desktop_instance, "automation") else AUTOMATION
 
     def _cache(self, scope: int = TreeScope_Subtree):
         req = self.automation.CreateCacheRequest()
@@ -1230,14 +1360,10 @@ def _render(windows: list[dict[str, Any]], screen: dict[str, int]) -> dict[str, 
 
 # --- hand: input synthesis + app control (was core_desktop.py) ---
 import ctypes
-import importlib
 import os
 import subprocess
 from ctypes import wintypes
 from typing import Any
-
-import comtypes
-import comtypes.client
 
 ROOT = __import__("pathlib").Path(globals().get("BOARD", ".")).resolve().parent
 user32 = ctypes.windll.user32
@@ -1270,15 +1396,6 @@ user32.SendInput.argtypes = (wintypes.UINT, ctypes.POINTER(_INPUT), ctypes.c_int
 user32.SendInput.restype = wintypes.UINT
 
 
-def _load_uia_module() -> Any:
-    comtypes.client.GetModule("UIAutomationCore.dll")
-    return importlib.import_module("comtypes.gen.UIAutomationClient")
-
-
-uia = _load_uia_module()
-comtypes.CoInitialize()
-
-
 KEY_MAP: dict[str, int] = {
     "ctrl": 0x11, "control": 0x11, "alt": 0x12, "shift": 0x10, "win": 0x5B, "windows": 0x5B,
     "enter": 0x0D, "return": 0x0D, "tab": 0x09, "escape": 0x1B, "esc": 0x1B, "space": 0x20,
@@ -1299,7 +1416,7 @@ class Desktop:
     @property
     def automation(self) -> Any:
         if self._automation is None:
-            self._automation = comtypes.client.CreateObject(uia.CUIAutomation, interface=uia.IUIAutomation)
+            self._automation = AUTOMATION
         return self._automation
 
     def observe(self, config: dict[str, Any] | None = None) -> dict[str, Any]:
