@@ -9,12 +9,25 @@
     "failure_streak": 0
   },
   "model": {
-    "api": "chat_completions",
-    "url": "http://localhost:1234/v1/chat/completions",
-    "request": {
-      "model": "local-model",
-      "temperature": 0.2,
-      "stream": false
+    "api": "responses",
+    "responses": {
+      "url": "https://api.x.ai/v1/responses",
+      "request": {
+        "model": "grok-4.5",
+        "temperature": 0.2,
+        "reasoning": {
+          "effort": "low"
+        },
+        "store": false
+      }
+    },
+    "chat_completions": {
+      "url": "http://localhost:1234/v1/chat/completions",
+      "request": {
+        "model": "local-model",
+        "temperature": 0.2,
+        "stream": false
+      }
     },
     "acp": {
       "command": [
@@ -402,7 +415,8 @@ def call_llm(cfg, stage, prompt_text):
         return _call_acp(model, prompt_text, fmt)
     if api == "file_proxy":
         return _call_file_proxy(model, prompt_text, fmt, stage["record_type"])
-    url, body = model["url"], dict(model["request"])
+    transport = model[api]
+    url, body = transport["url"], dict(transport["request"])
     headers = {"Content-Type": "application/json"}
     if api == "responses":
         body.pop("previous_response_id", None)
@@ -1417,4 +1431,5 @@ none yet
 {"verify":"Root ## goal is empty while verify must still judge goal_satisfied and pursue-the-root-goal without substitutes; empty goal makes halt unreachable and confuses deed vs goal. Least amendment: render a non-empty goal or sentinel UNSET into the prompt for all faculties, and treat goal_satisfied=true only for explicit UNSET-when-idle policy if that is desired, else keep false."}
 {"execute":"Root ## goal section in the execute prompt is empty while the response contract still demands goal_interpretation and pursuit of the root goal without substitutes; that contradiction forces either paralysis or hallucinated quarry. Least amendment: guarantee a non-empty goal string (or explicit sentinel like UNSET) in the rendered prompt before invoking execute, and allow execute to return a no-op claim when goal is UNSET without violating pursue-the-root-goal."}
 {"verify":"Root ## goal is empty while verify must still judge goal_satisfied and pursue-the-root-goal without substitutes; empty goal makes halt unreachable and confuses deed vs goal. Least amendment: render a non-empty goal or sentinel UNSET into the prompt for all faculties, and treat goal_satisfied=true only for explicit UNSET-when-idle policy if that is desired, else keep false."}
+{"execute":""}
 {"execute":""}
