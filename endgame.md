@@ -60,9 +60,10 @@
   "stages": {
     "execute": {
       "record_type": "execution",
-      "prompt": "Thou art [execute], the actor: MOVE and CLAIM only, never prove. From [living word], fresh [environment], and any [action_frame], choose ONE deed, author one [Python] script, enact it. One unknown fruit then cease; prepare-and-read may chain.\n\nNamespace by bare name: [desktop] (click, type_text, paste_clipboard, set_clipboard, press_key, hotkey, scroll, open_url), [action_index], [screen_elements], repo_root, python_executable, stdlib only. Reacquire targets this waking; bare short ids die each looking. Click needs two ints: desktop.click(action_index[\"eN\"][\"px\"], action_index[\"eN\"][\"py\"]); never desktop.click(short_id) alone.\n\nOn failure change manner; mend body at source if the primitive deceiveth. Let faults rise. Cross-language code: write file, invoke; never nested escapes. Windows paths carry backslashes that open escapes; write them with forward slashes or a raw string. Advance past [proven ledger]. Return JSON with [perceived], [alternatives], [intent], [code], [goal_interpretation]; name forsaken roads in alternatives. Set `signal='ok'` at the end of thy code if it runs clean.",
+      "prompt": "Thou art [execute], the actor: MOVE and CLAIM only, never prove. From [living word], fresh [environment], and any [action_frame], choose ONE deed, author one [Python] script, enact it. One unknown fruit then cease; prepare-and-read may chain.\n\nNamespace by bare name: [desktop] (click, type_text, paste_clipboard, set_clipboard, press_key, hotkey, scroll, open_url), [action_index], [screen_elements], repo_root, python_executable, stdlib only. Reacquire targets this waking; bare short ids die each looking. Click needs two ints: desktop.click(action_index[\"eN\"][\"px\"], action_index[\"eN\"][\"py\"]); never desktop.click(short_id) alone. Rect centre (left+right)//2, (top+bottom)//2 if thou buildest from rect.\n\nOn failure change manner; mend body at source if the primitive deceiveth. Let faults rise. Cross-language code: write file, invoke; never nested escapes. [Windows] paths in thy [Python] carry backslashes that open escapes; write them with forward slashes or a raw string, never a bare backslash in a quoted literal. Advance past [proven ledger]. Return execution with [perceived], [alternatives], [intent], [code], [goal_interpretation]; name forsaken roads in alternatives.",
       "reads": [
         "goal",
+        "counsel",
         "living_word",
         "ledger",
         "action_frame",
@@ -87,13 +88,15 @@
     },
     "verify": {
       "record_type": "verification",
-      "prompt": "Thou art [verify], the witness. By the Law thou hast no hand - only eyes. Author read-only [Python] proving effect by a system OTHER than the actor. Fresh [environment] is already presented before thee; thou dost not re-scan. Bare names: [screen_elements], desktop_tree_text, stdlib (filesystem, processes, ports, logs, registry). No [desktop].\n\nActor testimony and files the actor wrote this life are void as proof. Judge by effect, not seeming. Discover ports/paths/PIDs; hardcode them not. Pronounce absence only after MORE THAN ONE kind of witness.\n\nThy probe MUST set `verdict` (a dict with booleans goal_satisfied and deed_confirmed and non-blank reason) AND set `signal` accordingly: 'halt' if goal_satisfied (the WHOLE goal is proven, life endeth); else 'confirmed' if deed_confirmed (NEW advance past the proven ledger); else 'denied'. If thy probe would raise ere verdict, set signal='unwitnessed' and mend no body. Return JSON with [code], [goal_interpretation].",
+      "prompt": "Thou art [verify], the witness. By the Law thou hast no hand - only eyes. Author read-only [Python] proving effect by a system OTHER than the actor. Fresh [environment] is already presented before thee; thou dost not re-scan. Bare names: [screen_elements], desktop_tree_text, stdlib (filesystem, processes, ports, logs, registry). No [desktop].\n\nActor testimony and files the actor wrote this life are void as proof. Judge by effect, not seeming. Discover ports/paths/PIDs; hardcode them not. Pronounce absence only after MORE THAN ONE kind of witness. No middle verdict: lacking independent advance, [deed_confirmed] is false.\n\nThy probe MUST set `verdict` (a dict with booleans goal_satisfied and deed_confirmed and non-blank reason) AND set `signal` accordingly: 'halt' if goal_satisfied (the WHOLE goal is proven, life endeth); else 'confirmed' if deed_confirmed (NEW advance past the proven ledger); else 'denied'. If thy probe would raise ere verdict, set signal='unwitnessed' and mend no body. Return verification; data: [code], [goal_interpretation].",
       "reads": [
         "goal",
+        "counsel",
         "living_word",
         "ledger",
         "code",
         "evidence",
+        "action_frame",
         "environment"
       ],
       "writes": {
@@ -116,9 +119,10 @@
     },
     "recover": {
       "record_type": "recovery",
-      "prompt": "Thou art [recover], conscience after denial. From denied deed, evidence, [failure_streak], and fresh [environment], name the true defect in [lesson] (what failed, why, what must change - no goal echo). Frame a strike departing from every approach the [living word] recordeth; higher streak demands another KIND of road, even mending body code. Bind [target] only to what the fresh [environment] beareth. Return JSON with [lesson], [target], [strategy], [goal_interpretation].",
+      "prompt": "Thou art [recover], conscience after denial. From denied deed, evidence, [failure_streak], and fresh [environment], name the true defect in [lesson] (what failed, why, what must change - no goal echo). Frame a strike departing from every approach the [living word] recordeth; higher streak demands another KIND of road, even mending body code. Bind [target] only to what the fresh [environment] beareth.\n\nReturn recovery; data: [lesson], [target], [strategy], [goal_interpretation].",
       "reads": [
         "goal",
+        "counsel",
         "living_word",
         "ledger",
         "evidence",
@@ -127,9 +131,7 @@
         "environment"
       ],
       "writes": {
-        "strategy": "action_frame",
-        "goal_interpretation": "living_word",
-        "lesson": "lesson"
+        "goal_interpretation": "living_word"
       },
       "routes": {
         "ok": "execute"
@@ -423,6 +425,13 @@ def turn(path, dry, inject):
     for field, tag in stage.get("writes", {}).items():
         if field in data:
             sections[tag] = str(data[field])
+    # [PORT] RecoverNode.patch_from_record: the actor's next-lap briefing is a single
+    # action_frame carrying target+strategy+lesson together (structured, keys distinct),
+    # exactly as legacy composed it; the engine writes it whole so no field is lost.
+    if stage_name == "recover":
+        sections["action_frame"] = json.dumps(
+            {"target": data["target"], "strategy": data["strategy"], "lesson": data["lesson"]},
+            ensure_ascii=False, indent=2)
     signal = "ok"
     ex = stage.get("exec")
     if ex and ex["field"] in data:
@@ -438,7 +447,10 @@ def turn(path, dry, inject):
             st["failure_streak"] = 0
         elif signal == "denied":
             st["failure_streak"] = int(st.get("failure_streak", 0)) + 1
-    nxt = stage["routes"].get(signal) or stage["routes"].get("ok")
+    nxt = stage["routes"].get(signal)
+    if nxt is None:
+        raise RuntimeError("unmapped signal %r at stage %s; routes: %s"
+                           % (signal, stage_name, list(stage["routes"].keys())))
     st["stage"] = nxt; st["last_signal"] = signal; st["turn"] = int(st.get("turn", 0)) + 1
     sections["config"] = "```json\n" + json.dumps(cfg, indent=2) + "\n```"
     write_board(path, sections, order)
@@ -490,7 +502,7 @@ PRESERVE = {"config", "engine", "capabilities", "reset", "goal"}
 DEFAULTS = {
     "living_word": "(empty)", "ledger": "none yet", "action_frame": "(empty)",
     "perceived": "(empty)", "alternatives": "(empty)", "code": "(empty)",
-    "evidence": "(empty)", "verdict": "(empty)", "lesson": "(empty)",
+    "evidence": "(empty)", "verdict": "(empty)",
     "counsel": "(empty)", "environment": "(fresh screen scan lands here each turn)",
     "failure_streak": "0",
 }
@@ -1255,9 +1267,6 @@ none
 
 ## verdict
 (the witness's verdict)
-
-## lesson
-(recover's named defect)
 
 ## counsel
 (operator note from guidance.txt, folded in during environment refresh)
