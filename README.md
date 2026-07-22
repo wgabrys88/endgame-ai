@@ -2,7 +2,8 @@
 
 > A single Markdown document that wakes up, looks at your screen, writes its own Python, runs it,
 > checks its own work with a part of itself that isn't allowed to lie, and rewrites its own rules —
-> then forgets everything and does it again. No framework. No memory store. No tool menu. One file.
+> then carries its faculties' feedback forward and does it again. No framework. No separate memory
+> store. No tool menu. One file.
 
 ---
 
@@ -55,8 +56,8 @@ exec(engine, {"BOARD": str(board), "ARGV": sys.argv})
 ```
 
 That's the entire interface. A sentence in the document. A living desktop out. It reads its own
-`engine`, comes alive with your goal as its only instruction, and starts *looking, thinking, acting,
-and checking* — turn after turn — until the goal is independently proven done, or you close the
-window.
+`engine`, takes your goal as its sole source of purpose, and starts *looking, thinking, acting, and
+checking* with its accumulated developer feedback as advisory context — turn after turn — until the
+goal is independently proven done, or you close the window.
 
 ---
