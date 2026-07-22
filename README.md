@@ -38,7 +38,7 @@ Then wake it up. A tiny bootstrap reads the document's own `engine` section and 
 
 ```powershell
 ## Command (one-liner, run it from the dir where the file is located after loading a model in LM Studio's server on localhost:1234)
-python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md
+iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -OutFile .\endgame.md;python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md
 ```
 
 The command is about as small as a launcher gets, it reads the `engine` section out of the Markdown and executes it, with the document as its world:
