@@ -701,7 +701,7 @@ import time
 from ctypes import wintypes
 from typing import Any
 
-user32 = ctypes.windll.user32
+user32 = ctypes.WinDLL("user32", use_last_error=True)
 ole32, oleaut32 = ctypes.WinDLL("ole32"), ctypes.WinDLL("oleaut32")
 user32.SetCursorPos.argtypes, user32.SetCursorPos.restype = [ctypes.c_int, ctypes.c_int], wintypes.BOOL
 user32.GetCursorPos.argtypes, user32.GetCursorPos.restype = [ctypes.POINTER(wintypes.POINT)], wintypes.BOOL
@@ -1227,8 +1227,7 @@ def _probe_points(rect: dict[str, int], step_px: int) -> list[tuple[int, int]]:
 
 
 def _move_cursor(x: int, y: int) -> None:
-    if not user32.SetCursorPos(x, y):
-        raise ctypes.WinError()
+    user32.SetCursorPos(x, y)
 
 
 def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -1378,7 +1377,6 @@ from ctypes import wintypes
 from typing import Any
 
 ROOT = __import__("pathlib").Path(globals().get("BOARD", ".")).resolve().parent
-user32 = ctypes.windll.user32
 DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = ctypes.c_void_p(-4)
 if not user32.SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2):
     raise ctypes.WinError()
