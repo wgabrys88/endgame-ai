@@ -4,8 +4,8 @@
   "start": "execute",
   "state": {
     "stage": "verify",
-    "last_signal": "fault",
-    "turn": 2,
+    "last_signal": "ok",
+    "turn": 1,
     "failure_streak": 0
   },
   "model": {
@@ -1582,35 +1582,30 @@ def environment(sections):
 
 
 ## living_word
-[execute] The world has been cleared of empty goals; the obstacle is resolved by marking state as UNSET, distance zero, next true deed is idle.
-[verify] UNSET
+[execute] [execute] (not yet interpreted) [verify] (not yet interpreted) [recover] (not yet interpreted)
+[verify] (not yet interpreted)
 [recover] (not yet interpreted)
 
 ## ledger
 none yet
 
 ## action_frame
-set clipboard to sentinel UNSET as per amended goal policy
+await clarification of root goal
 
 ## perceived
-clipboard now holds UNSET
+goal empty
 
 ## alternatives
-clipboard 'UNSET'
+UNSET
 
 ## code
-desktop.set_clipboard('UNSET')
+print('Goal missing')
 
 ## evidence
-(no output)
+Goal missing
 
 ## verdict
-Traceback (most recent call last):
-  File "<string>", line 272, in run_exec
-  File "<string>", line 1, in <module>
-    import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})
-    ^^^^^^^
-NameError: name 'desktop' is not defined
+(empty)
 
 ## counsel
 (empty)
@@ -1619,14 +1614,16 @@ NameError: name 'desktop' is not defined
 W0 Screen Desktop
 W1 Window Window_131364
   e1 Button ChatGPT - 1 running window [click]
-  e2 Text Search [read]
-  e3 Button File Explorer pinned [click]
-  e4 Button Google Chrome pinned [click]
-  e5 Button Task Manager - 1 running window [click]
-  e6 Button LM Studio - 1 running window [click]
-  e7 Button Show Hidden Icons [click]
-  e8 Button Task Manager CPU 28% Memory 54% Disk 1% Network 0% [click]
-  e9 Button Clock 12:26:40 AM ‎7/‎23/‎2026 [click]
+  e2 Button Start [click]
+  e3 Button Search [click]
+    e4 Text Search [read]
+  e5 Button File Explorer pinned [click]
+  e6 Button Google Chrome pinned [click]
+  e7 Button Task Manager - 1 running window [click]
+  e8 Button LM Studio - 1 running window [click]
+  e9 Button Show Hidden Icons [click]
+  e10 Button Task Manager CPU 11% Memory 58% Disk 0% Network 0% [click]
+  e11 Button Clock 12:39:07 AM ‎7/‎23/‎2026 [click]
 W2 Window Task Manager
 W3 Window LM Studio
 W4 Window Settings
@@ -1634,7 +1631,7 @@ W5 Window Settings
 W6 Window Window_327714
 W7 Window Window_65968
 W8 Window Program Manager
-  e10 ListItem Recycle Bin [click]
+  e12 ListItem Recycle Bin [click]
 
 ## failure_streak
 0
@@ -1662,3 +1659,4 @@ W8 Window Program Manager
 {"execute":""}
 {"execute":""}
 {"verify":""}
+{"execute":"Problem: The execute prompt contains an empty goal section, which contradicts the contract demanding a non‑empty root goal and a valid goal_interpretation. This hinders proper execution because there is nothing to pursue or prove. The present design sufficeth not as it forces paralysis or hallucinated outcomes. Least amendment: guarantee a non‑empty goal string (or explicit sentinel UNSET) in the rendered prompt before invoking execute, and allow execute to return a no‑op claim when GOAL=UNSET."}
