@@ -12,15 +12,4 @@
 !core_observation.py
 !core_organism.py
 !core_wiring.py
-
-!entity/
-!entity/entity.md
-!entity/entity.py
-!entity/entity_main.md
-!entity/capabilities.py
-!entity/endgame-ai-final.md
-!entity/endgame-ai.md
-!entity/endgame-ai-live.md
-!entity/README.md
-entity/.body_cache/
-entity/__pycache__/
+!endgame.md
