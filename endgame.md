@@ -1250,6 +1250,7 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
             hwnd, rect = win["hwnd"], win["rect"]
             kept: dict[str, dict[str, Any]] = {}
             for x, y in _probe_points(rect, step_px):
+                x, y = max(0, min(sw - 1, x)), max(0, min(sh - 1, y))
                 _move_cursor(x, y)
                 time.sleep(0.03)
                 pt = wintypes.POINT(int(x), int(y))
