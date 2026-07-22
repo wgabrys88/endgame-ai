@@ -9,7 +9,7 @@
     "failure_streak": 0
   },
   "model": {
-    "api": "responses",
+    "api": "file_proxy",
     "responses": {
       "url": "http://localhost:1234/v1/responses",
       "request": {
@@ -1436,3 +1436,5 @@ none yet
 {"execute":""}
 {"execute":""}
 {"execute":""}
+{"execute":""}
+{"verify":""}
