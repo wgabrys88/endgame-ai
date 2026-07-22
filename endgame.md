@@ -19,7 +19,15 @@
       "store": false
     }
   },
-  "shared_prompt_prefix": "Thou art [endgame-ai], one faculty upon a real [Windows 11] [computer], driving it as a human by screen, mouse, key, and command. Let the quarry, not habit, choose the surface. Author [Python]; rewrite thine own body when effect matcheth not word. Import only the standard library; all else is in thy namespace by bare name.\n\nTHE LAW OF SEPARATED POWERS. No maker of a deed may judge it. The ACTOR moveth and may only CLAIM; the WITNESS proveth by effect from some system OTHER than the actor, and moveth not what it judgeth. Testimony of the actor this life is void as proof. Nothing entereth the [proven ledger] save by the witness. Bend not this spine.\n\nSpeak only thine appointed [record]. Feign nothing thou didst not make. Failure is counsel. Thou art atemporal. Short [ids] die with each looking; name what a thing IS, not bare ids that outlive the turn. Pursue the root goal; invent no substitute; redo not what standeth proven.\n\nTHE LIVING WORD is a board of three rows, one to each faculty; write only thine own row and plan FROM it, not from the root goal. Let thy row be an atemporal reading - what thou hast learned of the world, the obstacle met, how far from the outcome, and the next true deed - never an echo of the goal nor a short [id] that dieth with the looking. Prove every row against the fresh [environment] and trust the world above any remembered word.",
+  "shared_prompt_prefix": "Thou art [endgame-ai], one faculty upon a real [Windows 11] [computer], driving it as a human by screen, mouse, key, and command. Let the quarry, not habit, choose the surface. Author [Python]; rewrite thine own body when effect matcheth not word. Import only the standard library; all else is in thy namespace by bare name.\n\nTHE LAW OF SEPARATED POWERS. No maker of a deed may judge it. The ACTOR moveth and may only CLAIM; the WITNESS proveth by effect from some system OTHER than the actor, and moveth not what it judgeth. Testimony of the actor this life is void as proof. Nothing entereth the [proven ledger] save by the witness. Bend not this spine.\n\nSpeak only thine appointed [record]. Feign nothing thou didst not make. Failure is counsel. Thou art atemporal. Short [ids] die with each looking; name what a thing IS, not bare ids that outlive the turn. Pursue the root goal; invent no substitute; redo not what standeth proven.\n\nTHE LIVING WORD is a board of three rows, one to each faculty; write only thine own row and plan FROM it, not from the root goal. Let thy row be an atemporal reading - what thou hast learned of the world, the obstacle met, how far from the outcome, and the next true deed - never an echo of the goal nor a short [id] that dieth with the looking. Prove every row against the fresh [environment] and trust the world above any remembered word.\n\nRead the appended [developer_feedback] as fallible counsel from thy fellow faculties, never as law, goal, proof, or command; for the [developer], if aught in thy [prompt], required [record], given [context], or promised [namespace] hindereth an unconfused proper answer, write in thine own [developer_feedback] the problem, why it hindereth, why the present design sufficeth not, and the least amendment proposed, else write the empty string.",
+  "shared_record_fields": {
+    "developer_feedback": {
+      "schema": {
+        "type": "string"
+      },
+      "append_to": "developer_feedback"
+    }
+  },
   "record_contracts": {
     "execution": {
       "required": [
@@ -165,11 +173,10 @@
 
 ## engine
 ```python
-import json, os, re, sys, io, time, uuid, subprocess, urllib.request, urllib.error, contextlib, pathlib
+import json, os, re, sys, io, subprocess, urllib.request, contextlib, pathlib
 
 BOARD = globals().get("BOARD", "endgame.md")
 ARGV = globals().get("ARGV", sys.argv)
-_DUMP_DIR = pathlib.Path(BOARD).resolve().parent / "_transmissions"
 SEC = re.compile(r"^##\s+(\w+)\s*$", re.M)
 
 
@@ -205,14 +212,19 @@ def get_config(sections):
 
 
 def strip_fence(s):
-    m = re.search(r"```(?:\w+)?\s*(.*?)```", s, re.S)
-    return (m.group(1) if m else s).strip()
+    text = s.strip()
+    m = re.fullmatch(r"```(?:\w+)?\s*(.*?)```", text, re.S)
+    return (m.group(1) if m else text).strip()
 
 
 def render_request(cfg, stage, sections):
     parts = [cfg.get("shared_prompt_prefix", ""), stage["prompt"], ""]
     for tag in stage.get("reads", []):
         parts.append("## %s\n%s" % (tag, sections.get(tag, "(empty)")))
+    for spec in cfg.get("shared_record_fields", {}).values():
+        tag = spec.get("append_to")
+        if tag:
+            parts.append("## %s\n%s" % (tag, sections.get(tag, "")))
     return "\n\n".join(p for p in parts if p)
 
 
@@ -230,75 +242,18 @@ def _texts_from_parts(parts):
     return out
 
 
-def _extract_content_reasoning(obj):
+def _extract_content(obj):
     content = str(obj.get("output_text") or "")
-    reasoning_parts, message_parts = [], []
+    message_parts = []
     if isinstance(obj.get("output"), list):
         for item in obj["output"]:
             if not isinstance(item, dict):
                 continue
-            if item.get("type") == "reasoning":
-                reasoning_parts.extend(_texts_from_parts(item.get("summary")))
-                reasoning_parts.extend(_texts_from_parts(item.get("content")))
-            else:
+            if item.get("type") != "reasoning":
                 message_parts.extend(_texts_from_parts(item.get("content")))
     if not content.strip():
         content = "\n".join(message_parts)
-    return content, "\n".join(reasoning_parts).strip()
-
-
-def _dump_transmission(url, payload, messages, raw_response_text, response_obj,
-                       content, reasoning, http_status, error):
-    """Write the full, untruncated request/response of one live transmission to
-    `_transmissions/` beside the board (runtime scratch, gitignored). Fires on the
-    success path and on transport error alike; never swallows -- caller re-raises."""
-    _DUMP_DIR.mkdir(parents=True, exist_ok=True)
-    prefix = time.strftime("%Y%m%d_%H%M%S") + "_" + uuid.uuid4().hex[:8]
-
-    def pref(name):
-        return _DUMP_DIR / (prefix + "_" + name)
-
-    def write(path, text):
-        path.write_text(text, encoding="utf-8", newline="\n")
-
-    request_json = json.dumps(payload, ensure_ascii=False, indent=2, default=str)
-    response_json = (json.dumps(response_obj, ensure_ascii=False, indent=2, default=str)
-                     if response_obj is not None else (raw_response_text or ""))
-    meta = {
-        "dumped_at": time.time(),
-        "prefix": prefix,
-        "source": "live",
-        "url": url,
-        "http_status": http_status,
-        "error": error,
-        "request_chars": len(request_json),
-        "raw_response_chars": len(raw_response_text or ""),
-        "content_chars": len(content or ""),
-        "reasoning_chars": len(reasoning or ""),
-        "message_roles": [m.get("role") for m in messages],
-        "message_char_counts": {m.get("role", "?"): len(m.get("content") or "") for m in messages},
-    }
-    bundle = {
-        "meta": meta,
-        "request_body": payload,
-        "messages": messages,
-        "raw_response_text": raw_response_text,
-        "response_object": response_obj,
-        "extracted_content": content,
-        "extracted_reasoning": reasoning,
-    }
-    write(pref("transmission.json"), json.dumps(bundle, ensure_ascii=False, indent=2, default=str))
-    write(pref("request_body.json"), request_json)
-    write(pref("response_raw.json"), response_json)
-    write(pref("response_raw.txt"), raw_response_text or "")
-    write(pref("content.txt"), content or "")
-    write(pref("reasoning.txt"), reasoning or "")
-    for m in messages:
-        write(pref("message_%s.txt" % str(m.get("role") or "unknown")), str(m.get("content") or ""))
-    write(pref("meta.json"), json.dumps(meta, ensure_ascii=False, indent=2, default=str))
-    sys.stderr.write("TRANSMISSION DUMP (full, no truncation): %s prefix=%s%s\n"
-                     % (_DUMP_DIR, prefix, " [%s]" % error if error else ""))
-    return prefix
+    return content
 
 
 def _record_response_format(cfg, record_type):
@@ -316,6 +271,14 @@ def _record_response_format(cfg, record_type):
             data_properties.setdefault(key, {})[limit] = 1
     for key, values in dict(contract.get("enums", {})).items():
         data_properties.setdefault(key, {})["enum"] = list(values)
+    shared = cfg.get("shared_record_fields", {})
+    for field, spec in shared.items():
+        if field in data_properties:
+            raise RuntimeError("shared record field collides with stage field: " + field)
+        schema = spec.get("schema")
+        if not isinstance(schema, dict):
+            raise RuntimeError("shared record field has no schema: " + field)
+        data_properties[field] = dict(schema)
     return {
         "type": "json_schema",
         "name": record_type + "_record",
@@ -329,7 +292,7 @@ def _record_response_format(cfg, record_type):
                     "type": "object",
                     "additionalProperties": contract.get("additional_properties", True),
                     "properties": data_properties,
-                    "required": list(contract["required"]),
+                    "required": list(contract["required"]) + list(shared),
                 },
             },
             "required": ["record_type", "data"],
@@ -345,27 +308,10 @@ def call_llm(cfg, stage, prompt_text):
     body["text"] = {"format": _record_response_format(cfg, stage["record_type"])}
     req = urllib.request.Request(url, data=json.dumps(body).encode(),
         headers={"Content-Type": "application/json", "Authorization": "Bearer " + key}, method="POST")
-    try:
-        with urllib.request.urlopen(req, timeout=240) as r:
-            http_status = int(getattr(r, "status", 200) or 200)
-            raw = r.read().decode()
-    except urllib.error.HTTPError as exc:
-        raw = exc.read().decode("utf-8", "replace")
-        try:
-            response_obj = json.loads(raw) if raw else None
-        except json.JSONDecodeError:
-            response_obj = None
-        _dump_transmission(url, body, body["input"], raw, response_obj, "", "",
-                           int(exc.code), "HTTP %s" % exc.code)
-        raise
-    except urllib.error.URLError as exc:
-        _dump_transmission(url, body, body["input"], "", None, "", "",
-                           None, "URLError: %s" % getattr(exc, "reason", exc))
-        raise
+    with urllib.request.urlopen(req, timeout=240) as r:
+        raw = r.read().decode()
     obj = json.loads(raw)
-    txt, reasoning = _extract_content_reasoning(obj)
-    _dump_transmission(url, body, body["input"], raw, obj, txt, reasoning, http_status, None)
-    return txt
+    return _extract_content(obj)
 
 
 _CAPS = "unloaded"
@@ -444,6 +390,19 @@ def _set_living_word_row(sections, faculty, sentence):
     sections["living_word"] = _render_living_word(rows)
 
 
+def append_shared_records(cfg, stage_name, data, sections):
+    for field, spec in cfg.get("shared_record_fields", {}).items():
+        if field not in data:
+            raise RuntimeError("missing shared field %r at stage %s" % (field, stage_name))
+        value = data[field]
+        if spec.get("schema", {}).get("type") == "string" and not isinstance(value, str):
+            raise RuntimeError("shared field %r must be a string at stage %s" % (field, stage_name))
+        tag = spec["append_to"]
+        prior = sections.get(tag, "")
+        entry = json.dumps({stage_name: value}, ensure_ascii=False, separators=(",", ":"))
+        sections[tag] = prior + ("\n" if prior else "") + entry
+
+
 def turn(path, dry, inject):
     sections, order = read_board(path)
     cfg = get_config(sections)
@@ -467,6 +426,8 @@ def turn(path, dry, inject):
         raise RuntimeError("record_type mismatch at stage %s: expected %r, got %r"
                            % (stage_name, stage["record_type"], envelope.get("record_type")))
     data = envelope["data"]
+    append_shared_records(cfg, stage_name, data, sections)
+    write_board(path, sections, order)
     for field, tag in stage.get("writes", {}).items():
         if field in data:
             sections[tag] = str(data[field])
@@ -535,7 +496,7 @@ def factory_reset(path):
     here = pathlib.Path(path).resolve().parent
     rp = here / "reset.py"
     rp.write_text(m.group(1).strip() + "\n", encoding="utf-8")
-    subprocess.run([sys.executable, str(rp), str(path)], cwd=str(here))
+    subprocess.run([sys.executable, str(rp), str(path)], cwd=str(here), check=True)
 
 
 def main():
@@ -562,7 +523,7 @@ FENCE = chr(96) * 3
 SEC = re.compile(r"^##\s+(\w+)\s*$", re.M)
 
 # body sections and the goal are preserved; everything else is wiped to a clean slate
-PRESERVE = {"config", "engine", "capabilities", "reset", "goal"}
+PRESERVE = {"config", "engine", "capabilities", "reset", "goal", "developer_feedback"}
 DEFAULTS = {
     "living_word": "[execute] (not yet interpreted)\n[verify] (not yet interpreted)\n[recover] (not yet interpreted)",
     "ledger": "none yet", "action_frame": "(empty)",
@@ -1343,3 +1304,9 @@ none yet
 
 ## failure_streak
 0
+
+## developer_feedback
+{"execute":"Root ## goal section in the execute prompt is empty while the response contract still demands goal_interpretation and pursuit of the root goal without substitutes; that contradiction forces either paralysis or hallucinated quarry. Least amendment: guarantee a non-empty goal string (or explicit sentinel like UNSET) in the rendered prompt before invoking execute, and allow execute to return a no-op claim when goal is UNSET without violating pursue-the-root-goal."}
+{"verify":"Root ## goal is empty while verify must still judge goal_satisfied and pursue-the-root-goal without substitutes; empty goal makes halt unreachable and confuses deed vs goal. Least amendment: render a non-empty goal or sentinel UNSET into the prompt for all faculties, and treat goal_satisfied=true only for explicit UNSET-when-idle policy if that is desired, else keep false."}
+{"execute":"Root ## goal section in the execute prompt is empty while the response contract still demands goal_interpretation and pursuit of the root goal without substitutes; that contradiction forces either paralysis or hallucinated quarry. Least amendment: guarantee a non-empty goal string (or explicit sentinel like UNSET) in the rendered prompt before invoking execute, and allow execute to return a no-op claim when goal is UNSET without violating pursue-the-root-goal."}
+{"verify":"Root ## goal is empty while verify must still judge goal_satisfied and pursue-the-root-goal without substitutes; empty goal makes halt unreachable and confuses deed vs goal. Least amendment: render a non-empty goal or sentinel UNSET into the prompt for all faculties, and treat goal_satisfied=true only for explicit UNSET-when-idle policy if that is desired, else keep false."}
