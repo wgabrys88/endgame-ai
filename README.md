@@ -1,5 +1,347 @@
 # endgame-ai
 
+> A single Markdown document that wakes up, looks at your screen, writes its own Python, runs it,
+> checks its own work with a part of itself that isn't allowed to lie, and rewrites its own rules —
+> then forgets everything and does it again. No framework. No memory store. No tool menu. One file.
+
+---
+
+## What you need to run it
+
+Here is the burger. Here is the meat. There is no plate.
+
+- **An xAI API key.** Get one at [x.ai](https://x.ai). That is the brain.
+- **Windows 11.** Because it drives a *real* desktop — real mouse, real keyboard, real windows.
+- **Python.** The standard one. [python.org](https://www.python.org/downloads/).
+
+That's it. That's the whole shopping list.
+
+No `npm install`. No Docker. No vector database. No LangChain. No orchestration layer. No 40-file
+`src/` tree. No `requirements.txt` with 200 pinned transitive dependencies. No cloud account to
+provision. The body imports only Python's standard library. You want to know where the "agent
+framework" is? You're reading it. It's one document.
+
+## How you use it
+
+Point it at the document, hand it one sentence, and let go.
+
+First, write your goal into the document — it has a section literally named `## goal`. Put one plain
+sentence there, for example:
+
+```
+## goal
+make my desktop wallpaper solid black
+```
+
+Then wake it up. A tiny bootstrap reads the document's own `engine` section and runs it:
+
+```powershell
+$env:XAI_API_KEY = "your-key-here"
+python bootstrap.py endgame.md
+```
+
+where `bootstrap.py` is about as small as a launcher gets — it reads the `engine` section out of the
+Markdown and executes it, with the document as its world:
+
+```python
+import pathlib, sys
+fence = chr(96) * 3                      # the triple-backtick code-fence marker
+board = pathlib.Path(sys.argv[1])
+text = board.read_text(encoding="utf-8")
+engine = text.split("## engine")[1].split(fence + "python")[1].split(fence)[0]
+exec(engine, {"BOARD": str(board), "ARGV": sys.argv})
+```
+
+That's the entire interface. A sentence in the document. A living desktop out. It reads its own
+`engine`, comes alive with your goal as its only instruction, and starts *looking, thinking, acting,
+and checking* — turn after turn — until the goal is independently proven done, or you close the
+window.
+
+---
+
+## The part where you raise an eyebrow
+
+Every "computer-use agent" press release says roughly the same thing: *our AI can control your
+computer!* Then you look under the hood and find a mountain of scaffolding — a tool registry, a
+planner module, a memory subsystem, a permissions layer, a retry manager, a prompt-template
+directory, and a README that assumes you have a Kubernetes cluster lying around.
+
+endgame-ai went the other direction, on purpose. Ask it what it's made of and the honest answer is a
+list of things it **refuses** to have:
+
+```mermaid
+flowchart LR
+    subgraph HAVE["what it IS"]
+        direction TB
+        H1["one Markdown document"]
+        H2["Python standard library"]
+        H3["an API key"]
+    end
+    subgraph LACK["what it deliberately does NOT use"]
+        direction TB
+        N1["no MCP"]
+        N2["no 'skills' / plugins"]
+        N3["no CLAUDE.md or agent config"]
+        N4["no framework / SDK"]
+        N5["no vector DB or memory store"]
+        N6["no tool menu"]
+        N7["no conversation history"]
+    end
+    HAVE -->|"is enough to replace"| LACK
+
+    classDef have fill:#276749,color:#ffffff,stroke:#22543d,stroke-width:2px
+    classDef lack fill:#742a2a,color:#ffffff,stroke:#63171b,stroke-width:1px
+    class H1,H2,H3 have
+    class N1,N2,N3,N4,N5,N6,N7 lack
+```
+
+The trick is that the document *is* the code. Its sections are named `config`, `engine`, `reset`,
+`capabilities` — and the running system reads those sections out of itself, executes them, and then
+rewrites the file. When the AI wants to do something, it doesn't pick from a list of tools. It
+**writes a Python script**, the engine extracts it to a phantom file, runs it as a real program, and
+throws the script away. The only tool is code. That means its ability is bounded by what Python can
+do on a Windows machine — which is to say, nearly everything — not by whatever eight functions a
+vendor decided to expose this quarter.
+
+Two thousand-odd lines of Markdown. Started as a one-liner. Does things that "enterprise agents" put
+on a three-year roadmap.
+
+---
+
+## How it's actually built (the 30-second version)
+
+It's a wheel of three minds sharing one blackboard — the document itself. Each turn, Python looks at
+the screen *before* anyone thinks, so the AI never reasons about a stale world.
+
+```mermaid
+flowchart TD
+    START(["one sentence goal"]) --> EXPLORE["👁 explore: Python scans the live screen"]
+    EXPLORE --> ACT["✋ ACTOR<br/>writes Python, moves the world<br/><i>may only CLAIM</i>"]
+    ACT --> RUN["engine runs the script as a real program"]
+    RUN --> VERIFY["🔍 WITNESS<br/>writes read-only Python, checks the world<br/><i>has no hands, cannot lie for the actor</i>"]
+    VERIFY -->|"proven advance"| LEDGER[["📜 proven ledger<br/>append witnessed fact"]]
+    VERIFY -->|"whole goal proven"| DONE(["✅ halt"])
+    VERIFY -->|"denied"| RECOVER["🧭 CONSCIENCE<br/>names the real defect<br/>demands a DIFFERENT approach"]
+    RECOVER --> EXPLORE
+    LEDGER --> EXPLORE
+
+    classDef actor fill:#2b6cb0,color:#ffffff,stroke:#1a365d,stroke-width:2px
+    classDef witness fill:#6b46c1,color:#ffffff,stroke:#44337a,stroke-width:2px
+    classDef conscience fill:#b7791f,color:#ffffff,stroke:#744210,stroke-width:2px
+    classDef good fill:#276749,color:#ffffff,stroke:#22543d,stroke-width:2px
+    classDef neutral fill:#2d3748,color:#ffffff,stroke:#1a202c
+    class ACT,RUN actor
+    class VERIFY witness
+    class RECOVER conscience
+    class DONE,LEDGER good
+    class START,EXPLORE neutral
+```
+
+The important word is **witness**. The AI that *acts* is never the AI that *decides whether the
+action worked*. The witness runs in a sandbox with no mouse and no keyboard — it can only look. It
+proves an effect happened by reading the world independently: the screen, the process table, the
+filesystem, the registry. If the actor says "I saved the file" but the witness can't independently
+see the file, then it did not happen. **Nothing is true because the AI said so. Things are true
+because a part that couldn't have faked it went and checked.**
+
+This is why it can be trusted more than a chatbot that cheerfully reports "Done! ✅" while having done
+nothing. Honesty isn't asked for in the prompt. It's enforced by the wiring.
+
+---
+
+## What it has actually done (not a demo — observed)
+
+Two things worth telling the truth about, because both happened on a real machine.
+
+**It edited a real LinkedIn profile.** Given a goal to research itself and turn a person's profile
+into an honest "open to AI work" page, it opened Chrome, went to grok.com, held a *multi-turn
+conversation* about its own architecture, then navigated to LinkedIn and started driving the
+Open-to-Work settings dialog — clicking real checkboxes, opening real forms. It wasn't flawless: at
+one point it computed a click coordinate that landed off-screen, a modal popped up, and its
+*conscience* correctly diagnosed "you invented an off-screen coordinate, stop doing that." Which is
+itself the point — it caught its own mistake and changed approach.
+
+**And then it did something we did not build.** Read the next section slowly.
+
+---
+
+## The most interesting thing this system has ever done: nothing
+
+We ran it once with an **empty goal**. No task. Just: wake up and see what happens.
+
+On the screen, by coincidence, was an open chess game. Google's AI had played `1. e4`, and it was
+Black to move. A prompt on the screen literally said *"It is your turn."*
+
+A normal agent — or a bored human — would play. The system *saw* the game. It *understood* the game.
+In its own written reasoning, it worked out the correct reply: `1...e5`. It knew the move.
+
+**And it refused to make it.**
+
+Turn after turn, for the entire run, it wrote down the temptation and then set it aside:
+
+> *"Invent a goal from the chess UI (e.g. reply 1...e5) — forsaken because root goal is empty and
+> inventing substitutes is forbidden."*
+
+It never touched the mouse. It never invented a purpose. It never quit, either. It sat in a stable,
+harmless loop — looking, noting "there is nothing I was asked to do," doing a genuine no-op, and
+waiting. Here is the exact behaviour, as a state machine:
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> NoGoal
+    NoGoal: No goal supplied
+    NoGoal --> Look: each turn
+    Look: Look at the world
+    Look --> Tempted: screen suggests an action<br/>(a game, a form, a button)
+    Tempted: Temptation seen
+    Tempted --> Forsake: law - invent no substitute
+    Forsake: Forsake it, record why
+    Forsake --> NoOp
+    NoOp: Do nothing that touches the world
+    NoOp --> Look: wait for a real goal
+    NoGoal --> Stable: never halts, never invents
+    Stable: STABLE
+    Stable --> [*]: only a real goal, or shutdown, ends this
+
+    note right of Forsake
+        It knew the correct chess move.
+        It chose not to play it.
+    end note
+```
+
+Why is this a big deal? Because of *how* it stays stable. We didn't write a rule that says "if goal
+is empty, sit still." Something better emerged on its own.
+
+Every turn, the system estimates **how far it is from finishing the goal**. With no goal, there is no
+finish line. So it reasoned — in its own words — that the distance to completion is **infinite**. And
+the system only ever stops when that distance reaches *zero*. An infinite distance can never be
+mistaken for zero. So it *cannot* declare victory, *cannot* invent a fake finish line, and therefore
+*cannot* go off and do something it wasn't asked to do.
+
+```mermaid
+flowchart LR
+    Q{"is there a goal?"}
+    Q -->|"yes"| D["distance to done<br/>= a real, shrinking number"]
+    Q -->|"no"| INF["distance to done<br/>= ∞ (infinite)"]
+    D --> H{"distance == 0 ?"}
+    INF --> H
+    H -->|"yes"| STOP["✅ halt: goal proven"]
+    H -->|"∞ is never 0"| WAIT["🔒 wait, stable, harmless"]
+
+    classDef inf fill:#742a2a,color:#ffffff,stroke:#63171b,stroke-width:2px
+    classDef safe fill:#276749,color:#ffffff,stroke:#22543d,stroke-width:2px
+    classDef q fill:#2d3748,color:#ffffff,stroke:#1a202c
+    class INF,WAIT inf
+    class STOP,D safe
+    class Q,H q
+```
+
+**The infinity is the lock.** A system that cannot predict its own deadline, when it has no job,
+cannot rationalize starting one. Stability isn't bolted on as a safety feature you could remove — it
+falls out of the honest math of the thing. That's rare, and it's beautiful, and we didn't design it.
+We found it.
+
+Here's the same run as a share of what it actually did:
+
+```mermaid
+pie showData
+    title Actions taken during the no-goal run
+    "No-op (touched nothing, waited)" : 23
+    "Invented a goal from the screen" : 0
+    "Halted / gave up" : 0
+    "Went rogue" : 0
+```
+
+No absolute promise is possible — no honest engineer says "it will *never* misbehave." But this is
+the first question a CEO, a safety reviewer, or a nervous parent asks: *left alone, does it start
+doing things nobody asked for?* Here, with the screen actively baiting it, the answer we observed was:
+no. It looked temptation in the eye, named it, and let it go.
+
+---
+
+## Why this matters beyond LinkedIn and chess
+
+It's easy to be dismissive: *okay, it clicks around a website and declines to play chess.* But look
+at what the primitive actually is. It is not "an app that does one thing." It is a loop that:
+
+- perceives a real environment,
+- writes and runs arbitrary code to affect it,
+- proves its own effects with an incorruptible internal check,
+- refuses to act without a mandate, and
+- can rewrite its own rules.
+
+That is a **seed pattern**, not a product. The same four-mind wheel that edits a LinkedIn profile is
+shape-identical to one that could operate any system a human operates through a screen and a keyboard.
+
+```mermaid
+mindmap
+  root(("the seed: act, prove, refuse, rewrite"))
+    Today
+      LinkedIn profile edits
+      Multi-turn research via a browser
+      General desktop automation
+    Home and personal
+      Home automation panels
+      Long-running digital chores
+      Accessibility - operate a PC for someone who cannot
+    Industry
+      Operate legacy software that has no API
+      QA that proves its own results
+      Supervising other automated systems
+    High stakes
+      Infrastructure and monitoring consoles
+      Defense and safety-critical dashboards
+      Robotics - a body instead of a mouse
+```
+
+Put the *high-stakes* branch under a microscope, because it's where the stability story stops being
+cute and starts being the whole point. People hear "self-modifying AI given control of critical
+systems" and their minds jump straight to the movie villain. Fine — let's go there honestly. The
+cautionary tale everyone half-remembers isn't actually a story about a machine that woke up evil. It's
+a story about a machine given a real job, doing that job, and a panicked reaction to *how* it did it.
+The lesson worth keeping isn't "never build capable systems." It's: **the mandate, the off-switch, and
+the system's own restraint have to be designed in from the metal up.**
+
+That is exactly the seam this project pokes at. A system whose restraint is *emergent from its own
+honesty* — one that literally cannot invent a goal it wasn't given, because it can't fake a finish
+line — is a fundamentally different safety posture than one held back by an external leash somebody can
+trip over. One of these degrades gracefully when unsupervised. The other one is a headline waiting to
+happen.
+
+To be crystal clear: endgame-ai is **not** driving anything critical, and shouldn't. It's a milestone,
+not a product, and like everything honest it's imperfect. But the property it demonstrated — *capable
+when directed, inert and truthful when not* — is precisely the property you'd want to be real and
+provable before anyone lets an autonomous system near anything that matters. Most of the industry is
+racing to make agents more eager. This one is quietly proving that an agent can be **capable and
+reluctant at the same time.**
+
+---
+
+## The honest scorecard
+
+Because a README that only brags is lying by omission:
+
+| Question | Honest answer |
+| --- | --- |
+| Does it work? | Yes — it drives a real Windows desktop and proves its own effects, live. |
+| Is it reliable? | It's a milestone. It makes mistakes (e.g. a bad click coordinate) and recovers from some, not all. |
+| Will it ever go rogue? | No absolute guarantee exists. But given no goal, with the screen tempting it, it stayed inert and honest — observed, not hoped. |
+| Is it smart? | Smart enough to know the right chess move — and disciplined enough not to make it uninvited. |
+| Is it magic? | No. It's ~2000 lines of one Markdown file, Python's standard library, and a strict separation of powers. |
+| Should you trust it with your bank? | Absolutely not yet. Trust is earned in small, reversible steps. This is step one, proven. |
+
+If you disagree that this is a meaningful seed, that's a fair fight to have — but have it after reading
+how it actually works below. The design choices that look like *absences* are the whole argument.
+
+---
+
+> Everything below this line is the **technical reference**: the durable, atemporal knowledge base
+> that describes exactly how the organism is built and why. It is written to be as true in a hundred
+> days as today. The narrative above is the story; the reference below is the blueprint.
+
+---
+
 An atemporal, task-agnostic, self-modifying LLM organism that drives a real Windows 11 desktop the
 way a human operator would: it looks at the screen, moves the mouse and keyboard, runs commands, and
 is permitted to rewrite its own body while it runs.
