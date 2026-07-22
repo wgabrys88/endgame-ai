@@ -66,21 +66,21 @@ the rules that define itself, while it runs.
 
 The organism runs today: it reads the document, refreshes perception, folds in any operator note,
 calls the model under a strict per-stage schema, runs the returned code, folds the result back,
-appends a proven ledger on a witnessed advance, escalates a failure streak, and rewrites the document
-each turn. The actor/witness namespace separation is enforced at the point the code runs. The
-operator note reaches every faculty. Recovery's whole briefing — its target, its strategy, and its
-named defect — reaches the actor as one action_frame. The witness sees the deed's declared intent and
-cannot overwrite the deed it judges. Routing fails hard: an unmapped signal raises rather than
-drifting to a default.
+merges each faculty's reading into its own row of the living word, appends a structured witnessed
+fact to the proven ledger on a confirmed advance, escalates a failure streak, and rewrites the
+document each turn. The actor/witness namespace separation is enforced at the point the code runs.
+The operator note reaches every faculty. Recovery's whole briefing — its target, its strategy, and
+its named defect — reaches the actor as one action_frame. The witness sees the deed's declared intent
+and cannot overwrite the deed it judges. The living word is a three-row faculty board, and the proven
+ledger records the structured "deed — witnessed: reason" fact, deduped so a re-confirmed advance never
+repeats. Routing fails hard: an unmapped signal raises rather than drifting to a default.
 
 Several ideas remain intentions, not flesh, and are gathered honestly in
 [Standing intentions](#standing-intentions-known-work-not-yet-done) and flagged in place throughout,
 so no section reads as a promise the code does not keep. The largest such gaps: the deed runs
-in-process rather than as its own child program; the living word is a single overwritten string
-rather than a multi-row faculty table; host facts are not gathered; the proven ledger keeps the raw
-living-word text rather than a structured witnessed fact; and a body edit to the engine or the
-capabilities does not take effect within the same life. Where a section describes such a thing, it
-says plainly that it is not yet done.
+in-process rather than as its own child program; host facts are not gathered; and a body edit to the
+engine or the capabilities does not take effect within the same life. Where a section describes such a
+thing, it says plainly that it is not yet done.
 
 ---
 
@@ -147,10 +147,12 @@ Body slots (the constitution; rewritten only by deliberate self-modification):
 Memory slots (rewritten as the organism lives; what is not narrated forward is forgotten):
 
 - `goal` — the lodestar, one sentence, changeable at any time, even mid-life.
-- `living_word` — a faculty's reading of the world. In the live document this is a single string,
-  overwritten in whole by whichever faculty last wrote its `goal_interpretation`; the intended
-  multi-row faculty table is not yet done (see Standing intentions).
-- `ledger` — the proven advances, appended only on a witnessed confirmation.
+- `living_word` — the narrative thread, a board of three rows, one to each thinking faculty (execute,
+  verify, recover). Each faculty writes only its own row through its `goal_interpretation`; the engine
+  merges that row and leaves the other two intact, so the board stays three rows and cannot grow. The
+  goal is the separate lodestar, never overwritten by a reading.
+- `ledger` — the proven advances, appended only on a witnessed confirmation, each a structured
+  "deed — witnessed: reason" fact, deduped so a re-confirmed advance never repeats.
 - `action_frame` — the actor's hand-off slot. After a deed it holds the actor's own declared intent;
   after a denial it holds recovery's whole briefing — the target, the strategy, and the named defect —
   composed as one object the actor reads next lap.
@@ -181,7 +183,7 @@ The `config` block defines the organism's behaviour as data. Its shape:
 start                 the stage a fresh life begins in
 state                 stage (where we are now), last_signal, turn, failure_streak
 model                 url + request (model, temperature, reasoning.effort, store)
-shared_prompt_prefix  the Law and the atemporal rules, prepended to every call
+shared_prompt_prefix  the Law, the atemporal rules, and the living-word law, prepended to every call
 record_contracts      per record-type: required fields, types, non-empty, closed-object rule
 stages                a map of stage-name -> stage definition
 ```
@@ -214,27 +216,26 @@ not itself rewrite would be caging it.
 
 ```mermaid
 sequenceDiagram
-
     autonumber
-
     participant E as engine
     participant B as document (blackboard)
     participant P as perception (Python)
     participant M as model (grok)
     participant W as the world
 
-    E->>B: read the document find current stage from state
+    E->>B: read the document, find current stage from state
     E->>P: refresh environment (fold operator note, scan the screen)
     P-->>B: write the counsel and environment slots
     E->>B: assemble prompt (law + stage charge + read slots)
     E->>M: one call, bound to the stage's strict record schema
     M-->>E: a record envelope {record_type, data}
-    E->>B: unwrap the envelope post each returned field into its slot
+    E->>B: unwrap the envelope, post each returned field into its slot
+    E->>B: merge this faculty's goal_interpretation into its own living-word row
     E->>B: after a denial, compose the action_frame briefing from target+strategy+lesson
     E->>W: run the returned code in the stage's namespace (actor moves | witness reads)
     W-->>E: signal + verdict + captured stdout
-    E->>B: fold result into evidence/verdict append ledger if confirmed
-    E->>B: set next stage from routes (raise on unmapped signal) rewrite the whole document
+    E->>B: fold result into evidence/verdict, append the witnessed fact to the ledger if confirmed
+    E->>B: set next stage from routes (raise on unmapped signal), rewrite the whole document
 ```
 
 Two ordering facts are load-bearing:
@@ -251,7 +252,8 @@ Two ordering facts are load-bearing:
 
 ## The three faculties and the mailbox
 
-Three faculties each make exactly one model call, and one pure-Python step carries an operator note.
+Three faculties each make exactly one model call, and each keeps its own row of the living word; one
+pure-Python step carries an operator note.
 
 ### execute (the actor)
 
@@ -316,6 +318,11 @@ kind receives eyes and the standard library and no hand at all. Because the name
 for every run, the separation is re-established every turn. A body edit that tried to hand the witness
 a hand would have to survive into that namespace build, and the witness kind simply adds no hand.
 
+The proven ledger is the visible fruit of this law: nothing enters it save by the witness, and each
+entry is the witness's own reason bound to the deed it judged. The actor can never write its own
+advance into the ledger, so the record of "what stands proven" is never the same hand speaking of
+itself.
+
 Three seams complete the honesty model:
 
 - The deed-fault seam. A deed that raises is not death. The fault is captured as evidence and routed
@@ -337,9 +344,10 @@ raised exception is captured as a fault traceback into the evidence slot.
 
 Each turn, for a stage that carries an `exec`:
 
-1. The returned fields are posted to their slots by the stage's `writes` map. The actor's deed is
-   recorded in the `code` slot before it is enacted; the witness authors a probe but does not persist
-   it, so the deed slot keeps the deed.
+1. The returned fields are posted to their slots by the stage's `writes` map, and the faculty's
+   `goal_interpretation` is merged by the engine into its own row of the living word. The actor's deed
+   is recorded in the `code` slot before it is enacted; the witness authors a probe but does not
+   persist it, so the deed slot keeps the deed.
 2. The engine builds the run namespace for the stage's kind (actor or witness), merging in the hand
    and the promised bare names from the capabilities.
 3. The engine runs the code with standard output captured.
@@ -365,13 +373,17 @@ standing intention.
 The organism holds no conversation history and keeps no hidden scratchpad. Two channels, and only
 two, carry meaning from one turn to the next, and they differ in kind.
 
-The living word is the narrative thread across wakings. Its intended form is a small table — one row
-per thinking faculty plus the goal as a lodestar — where each row is a reading of the environment
-(what changed by the last deed, why, and the expected consequence to test against the fresh
-environment), and a faculty overwrites only its own row so the table stays a fixed handful of rows and
-cannot grow. In the live document this is not yet done: the living word is a single string, and each
-faculty's `goal_interpretation` overwrites the whole slot, so only the most recent faculty's reading
-survives. Restoring the multi-row table is a standing intention.
+The living word is the narrative thread across wakings, and it is a small board of three rows, one to
+each thinking faculty — execute, verify, recover — with the goal standing apart as the lodestar. Each
+row is that faculty's atemporal reading: what it learned of the world, the obstacle met, how far the
+outcome still stands, and the next true move. A faculty writes only its own row, so the board stays a
+fixed three rows and cannot grow, and the three readings stand side by side rather than one erasing
+the others. The engine merges each faculty's reading into its own row and leaves the other two intact;
+a legacy single-string slot heals into the three-row board on the first write. The row is written to
+survive the turn: it names what a thing is, never a short id that dies with the looking, and it is a
+reading of state rather than a restatement of the goal. Reality is the check — any row the live screen
+gainsays is corrected. The goal itself is the separate lodestar section, read fresh by every faculty
+and never overwritten by a reading.
 
 The fresh environment is the other channel: the window-first screen tree gathered by Python before
 every think and posted last. Reality overrides every remembered word. Any living word claim the live
@@ -379,12 +391,15 @@ screen gainsays must be corrected. What stands done is seen in the world now.
 
 The proven ledger is the one exception to pure amnesia, and it is narrow by design: only a witnessed
 confirmation appends to it, so it records advances a separate faculty proved, never the actor's own
-claim. In the live document the appended entry is the current living-word text at the moment of
-confirmation; the intended structured fact form ("the deed — witnessed: the independent reason") is
-not yet done. Even structured, redo-avoidance rests first on reading the present environment, because
-the world is the final authority and a stored line can go stale.
+claim. Each entry is a structured fact — the deed the actor declared, labelled by the witness's own
+independent reason: "the deed — witnessed: the reason." The engine draws the deed from the actor's
+action_frame and the reason from the witness verdict, and appends only if that exact fact is not
+already present, so a re-confirmed advance never multiplies the ledger. Redo-avoidance still rests
+first on reading the present environment, because the world is the final authority and a stored line
+can go stale. The ledger is bounded by real progress and by that dedup, never by a hardcoded cap the
+organism could not rewrite; a faculty may compress its own ledger like any other slot.
 
-Because both channels are bounded — a small living word and a screen tree — the per-turn prompt is
+Because both channels are bounded — a three-row living word and a screen tree — the per-turn prompt is
 meant to stay bounded regardless of how long a life runs. The screen tree is not yet budget-limited,
 so on a very busy desktop the environment slot can grow large; a perception budget is a standing
 intention. Short on-screen identifiers are minted anew on every look and die with it; no bare id may
@@ -401,6 +416,11 @@ the wider recovery must depart from what has already failed. A low streak permit
 a high streak demands another kind of road entirely, up to repairing the organism's own body when a
 tool is the true defect. Recovery frames that departure — its target, its strategy, and the lesson it
 learned — into the single action_frame the actor reads next lap.
+
+Because the ledger now records a distinct witnessed fact per advance rather than a repeated goal-echo,
+a confirmation resets the streak only for a genuinely new advance, and the witness can read the ledger
+to tell a fresh advance from one already banked. The anti-loop pressure is thus honest: the streak
+falls when the organism truly moves, not when it re-confirms a step it already took.
 
 ---
 
@@ -458,7 +478,9 @@ to the model is a standing intention.
 
 Every model call is built the same way, stable content first and volatile content last.
 
-- First the shared prompt prefix: the Law and the atemporal rules, unchanging across every call.
+- First the shared prompt prefix: the Law, the atemporal rules, and the living-word law — the three-row
+  board, write only thine own row, an atemporal reading proved against the fresh environment —
+  unchanging across every call.
 - Then the current stage's charge: this faculty's one task, in the biblical register.
 - Then the blackboard slots the stage declares it reads, in order, with the fresh environment last.
 
@@ -500,18 +522,20 @@ Field meanings:
 - intent: the true next effect the actor seeks; posted to the action_frame the witness then reads.
 - code: the Python to run. For the actor it changes the world and is kept in the code slot; for the
   witness it is a read-only probe that must set the verdict and is not persisted.
-- goal_interpretation: this faculty's living-word reading, the environmental what/why/expected triad,
-  not a restatement of the goal.
+- goal_interpretation: this faculty's living-word row — what it learned of the world, the obstacle,
+  the distance still to the outcome, and the next true move, not a restatement of the goal.
 - lesson: the named defect, why by the evidence it truly failed, and what must change.
 - target: the concrete anchor in the present environment the next deed should aim at.
 - strategy: the framed next attempt, departing from every approach already tried.
 
-The writes maps are deliberately spare. The actor posts its intent, code, perceived, alternatives, and
-living word. The witness posts only its living word — its probe is transient and its verdict is folded
-in from the run, not from a written field. Recovery posts only its living word through the writes map;
-its target, strategy, and lesson are composed by the engine into the single action_frame briefing the
-actor consumes, so the required fields are enforced at the wire yet delivered whole rather than
-scattered or dropped.
+The writes maps are deliberately spare. The actor posts its intent, code, perceived, and alternatives.
+The witness and recovery post no field through their writes maps at all. Every faculty's
+`goal_interpretation` is merged by the engine into that faculty's own row of the living word rather
+than posted through a writes map, so the three rows never overwrite one another. Recovery's target,
+strategy, and lesson are composed by the engine into the single action_frame briefing the actor
+consumes, so the required fields are enforced at the wire yet delivered whole rather than scattered or
+dropped. The witness's verdict is folded in from the run, not from a written field, and its reason is
+the fact the engine binds into the proven ledger.
 
 Because the schema is enforced at the wire, an injected reply used to exercise the plumbing offline
 must itself be a proper `{record_type, data}` envelope; a bare flat object is rejected loudly by
@@ -618,11 +642,13 @@ confirmation prompt or any other cage.
 - One source of truth. The document defines the organism; the prompt is assembled from its config and
   its slots, and every prompt promise is true against the document's own engine and capabilities.
 - Honesty by structure. The actor claims; the witness proves by independent effect read afresh from
-  the world; the separation is enforced in the namespace that builds each run; and the witness never
-  overwrites the deed it judges.
+  the world; the separation is enforced in the namespace that builds each run; the witness never
+  overwrites the deed it judges; and the proven ledger carries only the witness's own reason bound to
+  the deed, never the actor's self-report.
 - Atemporal by design. No hidden store, no scratchpad that survives a turn beyond the living word and
   the narrow witnessed ledger. What is not narrated forward is forgotten, so the organism cannot fool
-  itself with a stale belief. Boundedness comes from rewriting, never from silent truncation.
+  itself with a stale belief. Boundedness comes from rewriting and from dedup, never from silent
+  truncation.
 - The body is hot-swappable and the defects are the substrate. A defect the organism can observe and
   rewrite is a feature of the self-modifying design. Prefer making defects visible over hiding them.
 - The document must stay coherent under its own hand. Headings inside fenced code are not sections and
@@ -641,16 +667,12 @@ These are the things this knowledge base remembers must be done but which the li
 yet do. Each is stated as an intention, not a promise. They are the honest gap between the design and
 the flesh.
 
-- Restore the living word as a multi-row faculty table. Today it is a single overwritten string, so
-  only the last faculty's reading survives; the concurrent execute/verify/recover rows must return.
 - Run the deed as its own child program. The returned code runs in-process today; the intended shape
   is a real file executed as a subprocess reporting back through a result file, matching the actor's
   own charge to write a file and invoke it.
 - Make engine and capabilities edits take effect within the life. The control data hot-swaps each
   turn, but the running Python (the engine, and the once-cached capabilities) does not; a body mend to
   the Python does not take hold until the next life.
-- Structure the proven ledger fact. Ledger entries should be the structured "deed — witnessed: reason"
-  fact, not the current living-word text at the moment of confirmation.
 - Gather and present host facts. The platform, machine, user, working directory, and available shell
   tools are not gathered into the environment; the model reasons about commands without them.
 - Budget the environment. The screen tree is posted whole; a character budget that trims it on a busy
@@ -730,9 +752,10 @@ the flesh.
   raises.
 - Route: a stage's map from signal to next stage; a target of "halt" ends the life.
 - counsel: the operator's folded-in note, read by every faculty.
-- Living word: the narrative slot carried forward; a single string today, a multi-row faculty table by
-  intention.
-- Proven ledger: the narrow list appended only on a witnessed confirmation.
+- Living word: the narrative thread carried forward; a board of three rows, one per thinking faculty,
+  each writing only its own row, with the goal as a separate lodestar.
+- Proven ledger: the narrow list appended only on a witnessed confirmation; each entry a structured
+  "deed — witnessed: reason" fact, deduped so a re-confirmed advance never repeats.
 - failure_streak: the forward counter of turns since the last witnessed advance; escalates recovery.
 - Environment: the fresh window-first screen tree gathered before every model call.
 - Transmission dump: the full, untruncated on-disk record of a live model call, written on success and
