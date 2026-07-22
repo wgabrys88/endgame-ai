@@ -103,7 +103,7 @@
 ```python
 import json, os, re, sys, io, time, uuid, subprocess, urllib.request, urllib.error, contextlib, pathlib
 
-BOARD = globals().get("BOARD", "endgame-ai-final.md")
+BOARD = globals().get("BOARD", "endgame.md")
 ARGV = globals().get("ARGV", sys.argv)
 _DUMP_DIR = pathlib.Path(BOARD).resolve().parent / "_transmissions"
 SEC = re.compile(r"^##\s+(\w+)\s*$", re.M)
