@@ -11,10 +11,13 @@
   "model": {
     "api": "responses",
     "responses": {
-      "url": "http://localhost:1234/v1/responses",
+      "url": "https://api.x.ai/v1/responses",
       "request": {
         "model": "grok-4.5",
         "temperature": 0.2,
+        "reasoning": {
+          "effort": "low"
+        },
         "store": false
       }
     },
@@ -521,9 +524,11 @@ def append_developer_feedback(cfg, stage_name, data, sections):
     sections["developer_feedback"] = prior + ("\n" if prior else "") + entry
 
 
-def turn(path, dry, inject):
+def turn(path, dry, inject, mode):
     sections, order = read_board(path)
     cfg = get_config(sections)
+    if mode:
+        cfg["model"]["api"] = {"xai": "responses", "lmstudio": "chat_completions", "acp": "acp", "file_proxy": "file_proxy"}[mode]
     st = cfg["state"]
     stage_name = st.get("stage") or cfg["start"]
     stage = cfg["stages"][stage_name]
@@ -621,10 +626,11 @@ def main():
     dry = "--dry" in ARGV
     once = "--once" in ARGV
     inject = ARGV[ARGV.index("--inject") + 1] if "--inject" in ARGV else None
+    mode = ARGV[ARGV.index("--mode") + 1] if "--mode" in ARGV else None
     if not dry and not inject:
         factory_reset(BOARD)
     while True:
-        nxt, stop = turn(BOARD, dry, inject)
+        nxt, stop = turn(BOARD, dry, inject, mode)
         if dry or once or inject or stop:
             break
 

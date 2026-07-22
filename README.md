@@ -34,28 +34,18 @@ sentence there, for example:
 make my desktop wallpaper solid black
 ```
 
-Then wake it up. A tiny bootstrap reads the document's own `engine` section and runs it:
+Then wake it up in the required mode. Each command downloads the pushed board and runs its own `engine`:
 
 ```powershell
-## Command (one-liner, run it from the dir where the file is located after loading a model in LM Studio's server on localhost:1234)
-## Run an existing local document
-python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md
-## Download the pushed branch and run it
-iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -OutFile .\endgame.md;python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md
+iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -OutFile .\endgame.md;python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode xai
+iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -OutFile .\endgame.md;python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode lmstudio
+iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -OutFile .\endgame.md;python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode acp
+iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -OutFile .\endgame.md;python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode file_proxy
 ```
 
-The command is about as small as a launcher gets, it reads the `engine` section out of the Markdown and executes it, with the document as its world:
+The command reads the `engine` section out of the Markdown and executes it, with the document as its world.
 
-The active `model.api` may be `chat_completions` for LM Studio, `responses` for the original xAI transport, `acp` for native `grok agent stdio`, or `file_proxy`; every call is an independent stateless turn using the same cache-ordered prompt and strict record schema. The xAI transport reads `XAI_API_KEY` as before. File proxy publishes `runtime_request.json`; answer it in `runtime_response.json` as `{"id":"copied request id","record":{...}}`.
-
-```python
-import pathlib, sys
-fence = chr(96) * 3                      # the triple-backtick code-fence marker
-board = pathlib.Path(sys.argv[1])
-text = board.read_text(encoding="utf-8")
-engine = text.split("## engine")[1].split(fence + "python")[1].split(fence)[0]
-exec(engine, {"BOARD": str(board), "ARGV": sys.argv})
-```
+The selected mode uses LM Studio Chat Completions, xAI Responses, native `grok agent stdio`, or `file_proxy`; every call remains an independent stateless turn using the same cache-ordered prompt and strict record schema. The xAI mode reads `XAI_API_KEY`. File proxy publishes `runtime_request.json`; answer it in `runtime_response.json` as `{"id":"copied request id","record":{...}}`.
 
 That's the entire interface. A sentence in the document. A living desktop out. It reads its own
 `engine`, takes your goal as its sole source of purpose, and starts *looking, thinking, acting, and
