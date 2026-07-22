@@ -1033,10 +1033,7 @@ def _to_rect(v: Any) -> dict[str, int]:
     try:
         if isinstance(val, (tuple, list)) and len(val) >= 4:
             left, top = int(val[0]), int(val[1])
-            third, fourth = float(val[2]), float(val[3])
-            if third > left or fourth > top:
-                return {"left": left, "top": top, "right": int(third), "bottom": int(fourth)}
-            return {"left": left, "top": top, "right": left + int(third), "bottom": top + int(fourth)}
+            return {"left": left, "top": top, "right": left + int(val[2]), "bottom": top + int(val[3])}
         if getattr(val, "left", None) is not None:
             return {"left": int(val.left), "top": int(getattr(val, "top", 0)), "right": int(getattr(val, "right", 0)), "bottom": int(getattr(val, "bottom", 0))}
     except Exception:
@@ -1227,6 +1224,12 @@ def _probe_points(rect: dict[str, int], step_px: int) -> list[tuple[int, int]]:
     return points
 
 
+def _move_pointer(x: int, y: int, sw: int, sh: int) -> None:
+    event = _INPUT(type=0, u=_INPUTUNION(mi=_MOUSEINPUT(dx=max(0, min(sw - 1, x)) * 65535 // (sw - 1), dy=max(0, min(sh - 1, y)) * 65535 // (sh - 1), mouseData=0, dwFlags=0x8001, time=0, dwExtraInfo=0)))
+    if user32.SendInput(1, ctypes.byref(event), ctypes.sizeof(event)) != 1:
+        raise ctypes.WinError(ctypes.get_last_error())
+
+
 def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any]:
     # Mid-script callers sometimes pass a number meaning "wait"; config is mapping-only.
     cfg = dict(config) if isinstance(config, dict) else {}
@@ -1246,7 +1249,7 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
             hwnd, rect = win["hwnd"], win["rect"]
             kept: dict[str, dict[str, Any]] = {}
             for x, y in _probe_points(rect, step_px):
-                user32.SetCursorPos(int(x), int(y))
+                _move_pointer(x, y, sw, sh)
                 time.sleep(0.01)
                 pt = wintypes.POINT(int(x), int(y))
                 try:
@@ -1282,7 +1285,7 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
     finally:
         if had_cursor:
             try:
-                user32.SetCursorPos(saved.x, saved.y)
+                _move_pointer(saved.x, saved.y, sw, sh)
             except Exception:
                 pass
 
