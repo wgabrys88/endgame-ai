@@ -101,7 +101,7 @@
 
 ## engine
 ```python
-import json, os, re, sys, io, urllib.request, contextlib, pathlib
+import json, os, re, sys, io, subprocess, urllib.request, contextlib, pathlib
 
 BOARD = globals().get("BOARD", "endgame-ai-final.md")
 ARGV = globals().get("ARGV", sys.argv)
@@ -227,8 +227,6 @@ def turn(path, dry, inject):
     cfg = get_config(sections)
     st = cfg["state"]
     stage_name = st.get("stage") or cfg["start"]
-    if stage_name not in cfg["stages"]:
-        stage_name = cfg["start"]
     stage = cfg["stages"][stage_name]
     sections["failure_streak"] = str(st.get("failure_streak", 0))
     refresh_environment(sections)
@@ -260,7 +258,7 @@ def turn(path, dry, inject):
         elif signal == "denied":
             st["failure_streak"] = int(st.get("failure_streak", 0)) + 1
     nxt = stage["routes"].get(signal) or stage["routes"].get("ok")
-    st["stage"] = cfg["start"] if nxt in (None, "halt") else nxt; st["last_signal"] = signal; st["turn"] = int(st.get("turn", 0)) + 1
+    st["stage"] = nxt; st["last_signal"] = signal; st["turn"] = int(st.get("turn", 0)) + 1
     sections["config"] = "```json\n" + json.dumps(cfg, indent=2) + "\n```"
     write_board(path, sections, order)
     sys.stderr.write("turn %d: stage=%s signal=%s -> %s (streak=%s)\n"
@@ -269,10 +267,26 @@ def turn(path, dry, inject):
     return nxt, stop
 
 
+def factory_reset(path):
+    """Extract the `## reset` section to reset.py beside the board and run it as its own
+    program, returning the board to a clean slate (goal and body preserved)."""
+    sections, _order = read_board(path)
+    src = sections.get("reset", "")
+    m = re.search(r"```(?:python)?\s*(.*?)```", src, re.S)
+    if not m or not m.group(1).strip():
+        raise RuntimeError("no `## reset` script section found; cannot factory reset")
+    here = pathlib.Path(path).resolve().parent
+    rp = here / "reset.py"
+    rp.write_text(m.group(1).strip() + "\n", encoding="utf-8")
+    subprocess.run([sys.executable, str(rp), str(path)], cwd=str(here))
+
+
 def main():
     dry = "--dry" in ARGV
     once = "--once" in ARGV
     inject = ARGV[ARGV.index("--inject") + 1] if "--inject" in ARGV else None
+    if not dry and not inject:
+        factory_reset(BOARD)
     while True:
         nxt, stop = turn(BOARD, dry, inject)
         if dry or once or inject or stop:
@@ -280,6 +294,60 @@ def main():
 
 
 main()
+```
+
+## reset
+```python
+import re, sys, json, pathlib
+
+BOARD = sys.argv[1]
+FENCE = chr(96) * 3
+SEC = re.compile(r"^##\s+(\w+)\s*$", re.M)
+
+# body sections and the goal are preserved; everything else is wiped to a clean slate
+PRESERVE = {"config", "engine", "capabilities", "reset", "goal"}
+DEFAULTS = {
+    "living_word": "(empty)", "ledger": "none yet", "action_frame": "(empty)",
+    "perceived": "(empty)", "alternatives": "(empty)", "code": "(empty)",
+    "evidence": "(empty)", "verdict": "(empty)", "lesson": "(empty)",
+    "counsel": "(empty)", "environment": "(fresh screen scan lands here each turn)",
+    "failure_streak": "0",
+}
+
+
+def read_board(path):
+    text = pathlib.Path(path).read_text(encoding="utf-8")
+    out, order, cur, buf, fence = {}, [], None, [], False
+    for ln in text.split("\n"):
+        if ln.lstrip().startswith(FENCE):
+            fence = not fence
+        m = None if fence else SEC.match(ln)
+        if m:
+            if cur is not None:
+                out[cur] = "\n".join(buf).strip("\n")
+            cur, buf = m.group(1), []
+            if cur not in order:
+                order.append(cur)
+        else:
+            buf.append(ln)
+    if cur is not None:
+        out[cur] = "\n".join(buf).strip("\n")
+    return out, order
+
+
+sections, order = read_board(BOARD)
+# config.state back to factory; the rest of config (model, prompts, stages) is untouched
+m = re.search(FENCE + r"(?:json)?\s*(.*?)" + FENCE, sections["config"], re.S)
+cfg = json.loads(m.group(1))
+cfg["state"] = {"stage": None, "last_signal": None, "turn": 0, "failure_streak": 0}
+sections["config"] = FENCE + "json\n" + json.dumps(cfg, indent=2) + "\n" + FENCE
+for k, v in DEFAULTS.items():
+    if k in sections and k not in PRESERVE:
+        sections[k] = v
+keys = order + [k for k in sections if k not in order]
+body = "\n\n".join("## %s\n%s" % (k, sections[k].strip()) for k in keys if k in sections)
+pathlib.Path(BOARD).write_text(body.rstrip() + "\n", encoding="utf-8")
+sys.stderr.write("factory reset: working memory + state cleared; goal and body preserved\n")
 ```
 
 ## capabilities
