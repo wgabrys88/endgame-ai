@@ -214,25 +214,27 @@ not itself rewrite would be caging it.
 
 ```mermaid
 sequenceDiagram
+
     autonumber
+
     participant E as engine
     participant B as document (blackboard)
     participant P as perception (Python)
     participant M as model (grok)
     participant W as the world
 
-    E->>B: read the document; find current stage from state
+    E->>B: read the document find current stage from state
     E->>P: refresh environment (fold operator note, scan the screen)
     P-->>B: write the counsel and environment slots
     E->>B: assemble prompt (law + stage charge + read slots)
     E->>M: one call, bound to the stage's strict record schema
     M-->>E: a record envelope {record_type, data}
-    E->>B: unwrap the envelope; post each returned field into its slot
+    E->>B: unwrap the envelope post each returned field into its slot
     E->>B: after a denial, compose the action_frame briefing from target+strategy+lesson
     E->>W: run the returned code in the stage's namespace (actor moves | witness reads)
     W-->>E: signal + verdict + captured stdout
-    E->>B: fold result into evidence/verdict; append ledger if confirmed
-    E->>B: set next stage from routes (raise on unmapped signal); rewrite the whole document
+    E->>B: fold result into evidence/verdict append ledger if confirmed
+    E->>B: set next stage from routes (raise on unmapped signal) rewrite the whole document
 ```
 
 Two ordering facts are load-bearing:
