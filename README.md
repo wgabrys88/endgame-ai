@@ -43,7 +43,7 @@ python -c 'import re,pathlib,sys; f=chr(96)*3; t=pathlib.Path(sys.argv[1]).read_
 
 The command is about as small as a launcher gets, it reads the `engine` section out of the Markdown and executes it, with the document as its world:
 
-The active `model.api` may be `chat_completions` for LM Studio, `responses` for the original xAI transport, or `acp` for native `grok agent stdio`; all use the same cache-ordered prompt and strict record schema. The xAI transport reads `XAI_API_KEY` as before.
+The active `model.api` may be `chat_completions` for LM Studio, `responses` for the original xAI transport, `acp` for native `grok agent stdio`, or `file_proxy`; every call is an independent stateless turn using the same cache-ordered prompt and strict record schema. The xAI transport reads `XAI_API_KEY` as before. File proxy publishes `runtime_request.json`; answer it in `runtime_response.json` as `{"id":"copied request id","record":{...}}`.
 
 ```python
 import pathlib, sys

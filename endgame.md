@@ -20,8 +20,15 @@
       "command": [
         "grok",
         "agent",
+        "--no-leader",
         "stdio"
       ],
+      "timeout": 240
+    },
+    "file_proxy": {
+      "request_path": "runtime_request.json",
+      "response_path": "runtime_response.json",
+      "poll_interval": 0.25,
       "timeout": 240
     }
   },
@@ -287,7 +294,7 @@ def _record_response_format(cfg, record_type):
 
 def _call_acp(model, prompt_text, fmt):
     acp = model.get("acp", {})
-    proc = subprocess.Popen(acp.get("command", ["grok", "agent", "stdio"]),
+    proc = subprocess.Popen(acp.get("command", ["grok", "agent", "--no-leader", "stdio"]),
         cwd=str(pathlib.Path(BOARD).resolve().parent), stdin=subprocess.PIPE,
         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, encoding="utf-8",
         bufsize=1, creationflags=subprocess.CREATE_NO_WINDOW)
@@ -352,20 +359,71 @@ def _call_acp(model, prompt_text, fmt):
             proc.kill(); proc.wait(timeout=5)
 
 
+def _atomic_json(path, obj):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp.%s.%s" % (os.getpid(), time.time_ns()))
+    tmp.write_text(json.dumps(obj, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _call_file_proxy(model, prompt_text, fmt, record_type):
+    cfg = model.get("file_proxy", {})
+    root = pathlib.Path(BOARD).resolve().parent
+    request = (root / cfg.get("request_path", "runtime_request.json")).resolve()
+    response = (root / cfg.get("response_path", "runtime_response.json")).resolve()
+    if request == response:
+        raise RuntimeError("file_proxy request and response paths must differ")
+    if request.exists():
+        raise RuntimeError("file_proxy request already pending: " + str(request))
+    response.unlink(missing_ok=True)
+    request_id = "egai-%s-%s" % (os.getpid(), time.time_ns())
+    _atomic_json(request, {
+        "schema": "endgame-ai.file-proxy.request.v3",
+        "record_type": record_type,
+        "response_format": fmt,
+        "expected_response": {"id": "copy request id", "record": "object matching response_format.schema"},
+        "prompt": prompt_text,
+        "id": request_id,
+        "created_at": time.time(),
+    })
+    deadline = time.monotonic() + float(cfg.get("timeout", 240))
+    while time.monotonic() < deadline:
+        if response.exists():
+            try:
+                obj = json.loads(response.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                obj = None
+            if isinstance(obj, dict) and obj.get("id") == request_id:
+                record = obj.get("record")
+                if not isinstance(record, dict):
+                    raise RuntimeError("file_proxy response record must be an object: " + str(response))
+                if record.get("record_type") != record_type or not isinstance(record.get("data"), dict):
+                    raise RuntimeError("file_proxy response has the wrong record envelope: " + str(response))
+                request.unlink(missing_ok=True); response.unlink(missing_ok=True)
+                return json.dumps(record, ensure_ascii=False, separators=(",", ":"))
+        time.sleep(float(cfg.get("poll_interval", 0.25)))
+    raise RuntimeError("file_proxy timed out; pending request preserved: " + str(request))
+
+
 def call_llm(cfg, stage, prompt_text):
     model = cfg["model"]
-    api, url = model.get("api", "responses"), model["url"]
-    body, headers = dict(model["request"]), {"Content-Type": "application/json"}
+    api = model.get("api", "responses")
     fmt = _record_response_format(cfg, stage["record_type"])
+    if api == "acp":
+        return _call_acp(model, prompt_text, fmt)
+    if api == "file_proxy":
+        return _call_file_proxy(model, prompt_text, fmt, stage["record_type"])
+    url, body = model["url"], dict(model["request"])
+    headers = {"Content-Type": "application/json"}
     if api == "responses":
+        body.pop("previous_response_id", None)
+        body["store"] = False
         body["input"] = [{"role": "user", "content": prompt_text}]
         body["text"] = {"format": {"type": "json_schema", **fmt}}
         headers["Authorization"] = "Bearer " + os.environ["XAI_API_KEY"]
     elif api == "chat_completions":
         body["messages"] = [{"role": "user", "content": prompt_text}]
         body["response_format"] = {"type": "json_schema", "json_schema": fmt}
-    elif api == "acp":
-        return _call_acp(model, prompt_text, fmt)
     else:
         raise RuntimeError("unknown model api: " + str(api))
     req = urllib.request.Request(url, data=json.dumps(body).encode(),
