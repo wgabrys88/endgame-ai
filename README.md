@@ -36,12 +36,14 @@ make my desktop wallpaper solid black
 Then wake it up. A tiny bootstrap reads the document's own `engine` section and runs it:
 
 ```powershell
+## Command 1:
 $env:XAI_API_KEY = "your-key-here"
-python bootstrap.py endgame.md
+
+## Command 2: (one-liner, run it from the dir where the file is located)
+python -c 'import re,pathlib,sys; f=chr(96)*3; t=pathlib.Path(sys.argv[1]).read_text(encoding=\"utf-8\"); m=re.search(r\"##\s+engine\s*\n\"+f+r\"python\n(.*?)\n\"+f+r\"\s*\n##\s+\", t, re.S); exec(m.group(1), {\"BOARD\": sys.argv[1], \"ARGV\": sys.argv[2:]})' .\endgame.md
 ```
 
-where `bootstrap.py` is about as small as a launcher gets — it reads the `engine` section out of the
-Markdown and executes it, with the document as its world:
+`Command 2` is about as small as a launcher gets, it reads the `engine` section out of the Markdown and executes it, with the document as its world:
 
 ```python
 import pathlib, sys
