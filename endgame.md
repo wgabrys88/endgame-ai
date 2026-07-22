@@ -363,7 +363,7 @@ def _atomic_json(path, obj):
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp.%s.%s" % (os.getpid(), time.time_ns()))
     tmp.write_text(json.dumps(obj, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    os.replace(tmp, path)
+    os.rename(tmp, path)
 
 
 def _call_file_proxy(model, prompt_text, fmt, record_type):
@@ -371,10 +371,6 @@ def _call_file_proxy(model, prompt_text, fmt, record_type):
     root = pathlib.Path(BOARD).resolve().parent
     request = (root / cfg.get("request_path", "runtime_request.json")).resolve()
     response = (root / cfg.get("response_path", "runtime_response.json")).resolve()
-    if request == response:
-        raise RuntimeError("file_proxy request and response paths must differ")
-    if request.exists():
-        raise RuntimeError("file_proxy request already pending: " + str(request))
     response.unlink(missing_ok=True)
     request_id = "egai-%s-%s" % (os.getpid(), time.time_ns())
     _atomic_json(request, {
@@ -389,16 +385,9 @@ def _call_file_proxy(model, prompt_text, fmt, record_type):
     deadline = time.monotonic() + float(cfg.get("timeout", 240))
     while time.monotonic() < deadline:
         if response.exists():
-            try:
-                obj = json.loads(response.read_text(encoding="utf-8"))
-            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-                obj = None
-            if isinstance(obj, dict) and obj.get("id") == request_id:
-                record = obj.get("record")
-                if not isinstance(record, dict):
-                    raise RuntimeError("file_proxy response record must be an object: " + str(response))
-                if record.get("record_type") != record_type or not isinstance(record.get("data"), dict):
-                    raise RuntimeError("file_proxy response has the wrong record envelope: " + str(response))
+            obj = json.loads(response.read_text(encoding="utf-8"))
+            if obj["id"] == request_id:
+                record = obj["record"]
                 request.unlink(missing_ok=True); response.unlink(missing_ok=True)
                 return json.dumps(record, ensure_ascii=False, separators=(",", ":"))
         time.sleep(float(cfg.get("poll_interval", 0.25)))
