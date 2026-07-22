@@ -691,62 +691,128 @@ sys.stderr.write("factory reset: working memory + state cleared; goal and body p
 ```python
 # --- eyes: window-first UIA observation (was core_observation.py) ---
 import ctypes
-import importlib
 import time
 from ctypes import wintypes
 from typing import Any
 
-import comtypes
-import comtypes.client
-
 user32 = ctypes.windll.user32
+ole32, oleaut32 = ctypes.WinDLL("ole32"), ctypes.WinDLL("oleaut32")
 
 
-def load_uia() -> Any:
-    comtypes.client.GetModule("UIAutomationCore.dll")
-    return importlib.import_module("comtypes.gen.UIAutomationClient")
+class _GUID(ctypes.Structure):
+    _fields_ = [("Data1", wintypes.DWORD), ("Data2", wintypes.WORD), ("Data3", wintypes.WORD), ("Data4", ctypes.c_ubyte * 8)]
 
 
-comtypes.CoInitialize()
-uia = load_uia()
+class _VARIANT_VALUE(ctypes.Union):
+    _fields_ = [("llVal", ctypes.c_longlong), ("lVal", wintypes.LONG), ("dblVal", ctypes.c_double), ("boolVal", ctypes.c_short), ("bstrVal", ctypes.c_void_p), ("parray", ctypes.c_void_p), ("punkVal", ctypes.c_void_p)]
 
 
-def _const(name: str) -> int:
-    return int(getattr(uia, name))
+class _VARIANT(ctypes.Structure):
+    _anonymous_ = ("value",)
+    _fields_ = [("vt", ctypes.c_ushort), ("r1", ctypes.c_ushort), ("r2", ctypes.c_ushort), ("r3", ctypes.c_ushort), ("value", _VARIANT_VALUE)]
 
 
-TreeScope_Element = _const("TreeScope_Element")
-TreeScope_Subtree = _const("TreeScope_Subtree")
+def _guid(a, b, c, *d):
+    return _GUID(a, b, c, (ctypes.c_ubyte * 8)(*d))
 
-PID_RUNTIME_ID = _const("UIA_RuntimeIdPropertyId")
-PID_BOUNDING_RECT = _const("UIA_BoundingRectanglePropertyId")
-PID_CONTROL_TYPE = _const("UIA_ControlTypePropertyId")
-PID_NAME = _const("UIA_NamePropertyId")
-PID_AUTOMATION_ID = _const("UIA_AutomationIdPropertyId")
-PID_CLASS_NAME = _const("UIA_ClassNamePropertyId")
-PID_ENABLED = _const("UIA_IsEnabledPropertyId")
-PID_OFFSCREEN = _const("UIA_IsOffscreenPropertyId")
-PID_HWND = _const("UIA_NativeWindowHandlePropertyId")
-PID_FRAMEWORK = _const("UIA_FrameworkIdPropertyId")
-PID_CONTENT_ELEMENT = _const("UIA_IsContentElementPropertyId")
-PID_WINDOW_INTERACTION_STATE = _const("UIA_WindowWindowInteractionStatePropertyId")
-PID_ITEM_STATUS = _const("UIA_ItemStatusPropertyId")
-SCAN_PROPERTY_IDS = [
-    PID_RUNTIME_ID, PID_BOUNDING_RECT, PID_CONTROL_TYPE, PID_NAME, PID_AUTOMATION_ID, PID_CLASS_NAME,
-    PID_ENABLED, PID_OFFSCREEN, PID_HWND, PID_FRAMEWORK, PID_CONTENT_ELEMENT,
-    PID_WINDOW_INTERACTION_STATE, PID_ITEM_STATUS,
-]
 
-PID_VALUE_PATTERN = _const("UIA_ValuePatternId")
-PID_TEXT_PATTERN = _const("UIA_TextPatternId")
-PID_LEGACY_PATTERN = _const("UIA_LegacyIAccessiblePatternId")
-SCAN_PATTERN_IDS = [PID_VALUE_PATTERN, PID_TEXT_PATTERN, PID_LEGACY_PATTERN]
+def _call(ptr, slot, *types):
+    address = ctypes.cast(ptr, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p))).contents[slot]
+    return ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_void_p, *types)(address)
 
-CONTROL_TYPE_NAMES = {
-    getattr(uia, attr): attr.replace("UIA_", "").replace("ControlTypeId", "")
-    for attr in dir(uia)
-    if attr.startswith("UIA_") and attr.endswith("ControlTypeId") and isinstance(getattr(uia, attr, None), int)
-}
+
+def _check(hr):
+    if hr < 0:
+        raise OSError("UI Automation HRESULT 0x%08X" % (hr & 0xFFFFFFFF))
+
+
+ole32.CoInitialize.argtypes, ole32.CoInitialize.restype = [ctypes.c_void_p], ctypes.c_long
+ole32.CoCreateInstance.argtypes = [ctypes.POINTER(_GUID), ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(_GUID), ctypes.POINTER(ctypes.c_void_p)]
+ole32.CoCreateInstance.restype = ctypes.c_long
+oleaut32.VariantClear.argtypes = [ctypes.POINTER(_VARIANT)]
+oleaut32.SafeArrayGetLBound.argtypes = [ctypes.c_void_p, wintypes.UINT, ctypes.POINTER(wintypes.LONG)]
+oleaut32.SafeArrayGetUBound.argtypes = [ctypes.c_void_p, wintypes.UINT, ctypes.POINTER(wintypes.LONG)]
+oleaut32.SafeArrayAccessData.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+oleaut32.SafeArrayUnaccessData.argtypes = [ctypes.c_void_p]
+_check(ole32.CoInitialize(None))
+
+
+def _array(value, kind):
+    lo, hi, data = wintypes.LONG(), wintypes.LONG(), ctypes.c_void_p()
+    _check(oleaut32.SafeArrayGetLBound(value, 1, ctypes.byref(lo)))
+    _check(oleaut32.SafeArrayGetUBound(value, 1, ctypes.byref(hi)))
+    _check(oleaut32.SafeArrayAccessData(value, ctypes.byref(data)))
+    try:
+        return list(ctypes.cast(data, ctypes.POINTER(kind))[:hi.value - lo.value + 1])
+    finally:
+        _check(oleaut32.SafeArrayUnaccessData(value))
+
+
+def _value(raw):
+    try:
+        base = raw.vt & 0xFFF
+        if raw.vt & 0x2000:
+            return _array(raw.parray, ctypes.c_double if base == 5 else wintypes.LONG)
+        if base == 8:
+            return ctypes.wstring_at(raw.bstrVal) if raw.bstrVal else ""
+        if base == 11:
+            return raw.boolVal != 0
+        if base == 5:
+            return raw.dblVal
+        if base in (2, 3, 19):
+            return raw.lVal
+        return None
+    finally:
+        oleaut32.VariantClear(ctypes.byref(raw))
+
+
+class _Element:
+    def __init__(self, ptr, automation):
+        self.ptr, self.automation = ptr, automation
+
+    def GetCurrentPropertyValue(self, prop):
+        raw = _VARIANT()
+        _check(_call(self.ptr, 10, ctypes.c_int, ctypes.POINTER(_VARIANT))(self.ptr, prop, ctypes.byref(raw)))
+        return _value(raw)
+
+    def release(self):
+        if self.ptr:
+            ctypes.WINFUNCTYPE(wintypes.ULONG, ctypes.c_void_p)(ctypes.cast(self.ptr, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p))).contents[2])(self.ptr)
+            self.ptr = None
+
+
+class _Automation:
+    def __init__(self):
+        self.ptr, self.walker = ctypes.c_void_p(), ctypes.c_void_p()
+        clsid = _guid(0xFF48DBA4, 0x60EF, 0x4201, 0xAA, 0x87, 0x54, 0x10, 0x3E, 0xEF, 0x59, 0x4E)
+        iid = _guid(0x30CBE57D, 0xD9D0, 0x452A, 0xAB, 0x13, 0x7A, 0xC5, 0xAC, 0x48, 0x25, 0xEE)
+        _check(ole32.CoCreateInstance(ctypes.byref(clsid), None, 1, ctypes.byref(iid), ctypes.byref(self.ptr)))
+        _check(_call(self.ptr, 14, ctypes.POINTER(ctypes.c_void_p))(self.ptr, ctypes.byref(self.walker)))
+
+    def element_from_point(self, point):
+        ptr = ctypes.c_void_p()
+        _check(_call(self.ptr, 7, wintypes.POINT, ctypes.POINTER(ctypes.c_void_p))(self.ptr, point, ctypes.byref(ptr)))
+        return _Element(ptr, self) if ptr else None
+
+    def children(self, element):
+        out, children = ctypes.c_void_p(), []
+        _check(_call(self.walker, 4, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p))(self.walker, element.ptr, ctypes.byref(out)))
+        while out:
+            child = _Element(out, self)
+            children.append(child)
+            out = ctypes.c_void_p()
+            _check(_call(self.walker, 6, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p))(self.walker, child.ptr, ctypes.byref(out)))
+        return children
+
+
+AUTOMATION = _Automation()
+
+PID_RUNTIME_ID, PID_BOUNDING_RECT, PID_CONTROL_TYPE, PID_NAME = 30000, 30001, 30003, 30005
+PID_ENABLED, PID_AUTOMATION_ID, PID_CLASS_NAME, PID_CONTENT_ELEMENT = 30010, 30011, 30012, 30017
+PID_HWND, PID_OFFSCREEN, PID_FRAMEWORK, PID_ITEM_STATUS = 30020, 30022, 30024, 30026
+PID_VALUE, PID_WINDOW_INTERACTION_STATE = 30045, 30076
+PID_LEGACY_NAME, PID_LEGACY_VALUE, PID_LEGACY_DESCRIPTION = 30092, 30093, 30094
+CONTROL_TYPE_NAMES = dict(enumerate("Button Calendar CheckBox ComboBox Edit Hyperlink Image ListItem List Menu MenuBar MenuItem ProgressBar RadioButton ScrollBar Slider Spinner StatusBar Tab TabItem Text ToolBar ToolTip Tree TreeItem Custom Group Thumb DataGrid DataItem Document SplitButton Window Pane Header HeaderItem Table TitleBar Separator SemanticZoom AppBar".split(), 50000))
 CLICK_ROLES = {"Button", "Calendar", "CheckBox", "Hyperlink", "ListItem", "MenuItem", "RadioButton", "Tab", "TabItem", "TreeItem", "DataItem", "SplitButton"}
 WRITE_ROLES = {"Edit", "ComboBox", "Spinner", "Document"}
 READ_ROLES = {"Text", "ListItem"}
