@@ -421,7 +421,7 @@ def call_llm(cfg, stage, prompt_text):
     if api == "responses":
         body.pop("previous_response_id", None)
         body["store"] = False
-        body["input"] = [{"role": "user", "content": prompt_text}]
+        body["input"] = prompt_text
         body["text"] = {"format": {"type": "json_schema", **fmt}}
         headers["Authorization"] = "Bearer " + os.environ["XAI_API_KEY"]
     elif api == "chat_completions":
