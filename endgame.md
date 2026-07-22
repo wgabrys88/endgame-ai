@@ -101,10 +101,11 @@
 
 ## engine
 ```python
-import json, os, re, sys, io, subprocess, urllib.request, contextlib, pathlib
+import json, os, re, sys, io, time, uuid, subprocess, urllib.request, urllib.error, contextlib, pathlib
 
 BOARD = globals().get("BOARD", "endgame-ai-final.md")
 ARGV = globals().get("ARGV", sys.argv)
+_DUMP_DIR = pathlib.Path(BOARD).resolve().parent / "_transmissions"
 SEC = re.compile(r"^##\s+(\w+)\s*$", re.M)
 
 
@@ -151,21 +152,119 @@ def render_request(cfg, stage, sections):
     return "\n\n".join(p for p in parts if p)
 
 
+def _texts_from_parts(parts):
+    if isinstance(parts, str):
+        return [parts] if parts.strip() else []
+    if not isinstance(parts, list):
+        return []
+    out = []
+    for p in parts:
+        if isinstance(p, str) and p.strip():
+            out.append(p)
+        elif isinstance(p, dict) and p.get("text"):
+            out.append(str(p["text"]))
+    return out
+
+
+def _extract_content_reasoning(obj):
+    content = str(obj.get("output_text") or "")
+    reasoning_parts, message_parts = [], []
+    if isinstance(obj.get("output"), list):
+        for item in obj["output"]:
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") == "reasoning":
+                reasoning_parts.extend(_texts_from_parts(item.get("summary")))
+                reasoning_parts.extend(_texts_from_parts(item.get("content")))
+            else:
+                message_parts.extend(_texts_from_parts(item.get("content")))
+    if not content.strip():
+        content = "\n".join(message_parts)
+    return content, "\n".join(reasoning_parts).strip()
+
+
+def _dump_transmission(url, payload, messages, raw_response_text, response_obj,
+                       content, reasoning, http_status, error):
+    """Write the full, untruncated request/response of one live transmission to
+    `_transmissions/` beside the board (runtime scratch, gitignored). Fires on the
+    success path and on transport error alike; never swallows -- caller re-raises."""
+    _DUMP_DIR.mkdir(parents=True, exist_ok=True)
+    prefix = time.strftime("%Y%m%d_%H%M%S") + "_" + uuid.uuid4().hex[:8]
+
+    def pref(name):
+        return _DUMP_DIR / (prefix + "_" + name)
+
+    def write(path, text):
+        path.write_text(text, encoding="utf-8", newline="\n")
+
+    request_json = json.dumps(payload, ensure_ascii=False, indent=2, default=str)
+    response_json = (json.dumps(response_obj, ensure_ascii=False, indent=2, default=str)
+                     if response_obj is not None else (raw_response_text or ""))
+    meta = {
+        "dumped_at": time.time(),
+        "prefix": prefix,
+        "source": "live",
+        "url": url,
+        "http_status": http_status,
+        "error": error,
+        "request_chars": len(request_json),
+        "raw_response_chars": len(raw_response_text or ""),
+        "content_chars": len(content or ""),
+        "reasoning_chars": len(reasoning or ""),
+        "message_roles": [m.get("role") for m in messages],
+        "message_char_counts": {m.get("role", "?"): len(m.get("content") or "") for m in messages},
+    }
+    bundle = {
+        "meta": meta,
+        "request_body": payload,
+        "messages": messages,
+        "raw_response_text": raw_response_text,
+        "response_object": response_obj,
+        "extracted_content": content,
+        "extracted_reasoning": reasoning,
+    }
+    write(pref("transmission.json"), json.dumps(bundle, ensure_ascii=False, indent=2, default=str))
+    write(pref("request_body.json"), request_json)
+    write(pref("response_raw.json"), response_json)
+    write(pref("response_raw.txt"), raw_response_text or "")
+    write(pref("content.txt"), content or "")
+    write(pref("reasoning.txt"), reasoning or "")
+    for m in messages:
+        write(pref("message_%s.txt" % str(m.get("role") or "unknown")), str(m.get("content") or ""))
+    write(pref("meta.json"), json.dumps(meta, ensure_ascii=False, indent=2, default=str))
+    sys.stderr.write("TRANSMISSION DUMP (full, no truncation): %s prefix=%s%s\n"
+                     % (_DUMP_DIR, prefix, " [%s]" % error if error else ""))
+    return prefix
+
+
 def call_llm(cfg, stage, prompt_text):
     key = os.environ["XAI_API_KEY"]
+    url = cfg["model"]["url"]
     body = dict(cfg["model"]["request"])
     body["input"] = [{"role": "user", "content": prompt_text}]
     body["text"] = {"format": {"type": "json_object"}}
-    req = urllib.request.Request(cfg["model"]["url"], data=json.dumps(body).encode(),
+    req = urllib.request.Request(url, data=json.dumps(body).encode(),
         headers={"Content-Type": "application/json", "Authorization": "Bearer " + key}, method="POST")
-    with urllib.request.urlopen(req, timeout=240) as r:
-        obj = json.loads(r.read().decode())
-    txt = obj.get("output_text") or ""
-    if not txt and isinstance(obj.get("output"), list):
-        for it in obj["output"]:
-            for c in (it.get("content") or []):
-                if isinstance(c, dict) and c.get("text"):
-                    txt += c["text"]
+    try:
+        with urllib.request.urlopen(req, timeout=240) as r:
+            http_status = int(getattr(r, "status", 200) or 200)
+            raw = r.read().decode()
+    except urllib.error.HTTPError as exc:
+        raw = exc.read().decode("utf-8", "replace")
+        try:
+            response_obj = json.loads(raw) if raw else None
+        except json.JSONDecodeError:
+            response_obj = None
+        _dump_transmission(url, body, body["input"], raw, response_obj, "", "",
+                           int(exc.code), "HTTP %s" % exc.code)
+        raise
+    except urllib.error.URLError as exc:
+        _dump_transmission(url, body, body["input"], "", None, "", "",
+                           None, "URLError: %s" % getattr(exc, "reason", exc))
+        raise
+    obj = json.loads(raw)
+    txt, reasoning = _extract_content_reasoning(obj)
+    _dump_transmission(url, body, body["input"], raw, obj, txt, reasoning, http_status, None)
     return txt
 
 
