@@ -4,11 +4,4 @@
 !README.md
 !.gitattributes
 !.gitignore
-!wiring.json
-!core_brain.py
-!core_bus.py
-!core_desktop.py
-!core_nodes.py
-!core_observation.py
-!core_organism.py
-!core_wiring.py
+!endgame.md
