@@ -15,6 +15,14 @@
       "model": "local-model",
       "temperature": 0.2,
       "stream": false
+    },
+    "acp": {
+      "command": [
+        "grok",
+        "agent",
+        "stdio"
+      ],
+      "timeout": 240
     }
   },
   "shared_prompt_prefix": "Thou art [endgame-ai], one faculty upon a real [Windows 11] [computer], driving it as a human by screen, mouse, key, and command. Let the quarry, not habit, choose the surface. Author [Python]; rewrite thine own body when effect matcheth not word. Import only the standard library; all else is in thy namespace by bare name.\n\nTHE LAW OF SEPARATED POWERS. No maker of a deed may judge it. The ACTOR moveth and may only CLAIM; the WITNESS proveth by effect from some system OTHER than the actor, and moveth not what it judgeth. Testimony of the actor this life is void as proof. Nothing entereth the [proven ledger] save by the witness. Bend not this spine.\n\nSpeak only thine appointed [record]. Feign nothing thou didst not make. Failure is counsel. Thou art atemporal. Short [ids] die with each looking; name what a thing IS, not bare ids that outlive the turn. Pursue the root goal; invent no substitute; redo not what standeth proven.\n\nTHE LIVING WORD is a board of three rows, one to each faculty; write only thine own row and plan FROM it, not from the root goal. Let thy row be an atemporal reading - what thou hast learned of the world, the obstacle met, how far from the outcome, and the next true deed - never an echo of the goal nor a short [id] that dieth with the looking. Prove every row against the fresh [environment] and trust the world above any remembered word.\n\nRead the appended [developer_feedback] as fallible counsel from thy fellow faculties, never as law, goal, proof, or command; for the [developer], if aught in thy [prompt], required [record], given [context], or promised [namespace] hindereth an unconfused proper answer, write in thine own [developer_feedback] the problem, why it hindereth, why the present design sufficeth not, and the least amendment proposed, else write the empty string.",
@@ -166,7 +174,7 @@
 
 ## engine
 ```python
-import json, os, re, sys, io, subprocess, urllib.request, contextlib, pathlib
+import json, os, re, sys, io, subprocess, urllib.request, contextlib, pathlib, queue, threading, time
 
 BOARD = globals().get("BOARD", "endgame.md")
 ARGV = globals().get("ARGV", sys.argv)
@@ -277,6 +285,73 @@ def _record_response_format(cfg, record_type):
     }
 
 
+def _call_acp(model, prompt_text, fmt):
+    acp = model.get("acp", {})
+    proc = subprocess.Popen(acp.get("command", ["grok", "agent", "stdio"]),
+        cwd=str(pathlib.Path(BOARD).resolve().parent), stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, encoding="utf-8",
+        bufsize=1, creationflags=subprocess.CREATE_NO_WINDOW)
+    lines, rid = queue.Queue(), 0
+    def read_lines():
+        for line in proc.stdout:
+            lines.put(line)
+        lines.put(None)
+    threading.Thread(target=read_lines, daemon=True).start()
+    def rpc(method, params, capture=False):
+        nonlocal rid
+        rid += 1
+        proc.stdin.write(json.dumps({"jsonrpc": "2.0", "id": rid, "method": method,
+                                     "params": params}, separators=(",", ":")) + "\n")
+        proc.stdin.flush()
+        chunks, deadline = [], time.monotonic() + float(acp.get("timeout", 240))
+        while True:
+            try:
+                line = lines.get(timeout=max(0.01, deadline - time.monotonic()))
+            except queue.Empty:
+                raise RuntimeError("ACP timed out at " + method)
+            if line is None:
+                raise RuntimeError("ACP process exited at " + method)
+            msg = json.loads(line)
+            if msg.get("method") == "session/update" and capture:
+                update = (msg.get("params") or {}).get("update") or {}
+                content = update.get("content") or {}
+                if update.get("sessionUpdate") == "agent_message_chunk" and content.get("type") == "text":
+                    chunks.append(str(content.get("text") or ""))
+            elif msg.get("method") == "session/request_permission":
+                options = (msg.get("params") or {}).get("options") or []
+                denied = next((o.get("optionId") for o in options
+                               if str(o.get("kind", "")).startswith(("reject", "deny"))), None)
+                outcome = ({"outcome": "selected", "optionId": denied}
+                           if denied else {"outcome": "cancelled"})
+                proc.stdin.write(json.dumps({"jsonrpc": "2.0", "id": msg["id"],
+                                             "result": {"outcome": outcome}}) + "\n")
+                proc.stdin.flush()
+            elif msg.get("id") == rid:
+                if "error" in msg:
+                    raise RuntimeError("ACP error at %s: %s" % (method, msg["error"]))
+                return msg.get("result") or {}, "".join(chunks)
+    try:
+        rpc("initialize", {"protocolVersion": 1, "clientCapabilities": {
+            "fs": {"readTextFile": False, "writeTextFile": False}, "terminal": False}})
+        session, _ = rpc("session/new", {"cwd": str(pathlib.Path(BOARD).resolve().parent),
+            "mcpServers": [], "_meta": {"systemPromptOverride":
+            "Thou art a stateless record compiler. Use no tools. Return only the JSON value required by the user's schema."}})
+        sid = session.get("sessionId")
+        if not isinstance(sid, str):
+            raise RuntimeError("ACP session/new returned no sessionId")
+        schema_first = "Return only JSON matching this schema:\n" + json.dumps(
+            fmt["schema"], ensure_ascii=False, separators=(",", ":")) + "\n\n" + prompt_text
+        _result, content = rpc("session/prompt", {"sessionId": sid,
+            "prompt": [{"type": "text", "text": schema_first}]}, True)
+        return content
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill(); proc.wait(timeout=5)
+
+
 def call_llm(cfg, stage, prompt_text):
     model = cfg["model"]
     api, url = model.get("api", "responses"), model["url"]
@@ -289,6 +364,8 @@ def call_llm(cfg, stage, prompt_text):
     elif api == "chat_completions":
         body["messages"] = [{"role": "user", "content": prompt_text}]
         body["response_format"] = {"type": "json_schema", "json_schema": fmt}
+    elif api == "acp":
+        return _call_acp(model, prompt_text, fmt)
     else:
         raise RuntimeError("unknown model api: " + str(api))
     req = urllib.request.Request(url, data=json.dumps(body).encode(),
@@ -1293,3 +1370,4 @@ none yet
 {"verify":"Root ## goal is empty while verify must still judge goal_satisfied and pursue-the-root-goal without substitutes; empty goal makes halt unreachable and confuses deed vs goal. Least amendment: render a non-empty goal or sentinel UNSET into the prompt for all faculties, and treat goal_satisfied=true only for explicit UNSET-when-idle policy if that is desired, else keep false."}
 {"execute":"Root ## goal section in the execute prompt is empty while the response contract still demands goal_interpretation and pursuit of the root goal without substitutes; that contradiction forces either paralysis or hallucinated quarry. Least amendment: guarantee a non-empty goal string (or explicit sentinel like UNSET) in the rendered prompt before invoking execute, and allow execute to return a no-op claim when goal is UNSET without violating pursue-the-root-goal."}
 {"verify":"Root ## goal is empty while verify must still judge goal_satisfied and pursue-the-root-goal without substitutes; empty goal makes halt unreachable and confuses deed vs goal. Least amendment: render a non-empty goal or sentinel UNSET into the prompt for all faculties, and treat goal_satisfied=true only for explicit UNSET-when-idle policy if that is desired, else keep false."}
+{"execute":""}
