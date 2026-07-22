@@ -18,6 +18,7 @@
 !entity/entity.py
 !entity/entity_main.md
 !entity/capabilities.py
+!entity/endgame-ai-final.md
 !entity/README.md
 entity/.body_cache/
 entity/__pycache__/
