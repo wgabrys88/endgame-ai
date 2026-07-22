@@ -3,9 +3,9 @@
 {
   "start": "execute",
   "state": {
-    "stage": null,
-    "last_signal": null,
-    "turn": 0,
+    "stage": "execute",
+    "last_signal": "ok",
+    "turn": 2,
     "failure_streak": 0
   },
   "model": {
@@ -1581,36 +1581,56 @@ def environment(sections):
 
 
 ## living_word
-[execute] (not yet interpreted)
-[verify] (not yet interpreted)
+[execute] world idle, obstacle none, distance to outcome infinite, next true deed: wait for non‑empty goal or UNSET sentinel; no proof required.
+[verify] world idle, obstacle none, distance infinite, next true deed: halt
 [recover] (not yet interpreted)
 
 ## ledger
 none yet
 
 ## action_frame
-(empty)
+await further instruction
 
 ## perceived
-(empty)
+GOAL=UNSET; claim: no action taken
 
 ## alternatives
-(empty)
+none (idle)
 
 ## code
-(empty)
+print('GOAL=UNSET')
 
 ## evidence
-(empty)
+GOAL=UNSET
 
 ## verdict
-(empty)
+GOAL=UNSET
 
 ## counsel
 (empty)
 
 ## environment
-(fresh screen scan lands here each turn)
+W0 Screen Desktop
+W1 Window Window_131364
+  e1 Button ChatGPT - 1 running window [click]
+  e2 Button Start [click]
+  e3 Button Search [click]
+    e4 Text Search [read]
+  e5 Button File Explorer pinned [click]
+  e6 Button Google Chrome pinned [click]
+  e7 Button Task Manager - 1 running window [click]
+  e8 Button LM Studio - 1 running window [click]
+  e9 Button Show Hidden Icons [click]
+  e10 Button Task Manager CPU 29% Memory 61% Disk 0% Network 0% [click]
+  e11 Button Clock 12:53:53 AM ‎7/‎23/‎2026 [click]
+W2 Window Task Manager
+W3 Window LM Studio
+W4 Window Settings
+W5 Window Settings
+W6 Window Window_327714
+W7 Window Window_65968
+W8 Window Program Manager
+  e12 ListItem Recycle Bin [click]
 
 ## failure_streak
 0
@@ -1639,3 +1659,5 @@ none yet
 {"execute":""}
 {"verify":""}
 {"execute":"Problem: The execute prompt contains an empty goal section, which contradicts the contract demanding a non‑empty root goal and a valid goal_interpretation. This hinders proper execution because there is nothing to pursue or prove. The present design sufficeth not as it forces paralysis or hallucinated outcomes. Least amendment: guarantee a non‑empty goal string (or explicit sentinel UNSET) in the rendered prompt before invoking execute, and allow execute to return a no‑op claim when GOAL=UNSET."}
+{"execute":""}
+{"verify":""}
