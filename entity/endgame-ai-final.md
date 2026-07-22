@@ -766,7 +766,7 @@ from typing import Any
 import comtypes
 import comtypes.client
 
-ROOT = __import__("pathlib").Path(__file__).parent.resolve()
+ROOT = __import__("pathlib").Path(globals().get("BOARD", ".")).resolve().parent
 user32 = ctypes.windll.user32
 DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = ctypes.c_void_p(-4)
 if not user32.SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2):
