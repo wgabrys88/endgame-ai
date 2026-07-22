@@ -38,6 +38,9 @@ Then wake it up. A tiny bootstrap reads the document's own `engine` section and 
 
 ```powershell
 ## Command (one-liner, run it from the dir where the file is located after loading a model in LM Studio's server on localhost:1234)
+## Run an existing local document
+python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md
+## Download the pushed branch and run it
 iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -OutFile .\endgame.md;python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md
 ```
 
