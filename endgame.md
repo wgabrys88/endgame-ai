@@ -3,9 +3,9 @@
 {
   "start": "execute",
   "state": {
-    "stage": "verify",
-    "last_signal": "ok",
-    "turn": 1,
+    "stage": null,
+    "last_signal": null,
+    "turn": 0,
     "failure_streak": 0
   },
   "model": {
@@ -1583,7 +1583,7 @@ def environment(sections):
 
 
 ## living_word
-[execute] [execute] (not yet interpreted) [verify] (not yet interpreted) [recover] (not yet interpreted)
+[execute] (not yet interpreted)
 [verify] (not yet interpreted)
 [recover] (not yet interpreted)
 
@@ -1591,19 +1591,19 @@ def environment(sections):
 none yet
 
 ## action_frame
-await clarification of root goal
+(empty)
 
 ## perceived
-goal empty
+(empty)
 
 ## alternatives
-UNSET
+(empty)
 
 ## code
-print('Goal missing')
+(empty)
 
 ## evidence
-Goal missing
+(empty)
 
 ## verdict
 (empty)
@@ -1612,27 +1612,7 @@ Goal missing
 (empty)
 
 ## environment
-W0 Screen Desktop
-W1 Window Window_131364
-  e1 Button ChatGPT - 1 running window [click]
-  e2 Button Start [click]
-  e3 Button Search [click]
-    e4 Text Search [read]
-  e5 Button File Explorer pinned [click]
-  e6 Button Google Chrome pinned [click]
-  e7 Button Task Manager - 1 running window [click]
-  e8 Button LM Studio - 1 running window [click]
-  e9 Button Show Hidden Icons [click]
-  e10 Button Task Manager CPU 11% Memory 58% Disk 0% Network 0% [click]
-  e11 Button Clock 12:39:07 AM ‎7/‎23/‎2026 [click]
-W2 Window Task Manager
-W3 Window LM Studio
-W4 Window Settings
-W5 Window Settings
-W6 Window Window_327714
-W7 Window Window_65968
-W8 Window Program Manager
-  e12 ListItem Recycle Bin [click]
+(fresh screen scan lands here each turn)
 
 ## failure_streak
 0
