@@ -1023,6 +1023,8 @@ def build(kind, sections):
         "action_index": _LAST_OBS["action_index"],
         "screen_elements": _LAST_OBS["screen_elements"],
         "desktop_tree_text": _LAST_OBS["desktop_tree_text"],
+        "repo_root": str(ROOT),
+        "python_executable": __import__("sys").executable,
     }
     if kind == "witness":
         return common
