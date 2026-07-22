@@ -100,8 +100,7 @@
         "environment"
       ],
       "writes": {
-        "goal_interpretation": "living_word",
-        "code": "code"
+        "goal_interpretation": "living_word"
       },
       "exec": {
         "field": "code",
