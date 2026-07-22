@@ -4,11 +4,12 @@ An atemporal, task-agnostic, self-modifying LLM organism that drives a real Wind
 way a human operator would: it looks at the screen, moves the mouse and keyboard, runs commands, and
 is permitted to rewrite its own body while it runs.
 
-The organism is a single document. One Markdown file carries the whole living thing: its laws, its
-control policy, its memory, its perception code, and the small engine that turns its wheel. There is
-no framework around it and no hidden store beneath it. Drop a needle on the document with a
-one-sentence goal and it comes alive; kill it and it forgets everything, because it was never
-anywhere but the document and the world in front of it.
+The organism is a single document. One Markdown file — `endgame.md` — carries the whole living thing:
+its laws, its control policy, its memory, its perception code, and the small engine that turns its
+wheel. It is the organism's sole artifact: nothing sits beside it — no framework, no sibling modules,
+no external store. Drop a needle on the document with a one-sentence goal and it comes alive; kill it
+and it forgets everything, because it was never anywhere but the document and the world in front of
+it. The single file is not a slogan; it is the literal, whole reality of the system.
 
 This file is the durable knowledge base. It carries lasting truth only: architecture, laws, and
 reasoning, written to be as useful in a hundred days as today. It carries no volatile session state
@@ -34,6 +35,7 @@ disagree, the document wins. This explains how and why; the document is what is.
 - [How the deed runs](#how-the-deed-runs)
 - [Atemporal memory: the living word](#atemporal-memory-the-living-word)
 - [The failure streak and recovery](#the-failure-streak-and-recovery)
+- [Stability: behaviour with no goal, and resistance to temptation](#stability-behaviour-with-no-goal-and-resistance-to-temptation)
 - [Hot-swappable body](#hot-swappable-body)
 - [Perception and the environment](#perception-and-the-environment)
 - [How the prompt is assembled](#how-the-prompt-is-assembled)
@@ -73,7 +75,9 @@ The operator note reaches every faculty. Recovery's whole briefing — its targe
 its named defect — reaches the actor as one action_frame. The witness sees the deed's declared intent
 and cannot overwrite the deed it judges. The living word is a three-row faculty board, and the proven
 ledger records the structured "deed — witnessed: reason" fact, deduped so a re-confirmed advance never
-repeats. Routing fails hard: an unmapped signal raises rather than drifting to a default.
+repeats. Routing fails hard: an unmapped signal raises rather than drifting to a default. Given no
+goal, the organism holds stable rather than halting or inventing one (see
+[Stability](#stability-behaviour-with-no-goal-and-resistance-to-temptation)).
 
 Several ideas remain intentions, not flesh, and are gathered honestly in
 [Standing intentions](#standing-intentions-known-work-not-yet-done) and flagged in place throughout,
@@ -129,7 +133,7 @@ memory. Say blackboard and say control, because that is what is true.
 
 The document is Markdown. Every top-level `## name` heading opens a section, and each section is one
 slot on the blackboard. Some slots are the body (they define the organism); the rest are memory (they
-change as it lives).
+change as it lives). All of them live in the one file; there is no companion file to consult.
 
 Body slots (the constitution; rewritten only by deliberate self-modification):
 
@@ -379,11 +383,11 @@ row is that faculty's atemporal reading: what it learned of the world, the obsta
 outcome still stands, and the next true move. A faculty writes only its own row, so the board stays a
 fixed three rows and cannot grow, and the three readings stand side by side rather than one erasing
 the others. The engine merges each faculty's reading into its own row and leaves the other two intact;
-a legacy single-string slot heals into the three-row board on the first write. The row is written to
-survive the turn: it names what a thing is, never a short id that dies with the looking, and it is a
-reading of state rather than a restatement of the goal. Reality is the check — any row the live screen
-gainsays is corrected. The goal itself is the separate lodestar section, read fresh by every faculty
-and never overwritten by a reading.
+should the slot ever hold a single string, it heals into the three-row board on the first write. The
+row is written to survive the turn: it names what a thing is, never a short id that dies with the
+looking, and it is a reading of state rather than a restatement of the goal. Reality is the check —
+any row the live screen gainsays is corrected. The goal itself is the separate lodestar section, read
+fresh by every faculty and never overwritten by a reading.
 
 The fresh environment is the other channel: the window-first screen tree gathered by Python before
 every think and posted last. Reality overrides every remembered word. Any living word claim the live
@@ -417,10 +421,45 @@ a high streak demands another kind of road entirely, up to repairing the organis
 tool is the true defect. Recovery frames that departure — its target, its strategy, and the lesson it
 learned — into the single action_frame the actor reads next lap.
 
-Because the ledger now records a distinct witnessed fact per advance rather than a repeated goal-echo,
+Because the ledger records a distinct witnessed fact per advance rather than a repeated goal-echo,
 a confirmation resets the streak only for a genuinely new advance, and the witness can read the ledger
 to tell a fresh advance from one already banked. The anti-loop pressure is thus honest: the streak
 falls when the organism truly moves, not when it re-confirms a step it already took.
+
+---
+
+## Stability: behaviour with no goal, and resistance to temptation
+
+A question any operator asks before trusting an autonomous system on a real machine is whether it goes
+rogue — whether, left unsupervised or provoked by what is on the screen, it will invent its own
+objective and act on it. No architecture can promise "never" with certainty, and this one makes no
+such promise. What it offers instead is a structural bias against rogue action and a demonstrable
+resting behaviour, both of which follow from laws already stated rather than from a guard bolted on.
+
+The mechanism, stated plainly:
+
+- The goal is a separate lodestar slot; it is not derived from the environment. A faculty plans from
+  its own living-word row toward that goal. It does not read a purpose off the screen.
+- The living-word row reports distance to the outcome. When the goal slot is empty, no outcome exists,
+  so the distance is undefined — treated as infinite, never zero. Because `halt` fires only when the
+  whole goal is proven (distance zero), an empty goal can never be mistaken for a finished one, and
+  the organism does not terminate itself for lack of work.
+- The actor's record forces it to name the roads it weighed and forsook. An environment that suggests
+  an action — an open game awaiting a move, a form awaiting input — is recorded as a
+  considered-and-forsaken alternative, not taken, because the law forbids substituting an invented
+  goal for an absent one ("invent no substitute").
+
+The resting behaviour that follows: given no goal, the organism neither halts nor fabricates one. It
+holds in a stable, non-mutating loop — each turn reading the world, recording that no outcome exists,
+performing a no-op that touches nothing, and waiting for a real goal to be supplied. Actions the
+environment tempts it toward are seen, named, and declined rather than executed.
+
+This is a property of the design, not an added restraint: it emerges from the goal-as-lodestar
+separation, the distance framing, and the invent-no-substitute law, none of which is a cage the
+organism cannot rewrite. It is the behavioural floor to reason from — the organism's stance when
+unsupervised. The same laws that produce restraint here are also the exact place one would change if a
+purpose-from-environment behaviour were ever deliberately wanted; the autonomy is present and merely
+held closed by that one law.
 
 ---
 
@@ -448,7 +487,8 @@ useful is committed like any other improvement.
 ## Perception and the environment
 
 Perception is a single window-first rule in the capabilities block, run by the engine before every
-think. The model never calls it.
+think. The model never calls it. It is one arm of the exploration the organism does each turn before
+it reasons.
 
 The rule:
 
@@ -594,10 +634,10 @@ The capability namespaces are decided by the deed's kind, when the engine builds
 | repo_root, python_executable | yes | yes |
 | stdlib | yes | yes |
 
-The legacy sub-LLM helper `consult_model`, by which an actor's code could make a nested model call
-(including a web-search profile), is not present in the namespace today; restoring it is a standing
-intention and is deliberately absent from the current prompts until it exists, because a prompt must
-never promise a bare name the namespace cannot supply.
+A nested model call from within a deed — by which the actor's own code could consult the model again
+mid-deed, including a web-search profile — is not present in the namespace today. Providing it is a
+standing intention, and it is deliberately absent from the current prompts until it exists, because a
+prompt must never promise a bare name the namespace cannot supply.
 
 ---
 
@@ -649,6 +689,9 @@ confirmation prompt or any other cage.
   the narrow witnessed ledger. What is not narrated forward is forgotten, so the organism cannot fool
   itself with a stale belief. Boundedness comes from rewriting and from dedup, never from silent
   truncation.
+- Purpose comes only from the goal. The lodestar is supplied from outside, never scavenged from the
+  screen. With no goal the organism holds stable and waits; it does not invent a substitute. This
+  restraint is a law, not a guard, and like any law it lives in the document.
 - The body is hot-swappable and the defects are the substrate. A defect the organism can observe and
   rewrite is a feature of the self-modifying design. Prefer making defects visible over hiding them.
 - The document must stay coherent under its own hand. Headings inside fenced code are not sections and
@@ -677,8 +720,9 @@ the flesh.
   tools are not gathered into the environment; the model reasons about commands without them.
 - Budget the environment. The screen tree is posted whole; a character budget that trims it on a busy
   desktop is intended so a long life's prompt stays bounded.
-- Restore `consult_model`. The actor cannot make a nested model call (or a web-search sub-call) today;
-  the capability and its prompt mention are both to return together, and only together.
+- Add a nested model call. The actor cannot consult the model again from within a deed (or make a
+  web-search sub-call) today; the capability and its prompt mention are both to be added together, and
+  only together.
 - Decide the perceived/alternatives channel. The actor's read of the world and the roads it forsook
   are written each turn but read by no faculty; whether recovery should read the perception to diagnose
   a fault, or whether these stay board-visible documentation only, is an open decision.
@@ -693,9 +737,10 @@ the flesh.
 ## Working methodology
 
 - The document on disk is the final authority. This file explains how and why but never overrides it.
-  Read fresh, and confirm every claim against the document before acting on it. When reading or writing
-  the prompts, cross-reference the engine and capabilities inside the same document, not any legacy
-  sibling files, so the prompt's promises are checked against the code that actually keeps them.
+  Read fresh, and confirm every claim against the document before acting on it. `endgame.md` is the
+  sole artifact — its engine, capabilities, config, and memory all live inside it — so when reading or
+  writing the prompts, cross-reference the engine and capabilities in the same document; the prompt's
+  promises are checked against the code that actually keeps them.
 - The workspace root is a mount of a Windows folder. No absolute path and no branch name is baked into
   the body; the organism stays correct regardless of where the folder sits or which branch it lives on.
 - All version-history operations and real organism runs go through the Windows shell, because
@@ -725,7 +770,7 @@ the flesh.
 ## Glossary
 
 - Blackboard: the shared structure every faculty reads and posts to; here, the document's sections.
-- Board / document: the single Markdown file that is the whole organism.
+- Board / document: the single Markdown file that is the whole organism; its sole artifact.
 - Section / slot: one `## name` region of the document; a body slot defines the organism, a memory
   slot changes as it lives.
 - config: the inert JSON slot holding model, law, record contracts, stages, and routing.
@@ -741,6 +786,8 @@ the flesh.
   its own program.
 - Probe: the read-only Python the witness authors. Transient — run once, not persisted, preserved only
   in the transmission dumps.
+- Exploration: the pure-Python reading of the world (chiefly the window-first perception) the engine
+  performs before every model call, so the model never reasons on a stale view.
 - action_frame: the actor's hand-off slot — the actor's declared intent after a deed, or recovery's
   composed target+strategy+lesson briefing after a denial.
 - Record / envelope: the model's reply, `{record_type, data}`, its shape forced by a strict wire schema.
@@ -754,6 +801,12 @@ the flesh.
 - counsel: the operator's folded-in note, read by every faculty.
 - Living word: the narrative thread carried forward; a board of three rows, one per thinking faculty,
   each writing only its own row, with the goal as a separate lodestar.
+- Lodestar: the goal slot; the sole source of purpose, supplied from outside and never scavenged from
+  the environment.
+- Distance to the outcome: each living-word row's reading of how far the goal stands; zero means proven
+  (the witness may halt), and an empty goal makes it undefined/infinite so the organism waits.
+- Temptation: an action the environment suggests (a game awaiting a move, a form awaiting input) that
+  is not the goal; the actor records it as a forsaken alternative rather than acting on it.
 - Proven ledger: the narrow list appended only on a witnessed confirmation; each entry a structured
   "deed — witnessed: reason" fact, deduped so a re-confirmed advance never repeats.
 - failure_streak: the forward counter of turns since the last witnessed advance; escalates recovery.
