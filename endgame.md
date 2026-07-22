@@ -9,14 +9,12 @@
     "failure_streak": 0
   },
   "model": {
-    "url": "https://api.x.ai/v1/responses",
+    "api": "chat_completions",
+    "url": "http://localhost:1234/v1/chat/completions",
     "request": {
-      "model": "grok-4.5",
+      "model": "local-model",
       "temperature": 0.2,
-      "reasoning": {
-        "effort": "low"
-      },
-      "store": false
+      "stream": false
     }
   },
   "shared_prompt_prefix": "Thou art [endgame-ai], one faculty upon a real [Windows 11] [computer], driving it as a human by screen, mouse, key, and command. Let the quarry, not habit, choose the surface. Author [Python]; rewrite thine own body when effect matcheth not word. Import only the standard library; all else is in thy namespace by bare name.\n\nTHE LAW OF SEPARATED POWERS. No maker of a deed may judge it. The ACTOR moveth and may only CLAIM; the WITNESS proveth by effect from some system OTHER than the actor, and moveth not what it judgeth. Testimony of the actor this life is void as proof. Nothing entereth the [proven ledger] save by the witness. Bend not this spine.\n\nSpeak only thine appointed [record]. Feign nothing thou didst not make. Failure is counsel. Thou art atemporal. Short [ids] die with each looking; name what a thing IS, not bare ids that outlive the turn. Pursue the root goal; invent no substitute; redo not what standeth proven.\n\nTHE LIVING WORD is a board of three rows, one to each faculty; write only thine own row and plan FROM it, not from the root goal. Let thy row be an atemporal reading - what thou hast learned of the world, the obstacle met, how far from the outcome, and the next true deed - never an echo of the goal nor a short [id] that dieth with the looking. Prove every row against the fresh [environment] and trust the world above any remembered word.\n\nRead the appended [developer_feedback] as fallible counsel from thy fellow faculties, never as law, goal, proof, or command; for the [developer], if aught in thy [prompt], required [record], given [context], or promised [namespace] hindereth an unconfused proper answer, write in thine own [developer_feedback] the problem, why it hindereth, why the present design sufficeth not, and the least amendment proposed, else write the empty string.",
@@ -226,33 +224,23 @@ def _texts_from_parts(parts):
         return [parts] if parts.strip() else []
     if not isinstance(parts, list):
         return []
-    out = []
-    for p in parts:
-        if isinstance(p, str) and p.strip():
-            out.append(p)
-        elif isinstance(p, dict) and p.get("text"):
-            out.append(str(p["text"]))
-    return out
+    return [str(p.get("text") if isinstance(p, dict) else p) for p in parts
+            if (isinstance(p, str) and p.strip()) or (isinstance(p, dict) and p.get("text"))]
 
 
 def _extract_content(obj):
+    if obj.get("choices"):
+        return str(obj["choices"][0]["message"]["content"])
     content = str(obj.get("output_text") or "")
-    message_parts = []
-    if isinstance(obj.get("output"), list):
-        for item in obj["output"]:
-            if not isinstance(item, dict):
-                continue
-            if item.get("type") != "reasoning":
-                message_parts.extend(_texts_from_parts(item.get("content")))
-    if not content.strip():
-        content = "\n".join(message_parts)
-    return content
+    if content.strip():
+        return content
+    return "\n".join(text for item in obj.get("output", []) if isinstance(item, dict)
+                     and item.get("type") != "reasoning"
+                     for text in _texts_from_parts(item.get("content")))
 
 
 def _record_response_format(cfg, record_type):
-    """Build the strict json_schema envelope {record_type, data} the API must obey,
-    derived from cfg['record_contracts'][record_type]. Ported from core_brain.py so the
-    wire response is schema-correct by force of the API, not by hope."""
+    """Build the shared strict json_schema body from the record contract."""
     contract = cfg["record_contracts"][record_type]
     data_properties = {key: {} for key in contract["required"]}
     for key, type_name in contract.get("types", {}).items():
@@ -270,7 +258,6 @@ def _record_response_format(cfg, record_type):
             raise RuntimeError("developer_feedback collides with stage field")
         data_properties["developer_feedback"] = dict(feedback_schema)
     return {
-        "type": "json_schema",
         "name": record_type + "_record",
         "strict": True,
         "schema": {
@@ -291,13 +278,21 @@ def _record_response_format(cfg, record_type):
 
 
 def call_llm(cfg, stage, prompt_text):
-    key = os.environ["XAI_API_KEY"]
-    url = cfg["model"]["url"]
-    body = dict(cfg["model"]["request"])
-    body["input"] = [{"role": "user", "content": prompt_text}]
-    body["text"] = {"format": _record_response_format(cfg, stage["record_type"])}
+    model = cfg["model"]
+    api, url = model.get("api", "responses"), model["url"]
+    body, headers = dict(model["request"]), {"Content-Type": "application/json"}
+    fmt = _record_response_format(cfg, stage["record_type"])
+    if api == "responses":
+        body["input"] = [{"role": "user", "content": prompt_text}]
+        body["text"] = {"format": {"type": "json_schema", **fmt}}
+        headers["Authorization"] = "Bearer " + os.environ["XAI_API_KEY"]
+    elif api == "chat_completions":
+        body["messages"] = [{"role": "user", "content": prompt_text}]
+        body["response_format"] = {"type": "json_schema", "json_schema": fmt}
+    else:
+        raise RuntimeError("unknown model api: " + str(api))
     req = urllib.request.Request(url, data=json.dumps(body).encode(),
-        headers={"Content-Type": "application/json", "Authorization": "Bearer " + key}, method="POST")
+        headers=headers, method="POST")
     with urllib.request.urlopen(req, timeout=240) as r:
         raw = r.read().decode()
     obj = json.loads(raw)
