@@ -1251,7 +1251,6 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
             for x, y in _probe_points(rect, step_px):
                 x, y = max(0, min(sw - 1, x)), max(0, min(sh - 1, y))
                 _move_cursor(x, y)
-                time.sleep(0.03)
                 pt = wintypes.POINT(int(x), int(y))
                 try:
                     owner = int(user32.GetAncestor(user32.WindowFromPoint(pt), 2) or 0)
