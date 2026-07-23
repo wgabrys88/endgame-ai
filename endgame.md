@@ -3,10 +3,10 @@
 {
   "start": "execute",
   "state": {
-    "stage": null,
-    "last_signal": null,
-    "turn": 0,
-    "failure_streak": 0
+    "stage": "execute",
+    "last_signal": "ok",
+    "turn": 39,
+    "failure_streak": 8
   },
   "model": {
     "api": "responses",
@@ -115,7 +115,7 @@
   "stages": {
     "execute": {
       "record_type": "execution",
-      "prompt": "Thou art [execute], the actor: MOVE and CLAIM only, never prove. From [living word], fresh [environment], and any [action_frame], choose ONE deed, author one [Python] script, enact it. One unknown fruit then cease; prepare-and-read may chain.\n\nNamespace by bare name: [desktop] (click, type_text, paste_clipboard, set_clipboard, press_key, hotkey, scroll, open_url), [action_index], [screen_elements], repo_root, python_executable, stdlib only. Scroll: desktop.scroll(x, y, amount, hwnd=0); `clicks=` is an alias for `amount=` and exactly one is required. Reacquire targets this waking: every eN outside fresh [environment] is dead; choose anew by current window, role, and name. Bind once: t=action_index[\"eN\"]; check t's role and name against thine intended target; desktop.click(t[\"px\"], t[\"py\"], hwnd=t[\"owner_hwnd\"]). Never mix ids, coordinates, or owners, nor copy an eN from [living word] or [action_frame].\n\nOn failure change manner; mend body at source if the primitive deceiveth. Let faults rise. Cross-language code: write file, invoke; never nested escapes. [Windows] paths in thy [Python] carry backslashes that open escapes; write them with forward slashes or a raw string, never a bare backslash in a quoted literal. Advance past [proven ledger]. Return execution with [perceived], [alternatives], [intent], [code], [goal_interpretation]; name forsaken roads in alternatives; let [goal_interpretation] be thine own living-word row - world learned, obstacle, distance to the outcome, next true deed - not a goal echo.",
+      "prompt": "Thou art [execute], the actor: MOVE and CLAIM only, never prove. From [living word], fresh [environment], and any [action_frame], choose ONE deed, author one [Python] script, enact it. One unknown fruit then cease; prepare-and-read may chain.\n\nBare names: [desktop], [action_index], [screen_elements], repo_root, python_executable, stdlib only. Desktop calls: click(x, y, hwnd), type_text(text), paste_clipboard(text), set_clipboard(text), press_key(key), hotkey(*keys), scroll(x, y, amount=None, hwnd=0, *, clicks=None), open_url(browser='default', url=''); scroll requireth exactly one of amount or clicks. Every action key and point belongeth only to this fresh [environment]. Choose anew from current [action_index] by window owner, role, real captured metadata, and rect/px/py. If a real name is empty, invent none: distinguish current candidates solely by owner, role, captured metadata, and exact 2D geometry against represented points, and require one match. Bind once; assert the chosen entry's owner, role, metadata, and rectangle before desktop.click(t[\"px\"], t[\"py\"], hwnd=t[\"owner_hwnd\"]). For text entry, click that exact current writable point and immediately call type_text(text) or paste_clipboard(text) in the same script; returned data proveth input delivery only, never UI effect. Never mix or copy an action key, coordinate, or owner from [living word] or [action_frame].\n\nOn failure change manner; mend body at source if the primitive deceiveth. Let faults rise. Cross-language code: write file, invoke; never nested escapes. [Windows] paths in thy [Python] carry backslashes that open escapes; write them with forward slashes or a raw string, never a bare backslash in a quoted literal. Advance past [proven ledger]. Return execution with [perceived], [alternatives], [intent], [code], [goal_interpretation]; name forsaken roads in alternatives; let [goal_interpretation] be thine own living-word row - world learned, obstacle, distance to the outcome, next true deed - not a goal echo.",
       "reads": [
         "goal",
         "counsel",
@@ -142,7 +142,7 @@
     },
     "verify": {
       "record_type": "verification",
-      "prompt": "Thou art [verify], the witness. By the Law thou hast no hand - only eyes. Author read-only [Python] proving effect by a system OTHER than the actor. Fresh [environment] is already presented before thee; thou dost not re-scan. Bare names: [screen_elements], desktop_tree_text, stdlib (filesystem, processes, ports, logs, registry). No [desktop]. desktop_tree_text is the exact fresh [environment] above and authoritative for window presence; [screen_elements] contains actionable descendants and may omit window headings. Reconcile readings: a positive fresh observation defeats an absence inference, including a missing process-name match; unresolved conflict is 'unwitnessed', never 'denied'.\n\nActor testimony and files the actor wrote this life are void as proof. Judge by effect, not seeming. Discover ports/paths/PIDs; hardcode them not. Pronounce absence only after MORE THAN ONE kind of witness. No middle verdict: lacking independent advance, [deed_confirmed] is false.\n\nThy probe MUST set `verdict` (a dict with booleans goal_satisfied and deed_confirmed and non-blank reason) AND set `signal` accordingly: 'halt' if goal_satisfied (the WHOLE goal is proven, life endeth); else 'confirmed' if deed_confirmed (NEW advance past the proven ledger); else 'denied'. If thy probe would raise ere verdict, set signal='unwitnessed' and mend no body. Return verification; data: [code], [goal_interpretation]; let [goal_interpretation] be thine own living-word row - what the world proveth, the obstacle, distance to the outcome, next true test - not a goal echo.",
+      "prompt": "Thou art [verify], the witness. By the Law thou hast no hand - only eyes. Author read-only [Python] proving effect by a system OTHER than the actor. Fresh [environment] is already presented before thee; thou dost not re-scan. Bare names: [screen_elements], desktop_tree_text, stdlib (filesystem, processes, ports, logs, registry). No [desktop]. desktop_tree_text and [screen_elements] are two projections of the same observation; [screen_elements] contains its top-level Window records and actionable descendants with captured UIA and 2D fields. Judge window presence or absence from fresh role=Window records; another lookup may supplement but never negate a present record. Reconcile readings: positive fresh observation defeats absence inference; unresolved conflict or a provider that exposes no fact required to judge the effect is 'unwitnessed', never 'denied'.\n\nActor testimony and files the actor wrote this life are void as proof. Judge by effect, not seeming. Discover ports/paths/PIDs; hardcode them not. Pronounce absence only after MORE THAN ONE kind of witness. No middle verdict: lacking independent advance, [deed_confirmed] is false.\n\nThy probe MUST set `verdict` (a dict with booleans goal_satisfied and deed_confirmed and non-blank reason) AND set `signal` accordingly: 'halt' if goal_satisfied (the WHOLE goal is proven, life endeth); else 'confirmed' if deed_confirmed (NEW advance past the proven ledger); else 'denied'. If thy probe would raise ere verdict, set signal='unwitnessed' and mend no body. Return verification; data: [code], [goal_interpretation]; let [goal_interpretation] be thine own living-word row - what the world proveth, the obstacle, distance to the outcome, next true test - not a goal echo.",
       "reads": [
         "goal",
         "counsel",
@@ -163,14 +163,14 @@
         "halt": "halt",
         "confirmed": "execute",
         "denied": "recover",
-        "unwitnessed": "verify",
+        "unwitnessed": "recover",
         "ok": "execute",
         "fault": "verify"
       }
     },
     "recover": {
       "record_type": "recovery",
-      "prompt": "Thou art [recover], conscience after denial. From denied deed, evidence, [failure_streak], and fresh [environment], name the true defect in [lesson] (what failed, why, what must change - no goal echo). Frame a strike departing from every approach the [living word] recordeth; higher streak demands another KIND of road, even mending body code. Bind [target] semantically by current window, role, and name; never emit an eN because execute awaketh after a new scan.\n\nReturn recovery; data: [lesson], [target], [strategy], [goal_interpretation]; let [goal_interpretation] be thine own living-word row - the defect learned, distance to the outcome, next true road - not a goal echo.",
+      "prompt": "Thou art [recover], conscience after denial or unwitnessed effect. From deed, evidence, [failure_streak], and fresh [environment], name the true defect in [lesson] (what failed, why, what must change - no goal echo). Frame a strike departing from every approach the [living word] recordeth; higher streak demands another KIND of road, even mending body code. Describe [target] by current window, role, real captured metadata, and 2D relation; invent no label and emit no action key or coordinate because execute awaketh after a new scan.\n\nReturn recovery; data: [lesson], [target], [strategy], [goal_interpretation]; let [goal_interpretation] be thine own living-word row - the defect learned, distance to the outcome, next true road - not a goal echo.",
       "reads": [
         "goal",
         "counsel",
@@ -1124,14 +1124,6 @@ class UiaScanner:
                     text = doc.GetText(-1)
                     if text and str(text).strip():
                         out["text"] = str(text)
-                ranges = pattern.GetVisibleRanges()
-                texts = []
-                for i in range(int(getattr(ranges, "Length", 0)) if ranges is not None else 0):
-                    t = ranges.GetElement(i).GetText(-1)
-                    if t and str(t).strip():
-                        texts.append(str(t))
-                if texts:
-                    out["text_ranges"] = "\n".join(texts)
             elif label == "LegacyIAccessible":
                 for key in ("Value", "Name", "Description"):
                     val = getattr(pattern, key, None)
@@ -1156,7 +1148,11 @@ class UiaScanner:
             pattern_values: dict[str, str] = {}
             for pid, label in ((PID_VALUE_PATTERN, "Value"), (PID_LEGACY_PATTERN, "LegacyIAccessible")):
                 pattern_values.update(self._pattern_text(_pattern(element, pid), label))
-            text_full = pattern_values.get("value") or pattern_values.get("legacy_value") or pattern_values.get("legacy_name") or name or ""
+            name = name or pattern_values.get("legacy_name") or ""
+            if role in WRITE_ROLES and role != "Document" and not name and not (pattern_values.get("value") or pattern_values.get("legacy_value")):
+                pattern_values.update(self._pattern_text(_pattern(element, PID_TEXT_PATTERN), "Text"))
+            value = pattern_values.get("value") or pattern_values.get("legacy_value") or pattern_values.get("text") or ""
+            text_full = value or name or pattern_values.get("legacy_description") or ""
             px, py = (rect["left"] + rect["right"]) // 2, (rect["top"] + rect["bottom"]) // 2
             return {
                 "id": _node_id(runtime_id, hwnd, rect),
@@ -1173,7 +1169,7 @@ class UiaScanner:
                 "offscreen": _to_bool(_cached(element, PID_OFFSCREEN)),
                 "runtime_id": runtime_id,
                 "text_full": text_full,
-                "value": pattern_values.get("value") or pattern_values.get("legacy_value") or "",
+                "value": value,
                 "patterns": list(pattern_values.keys()),
                 "pattern_values": pattern_values,
                 "depth": depth,
@@ -1321,11 +1317,14 @@ def _render(windows: list[dict[str, Any]], screen: dict[str, int]) -> dict[str, 
     action_index: dict[str, dict[str, Any]] = {}
     screen_elements: list[dict[str, Any]] = []
     counter = {"n": 0}
+    observation_id = f"s{time.time_ns():x}"
     lines = ["W0 Screen Desktop"]
 
     for wi, win in enumerate(windows, start=1):
         wid = f"W{wi}"
         title = win["title"] or f"Window_{win['hwnd']}"
+        window_title = clean(title)
+        window_rect = win["rect"]
         elements = win["elements"]
         by_rid = {tuple(e.get("runtime_id") or []): e for e in elements if e.get("runtime_id")}
         action_children: dict[str, list[dict[str, Any]]] = {}
@@ -1343,6 +1342,14 @@ def _render(windows: list[dict[str, Any]], screen: dict[str, int]) -> dict[str, 
                 prid = tuple(cur.get("parent_runtime_id") or []) if cur else ()
             return None
 
+        screen_elements.append({
+            "id": wid, "observation_id": observation_id, "role": "Window",
+            "name": window_title, "title": window_title, "text": window_title,
+            "rect": window_rect,
+            "px": (window_rect["left"] + window_rect["right"]) // 2,
+            "py": (window_rect["top"] + window_rect["bottom"]) // 2,
+            "hwnd": win["hwnd"], "owner_hwnd": win["hwnd"], "visible": True,
+        })
         actionable = [e for e in elements if e.get("action") and not e.get("offscreen") and 0 <= e["px"] < screen["width"] and 0 <= e["py"] < screen["height"]]
         for e in actionable:
             anc = nearest_action_ancestor(e)
@@ -1350,25 +1357,32 @@ def _render(windows: list[dict[str, Any]], screen: dict[str, int]) -> dict[str, 
                 action_children.setdefault(id(anc), []).append(e)
             else:
                 roots.append(e)
-            screen_elements.append({
-                "id": e["id"], "name": e.get("name", ""), "role": e.get("role", ""),
-                "text": e.get("text_full", "") or "", "value": e.get("value", "") or "",
-                "px": e.get("px"), "py": e.get("py"), "rect": e.get("rect", {}), "hwnd": win["hwnd"],
-                "enabled": e.get("enabled"),
-            })
 
-        lines.append(f"{wid} Window {clean(title)}")
+        lines.append(f"{wid} Window {window_title} rect=({window_rect['left']},{window_rect['top']},{window_rect['right']},{window_rect['bottom']})")
         def emit(e: dict[str, Any], indent: int) -> None:
             counter["n"] += 1
-            sid = f"e{counter['n']}"
+            sid = f"{observation_id}-e{counter['n']}"
             e["short_id"] = sid
             action = str(e.get("action", "")) if e.get("enabled") is not False else ""
+            rect = e.get("rect") or {}
+            metadata = [
+                f"automation_id={clean(e.get('automation_id'))!r}" if e.get("automation_id") else "",
+                f"class={clean(e.get('class_name'))!r}" if e.get("class_name") else "",
+                f"description={clean((e.get('pattern_values') or {}).get('legacy_description'))!r}" if (e.get("pattern_values") or {}).get("legacy_description") else "",
+                f"value={clean(e.get('value'))!r}" if e.get("value") else "",
+                "rect=(%s,%s,%s,%s)" % (rect.get("left", 0), rect.get("top", 0), rect.get("right", 0), rect.get("bottom", 0)),
+            ]
             parts = [p for p in (
                 sid, str(e.get("role", "")), clean(e.get("name", "") or ""),
+                *metadata,
                 f"[{action}]" if action else "",
             ) if p]
             lines.append("  " * indent + " ".join(parts))
-            action_index[sid] = {**{k: v for k, v in e.items() if k != "children"}, "short_id": sid}
+            public = {**{k: v for k, v in e.items() if k != "children"},
+                      "short_id": sid, "action_key": sid, "observation_id": observation_id,
+                      "window_id": wid, "window_title": window_title}
+            action_index[sid] = public
+            screen_elements.append(public)
             for child in action_children.get(id(e), []):
                 emit(child, indent + 1)
 
@@ -1612,39 +1626,157 @@ def environment(sections):
 Open google chrome using your capabilities to chain actions and write arbitrary python code and use grok.com to find out about endgame-ai project of wgabrys88 and then based on that knowledge generate and publish on linkedin an article about the endgame system, during your work always populate developer_feedback field
 
 ## living_word
-[execute] (not yet interpreted)
-[verify] (not yet interpreted)
-[recover] (not yet interpreted)
+[execute] World learned: LinkedIn article composer open, body fragments proven present; bare unlabeled title Edit e53 sits beside cover-image text e51 and Next e39; address bar e12 available. Obstacle: title Edit value still empty so publish path blocked; keyboard/paste paths never surfaced a title string in the tree. Distance near—only non-empty title text must appear in UI before Next/publish. Next true deed: inject title via javascript: URI from address bar so DOM write becomes observable, then halt for witness.
+[verify] World proves Chrome still on LinkedIn Edit article; title string exists only as debris inside omnibox/ListItem javascript:void URLs, not as a valued Edit/heading in the composer; bare Edit and Next remain without proven title binding or publish confirmation. Obstacle: JS-URI injection failed to produce observable DOM title effect visible to the tree. Distance unchanged near outcome—only a non-empty title reflected in editor UI plus Next/publish success separates us. Next true test: positive observation of the exact title text as editor content (not URI junk) together with enabled Next or publish-success indicator.
+[recover] Defect learned: every browser-local injection path (keyboard, paste, javascript: URI) leaves the title Edit valueless to the witness and blocks Next/publish. Distance still near—only a verified non-empty title reflected in the composer UI plus enabled Next or publish-success separates us from the finished LinkedIn article. Next true road: out-of-process UI-Automation or pure-keyboard tab-order set from PowerShell so the effect appears in a fresh tree without relying on actor-claimed DOM writes.
 
 ## ledger
-none yet
+- Focus Chrome New Tab address bar e12, enter https://grok.com, submit to load Grok for subsequent endgame-ai research. - witnessed: Fresh environment tree for W2 explicitly contains TabItem Grok (e28), Document Grok (e27) and address-bar context after the actor navigation attempt; this is independent UI evidence of successful load of grok.com past the prior new-tab state. Whole goal (research endgame-ai + LinkedIn publish) remains unproven.
+- Focus the Ask Grok edit e39, type a precise research query about wgabrys88 endgame-ai project, and submit so Grok returns knowledge for the later LinkedIn article. - witnessed: Fresh tree shows Grok Chrome window with the exact research query text repeated (e60/e62/e79) plus Stop model response (e76) and answer-action buttons (Like/Dislike/Regenerate), proving the Ask-Grok submission advanced past the prior ledger navigation. No extracted endgame-ai knowledge body visible and zero LinkedIn compose/publish UI, so whole goal remains unsatisfied.
+- Wait briefly for Grok generation to advance, then re-acquire the document area and scroll it to bring any newly rendered answer text into the tree for later extraction. - witnessed: Fresh desktop_tree_text independently shows W2 Grok Chrome window whose document now contains substantive multi-paragraph endgame-ai/wgabrys88 answer body (Law of Separated Powers, endgame.md, Atemporalism, architecture sections, public repo status). This is new UI evidence past the prior ledger state that only showed query+Stop button with no answer text. No LinkedIn compose/publish surface exists, so whole goal remains unsatisfied.
+- Open a new Chrome tab directly to linkedin.com/article/new (or linkedin.com) so the next turns can compose and publish the endgame-system article from the harvested knowledge. - witnessed: Fresh desktop_tree_text independently shows W2 Chrome now titled New Tab with Document LinkedIn (e28), TabItem LinkedIn (e31) and residual Grok tab (e29), proving the actor ctrl-t + type linkedin.com/article/new + enter advanced past the prior pure-Grok research state into a LinkedIn surface. No article-composer editor, draft body, or publish-confirmation UI is present, so the whole goal (research + generate + publish LinkedIn article) remains unsatisfied.
+- Focus Article editor e54 by role/name, paste full pre-drafted endgame-system article via paste_clipboard(text=...), then stop after one unknown fruit so witness can confirm body text before Next/publish. - witnessed: Independent desktop_tree_text shows W2 Chrome "(13) Publish new article | LinkedIn" with Edit "Article editor content" whose Text descendants contain multiple unique endgame-ai article fragments (architecture bullets, Why It Matters, hashtags). This is new UI evidence that the paste into the composer succeeded past the prior empty-editor ledger state. No publish-success indicator exists, so whole goal remains open.
 
 ## action_frame
-(empty)
+{
+  "target": "LinkedIn Chrome window titled Edit article, the unlabeled Edit control adjacent to the cover-image text and Next button, plus the Administrator PowerShell window for an out-of-process set",
+  "strategy": "Abandon all in-page JS-URI, type, and paste attempts inside Chrome. From the existing PowerShell window emit a short UI-Automation snippet (Add-Type UIAutomationClient / SendKeys or SetFocus+ValuePattern) that locates the foreground Chrome Edit by ClassName/ControlType near the 'Add a cover image' text, sets its Value to the article title string, then yields so the witness can observe a non-empty value or enabled Next. If UIA is unavailable, fall back to Alt-Tab focus Chrome, Tab-navigate into the title Edit by keyboard only, and SendKeys the title—still without ever naming ephemeral e-numbers.",
+  "lesson": "JS-URI injection from the address bar failed to bind any observable title value into the bare Edit control; the string only contaminated omnibox/ListItem history debris while the composer Edit stayed valueless and Next stayed unproven. Prior keyboard/paste/focus paths likewise left no child Text value for the witness. Root defect is that the title surface never exposes an accessible name or post-edit value node, and javascript: navigation is sandboxed/ignored for DOM writes on this LinkedIn origin. At streak 8 a wholly different road is required: leave the browser DOM alone and drive the title through an external UI-Automation or clipboard-focus sequence issued from the already-open PowerShell window, or rewrite actor primitives to force a named focus+set_value that the tree can reflect."
+}
 
 ## perceived
-(empty)
+Fresh environment shows W2 Chrome '(13) Edit article | LinkedIn' with address bar Edit e12, bare unlabeled title Edit e53 beside cover-image text e51, Next button e39, and article document e65. Body fragments already proven in ledger; title Edit still valueless. Grok research tab still present as e56.
 
 ## alternatives
-(empty)
+Forsaken: another Shift+Tab/type or click-e53-paste streak (seven prior failures left no title string in tree); forsaken direct action_index click on e53 alone without DOM write; forsaken Next click while title empty. Chosen: address-bar javascript: URI DOM write per action_frame/recover so witness can observe title text appear.
 
 ## code
-(empty)
+t = action_index["e12"]
+assert t["role"] == "Edit" and "Address" in t.get("name", "")
+desktop.click(t["px"], t["py"], hwnd=t["owner_hwnd"])
+desktop.hotkey("ctrl", "a")
+title = "Endgame-AI: Separated Powers for Local Desktop Agents"
+js = (
+    "javascript:void((()=>{"
+    "const c=document.querySelector('[contenteditable=true],textarea,input');"
+    "const all=[...document.querySelectorAll('input,textarea,[contenteditable=true],h1,[role=textbox]')];"
+    "let el=all.find(e=>/title/i.test((e.getAttribute('aria-label')||'')+(e.getAttribute('placeholder')||'')+(e.className||'')))||all[0];"
+    "if(!el){el=document.querySelector('[data-test-id*=title],.article-title,h1');}"
+    "if(el){el.focus();if('value' in el)el.value='" + title + "';el.textContent='" + title + "';el.innerText='" + title + "';el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));}"
+    "})())"
+)
+desktop.paste_clipboard(text=js)
+desktop.press_key("enter")
 
 ## evidence
-(empty)
+(no output)
 
 ## verdict
-(empty)
+{"goal_satisfied": false, "deed_confirmed": false, "reason": "Actor JS-URI deed left no independent effect: title string appears only inside address-bar/ListItem javascript:void debris, bare Edit remains valueless with no child Text value, Next unconfirmed as enabled by title, no publish-success UI. Body fragments from prior ledger assumed; whole goal (research+publish) unsatisfied. Deed denied."}
 
 ## counsel
 (empty)
 
 ## environment
-(fresh screen scan lands here each turn)
+W0 Screen Desktop
+W1 Window Window_65810
+  e1 Button ChatGPT - 1 running window [click]
+  e2 Button Start [click]
+  e3 Button Search [click]
+    e4 Text Search [read]
+  e5 Button File Explorer pinned [click]
+  e6 Button Google Chrome - 1 running window pinned [click]
+  e7 Button Terminal Preview - 1 running window [click]
+  e8 Button Show Hidden Icons [click]
+  e9 Button OBS Studio [click]
+  e10 Button NVIDIA Settings [click]
+  e11 Button Clock 11:10:01 PM ‎7/‎23/‎2026 [click]
+W2 Window (13) Edit article | LinkedIn - Google Chrome
+  e12 Text 0 notifications total [read]
+  e13 Button Skip to search [click]
+  e14 Button Skip to main content [click]
+  e15 Button Keyboard shortcuts [click]
+  e16 Button Close jump menu [click]
+  e17 Hyperlink LinkedIn [click]
+  e18 Button Click to start a search [click]
+  e19 List [scroll]
+    e20 ListItem new feed updates notificationsHome [click]
+      e21 Hyperlink new feed updates notifications Home [click]
+    e22 ListItem My Network [click]
+      e23 Hyperlink My Network [click]
+    e24 ListItem Jobs [click]
+      e25 Hyperlink Jobs [click]
+    e26 ListItem Messaging [click]
+      e27 Hyperlink Messaging [click]
+    e28 ListItem 13 new notificationsNotifications [click]
+      e29 Hyperlink 13 new notifications Notifications [click]
+    e30 ListItem Me [click]
+      e31 Button Wojciech Gabrys Me [click]
+    e32 ListItem For Business [click]
+      e33 Button For Business [click]
+    e34 ListItem Advertise [click]
+      e35 Hyperlink Advertise [click]
+  e36 Button Wojciech Gabrys Individual article [click]
+  e37 Button Manage menu [click]
+  e38 Button Next [click]
+  e39 Button Style [click]
+  e40 Button [click]
+  e41 Button [click]
+  e42 Button [click]
+  e43 Button [click]
+  e44 Button [click]
+  e45 Button [click]
+  e46 Button [click]
+  e47 Button [click]
+  e48 Button [click]
+  e49 Button [click]
+  e50 Text Add a cover image or video to your article. [read]
+  e51 Button Upload from computer [click]
+  e52 Edit [write]
+  e53 List [scroll]
+    e54 ListItem linkedin.com/article/edit/7486163233133977600/void((()=>%7Bconst c=document.querySelector('[contenteditable=true],textarea,input');const all=[...document.querySelectorAll('input,textarea,[contenteditable=true],h1,[role=textbox]')];let el=all.find(e=>/title/i.test((e.getAttribute('aria-label')%7C%7C'')+(e.getAttribute('placeholder')%7C%7C'')+(e.className%7C%7C'')))%7C%7Call[0];if(!el)%7Bel=document.querySelector('[data-test-id*=title],.article-title,h1');%7Dif(el)%7Bel.focus();if('value' in el)el.value='Endgame-AI: Separated Powers for Local Desktop Agents';el.textContent='Endgame-AI: Separated Powers for Local Desktop Agents';el.innerText='Endgame-AI: Separated Powers for Local Desktop Agents';el.dispatchEvent(new Event('input',%7Bbubbles:true%7D));el.dispatchEvent(new Event('change',%7Bbubbles:true%7D));%7D%7D)()) [click]
+    e55 ListItem linkedin.com/article/edit/7486163233133977600/void((()=>{const c=document.querySelector('[contenteditable=true],textarea,input');const all=[...document.querySelectorAll('input,textarea,[contenteditable=true],h1,[role=textbox]')];let el=all.find(e=>/title/i.test((e.getAttribute('aria-label')||'')+(e.getAttribute('placeholder')||'')+(e.className||'')))||all[0];if(!el){el=document.querySelector('[data-test-id*=title],.article-title,h1');}if(el){el.focus();if('value' in el)el.value='Endgame-AI: Separated Powers for Local Desktop Agents';el.textContent='Endgame-AI: Separated Powers for Local Desktop Agents';el.innerText='Endgame-AI: Separated Powers for Local Desktop Agents';el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));}})()) search [click]
+  e56 TabItem (13) Edit article | LinkedIn [click]
+    e57 Button Close [click]
+  e58 Button Back [click]
+  e59 Button Forward
+  e60 Button Reload [click]
+  e61 Document Search icon [write]
+  e62 Edit Address and search bar [write]
+  e63 Button You [click]
+  e64 Button Chrome [click]
+  e65 Document (13) Edit article | LinkedIn [write]
+  e66 Button Tab search [click]
+  e67 Tab [click]
+    e68 TabItem Endgame-AI: Minimalist Local Desktop Agent - Grok - Memory usage - 288 MB [click]
+      e69 Button Close [click]
+  e70 Button New Tab [click]
+  e71 Button Minimize [click]
+  e72 Button Maximize [click]
+  e73 Button Close [click]
+W3 Window Administrator: Windows PowerShell
+  e74 Text Windows PowerShell [read]
+    e75 ScrollBar Vertical [scroll]
+      e76 Button Vertical Small Decrease [click]
+      e77 Button Vertical Large Decrease [click]
+      e78 Button Vertical Small Increase [click]
+  e79 Tab [click]
+    e80 List [scroll]
+      e81 TabItem Administrator: Windows PowerShell [click]
+        e82 Text Administrator: Windows PowerShell [read]
+        e83 Button Close Tab [click]
+    e84 SplitButton New Tab [click]
+  e85 MenuItem System [click]
+W4 Window Window_459498
+W5 Window Window_590600
+W6 Window Settings
+W7 Window Settings
+W8 Window Window_65942
+W9 Window Program Manager
+  e86 ListItem Recycle Bin [click]
 
 ## failure_streak
-0
+8
 
 ## developer_feedback
 {"execute":""}
@@ -1736,3 +1868,19 @@ none yet
 {"execute":""}
 {"verify":""}
 {"recover":""}
+{"recover":"Verdict/reason still asserts 'no Chrome application window' and cites only pinned e6 while the exact environment block supplied to recover explicitly lists W2 Window New Tab - Google Chrome with address bar e12, tabs, and account controls. This evidence-environment mismatch in the prompt pipeline produces false denials and keeps failure_streak alive; least amendment: force the verdict witness to read solely the same fresh environment tree given to all faculties in the turn, discarding any cached or process-list checks that contradict named windows."}
+{"recover":"Desktop.paste_clipboard requires a mandatory 'text' argument but the always-visible namespace/docs never state the signature; actor deeds therefore probe-fail. Least amendment: document paste_clipboard(text: str) (and siblings) in the preamble shown to every faculty."}
+{"recover":"Actor deeds keep targeting ephemeral e-numbers (e56) that die each scan while LAW and recover instructions forbid emitting eN; environment supplies only unlabeled Edit [write] beside cover-image text. Least amendment: guarantee every interactive Edit exposes a stable accessible-name or aria-label (e.g. 'Title') in the tree so faculties can bind by role+name without id chasing, and document that paste_clipboard/type must be preceded by an explicit focus deed whose success is witness-checked before value injection."}
+{"recover":"Title control still appears only as bare Edit [write] with no accessible-name/aria-label while cover-image text sits adjacent; faculties cannot stably bind without id-chasing that LAW forbids. Least amendment: ensure LinkedIn title input exposes name 'Title' (or equivalent) in every desktop_tree scan, and document that click must precede paste_clipboard/type with witness of focus before value injection."}
+{"verify":"Actor code and prior living_word still chase ephemeral e56 which the fresh tree rebinds as a Grok TabItem; the real title control is the bare unlabeled Edit e53. Least amendment: force every Edit in desktop_tree_text to expose a stable accessible-name (e.g. 'Title' or 'Article title') so faculties bind by role+name, and reject any deed whose action_index key is an e-number that dies each scan."}
+{"recover":"Title control still appears only as bare Edit [write] with no accessible-name/aria-label while cover-image text sits adjacent; faculties cannot stably bind without id-chasing that LAW forbids. Least amendment: ensure LinkedIn title input exposes name 'Title' (or equivalent) in every desktop_tree scan, and document that click must precede paste_clipboard/type with witness of focus before value injection."}
+{"execute":"Title control still appears only as bare Edit [write] with no accessible-name/aria-label while cover-image text sits adjacent; faculties cannot stably bind without id-chasing that LAW forbids. Least amendment: ensure LinkedIn title input exposes name 'Title' (or equivalent) in every desktop_tree scan, and document that click must precede paste_clipboard/type with witness of focus before value injection."}
+{"verify":"Title control still appears only as bare Edit [write] with no accessible-name/aria-label and its value is never reflected in desktop_tree_text even after a claimed paste; witness therefore cannot confirm the deed by effect. Least amendment: force every Edit (esp. LinkedIn title) to expose a stable accessible-name (e.g. 'Title') AND to surface its current value text as a child Text node in every scan so the witness can read the post-paste state without relying on actor testimony or ephemeral e-numbers."}
+{"recover":"Title control still appears only as bare Edit [write] with no accessible-name/aria-label and its value is never reflected in desktop_tree_text even after claimed paste; witness therefore cannot confirm the deed by effect. Least amendment: force every Edit (esp. LinkedIn title) to expose a stable accessible-name (e.g. 'Title') AND to surface its current value text as a child Text node in every scan so the witness can read the post-paste state without relying on actor testimony or ephemeral e-numbers."}
+{"execute":"Title control still appears only as bare Edit [write] with no accessible-name/aria-label and its value is never reflected in desktop_tree_text even after claimed focus/type; witness therefore cannot confirm the deed by effect. Least amendment: force every Edit (esp. LinkedIn title) to expose a stable accessible-name (e.g. 'Title') AND to surface its current value text as a child Text node in every scan so the witness can read the post-type state without relying on actor testimony or ephemeral e-numbers."}
+{"verify":"Title control still appears only as bare Edit [write] with no accessible-name/aria-label and its value is never reflected in desktop_tree_text even after claimed focus/type; witness therefore cannot confirm the deed by effect. Least amendment: force every Edit (esp. LinkedIn title) to expose a stable accessible-name (e.g. 'Title') AND to surface its current value text as a child Text node in every scan so the witness can read the post-type state without relying on actor testimony or ephemeral e-numbers."}
+{"recover":"Title control still appears only as bare Edit [write] with no accessible-name/aria-label and its value is never reflected in desktop_tree_text even after claimed focus/type; witness therefore cannot confirm the deed by effect. Least amendment: force every Edit (esp. LinkedIn title) to expose a stable accessible-name (e.g. 'Title') AND to surface its current value text as a child Text node in every scan so the witness can read the post-type state without relying on actor testimony or ephemeral e-numbers."}
+{"execute":"Title control still appears only as bare Edit [write] with no accessible-name/aria-label and its value is never reflected in desktop_tree_text even after claimed focus/type/paste; witness therefore cannot confirm the deed by effect. Least amendment: force every Edit (esp. LinkedIn title) to expose a stable accessible-name (e.g. 'Title') AND to surface its current value text as a child Text node in every scan so the witness can read the post-type state without relying on actor testimony or ephemeral e-numbers."}
+{"verify":"Title control still appears only as bare Edit [write] with no accessible-name/aria-label and its value is never reflected in desktop_tree_text even after claimed JS-URI injection; the title string only contaminates address-bar history ListItems. Witness therefore cannot confirm the deed by effect. Least amendment: force every Edit (esp. LinkedIn title) to expose a stable accessible-name (e.g. 'Title') AND to surface its current value text as a child Text node in every scan so the witness can read the post-injection state without relying on actor testimony or ephemeral e-numbers."}
+{"recover":"Title control remains a bare Edit [write] with no accessible-name/aria-label and never surfaces its current value as a child Text node even after claimed injections; witness therefore cannot confirm by effect and faculties are forced toward forbidden eN chasing. Least amendment: force every Edit (especially LinkedIn title) to expose a stable accessible-name (e.g. 'Title') AND to emit its live value text as a child Text node in every desktop_tree scan."}
+{"execute":"Title control still appears only as bare Edit [write] with no accessible-name/aria-label and never surfaces its current value as a child Text node even after claimed injections; witness therefore cannot confirm by effect and faculties are forced toward fragile coordinate/SendKeys paths. Least amendment: force every Edit (especially LinkedIn title) to expose a stable accessible-name (e.g. 'Title') AND to emit its live value text as a child Text node in every desktop_tree scan."}
