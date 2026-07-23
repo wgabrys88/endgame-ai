@@ -634,6 +634,7 @@ def main():
     mode = opt("--mode")
     if flag("--reset"):
         factory_reset(BOARD)
+        time.sleep(7)
     while True:
         nxt, stop = turn(BOARD, dry, inject, mode)
         if dry or once or inject or stop:
