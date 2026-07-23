@@ -452,6 +452,7 @@ def caps():
             import types
             mod = types.ModuleType("capabilities")
             mod.BOARD = BOARD
+            mod.NO_GUI = "--no-gui" in ARGV
             exec(m.group(1), mod.__dict__)
             _CAPS = mod
     return _CAPS
@@ -701,10 +702,9 @@ import time
 from ctypes import wintypes
 from typing import Any
 
-user32 = ctypes.WinDLL("user32", use_last_error=True)
-ole32, oleaut32 = ctypes.WinDLL("ole32"), ctypes.WinDLL("oleaut32")
-user32.SetCursorPos.argtypes, user32.SetCursorPos.restype = [ctypes.c_int, ctypes.c_int], wintypes.BOOL
-user32.GetCursorPos.argtypes, user32.GetCursorPos.restype = [ctypes.POINTER(wintypes.POINT)], wintypes.BOOL
+NO_GUI = bool(globals().get("NO_GUI", False))
+user32 = ole32 = oleaut32 = None
+AUTOMATION = None
 
 
 class _GUID(ctypes.Structure):
@@ -734,16 +734,31 @@ def _check(hr):
         raise OSError("UI Automation HRESULT 0x%08X" % (hr & 0xFFFFFFFF))
 
 
-ole32.CoInitialize.argtypes, ole32.CoInitialize.restype = [ctypes.c_void_p], ctypes.c_long
-ole32.CoCreateInstance.argtypes = [ctypes.POINTER(_GUID), ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(_GUID), ctypes.POINTER(ctypes.c_void_p)]
-ole32.CoCreateInstance.restype = ctypes.c_long
-oleaut32.VariantClear.argtypes = [ctypes.POINTER(_VARIANT)]
-oleaut32.SysFreeString.argtypes = [ctypes.c_void_p]
-oleaut32.SafeArrayGetLBound.argtypes = [ctypes.c_void_p, wintypes.UINT, ctypes.POINTER(wintypes.LONG)]
-oleaut32.SafeArrayGetUBound.argtypes = [ctypes.c_void_p, wintypes.UINT, ctypes.POINTER(wintypes.LONG)]
-oleaut32.SafeArrayAccessData.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
-oleaut32.SafeArrayUnaccessData.argtypes = [ctypes.c_void_p]
-_check(ole32.CoInitialize(None))
+def _bind_windows():
+    """The single eager Windows surface: load the DLLs, configure ctypes
+    signatures, initialize COM, and create the automation object. Called once at
+    load only when a GUI host is present. Skipped under NO_GUI so the pure
+    definitions above still load on a GUI-less host (Linux/WSL2)."""
+    global user32, ole32, oleaut32, AUTOMATION
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    ole32, oleaut32 = ctypes.WinDLL("ole32"), ctypes.WinDLL("oleaut32")
+    user32.SetCursorPos.argtypes, user32.SetCursorPos.restype = [ctypes.c_int, ctypes.c_int], wintypes.BOOL
+    user32.GetCursorPos.argtypes, user32.GetCursorPos.restype = [ctypes.POINTER(wintypes.POINT)], wintypes.BOOL
+    ole32.CoInitialize.argtypes, ole32.CoInitialize.restype = [ctypes.c_void_p], ctypes.c_long
+    ole32.CoCreateInstance.argtypes = [ctypes.POINTER(_GUID), ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(_GUID), ctypes.POINTER(ctypes.c_void_p)]
+    ole32.CoCreateInstance.restype = ctypes.c_long
+    oleaut32.VariantClear.argtypes = [ctypes.POINTER(_VARIANT)]
+    oleaut32.SysFreeString.argtypes = [ctypes.c_void_p]
+    oleaut32.SafeArrayGetLBound.argtypes = [ctypes.c_void_p, wintypes.UINT, ctypes.POINTER(wintypes.LONG)]
+    oleaut32.SafeArrayGetUBound.argtypes = [ctypes.c_void_p, wintypes.UINT, ctypes.POINTER(wintypes.LONG)]
+    oleaut32.SafeArrayAccessData.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+    oleaut32.SafeArrayUnaccessData.argtypes = [ctypes.c_void_p]
+    _check(ole32.CoInitialize(None))
+    user32.SendInput.argtypes = (wintypes.UINT, ctypes.POINTER(_INPUT), ctypes.c_int)
+    user32.SendInput.restype = wintypes.UINT
+    if not user32.SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2):
+        raise ctypes.WinError()
+    AUTOMATION = _Automation()
 
 
 def _array(value, kind):
@@ -939,8 +954,6 @@ class _Automation(_Object):
         _check(_call(self.ptr, 11, wintypes.POINT, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p))(self.ptr, point, request.ptr, ctypes.byref(out)))
         return _Element(out) if out else None
 
-
-AUTOMATION = _Automation()
 
 PID_RUNTIME_ID, PID_BOUNDING_RECT, PID_CONTROL_TYPE, PID_NAME = 30000, 30001, 30003, 30005
 PID_ENABLED, PID_AUTOMATION_ID, PID_CLASS_NAME, PID_CONTENT_ELEMENT = 30010, 30011, 30012, 30017
@@ -1377,8 +1390,6 @@ from typing import Any
 
 ROOT = __import__("pathlib").Path(globals().get("BOARD", ".")).resolve().parent
 DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = ctypes.c_void_p(-4)
-if not user32.SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2):
-    raise ctypes.WinError()
 
 KEYEVENTF_KEYUP = 0x0002
 KEYEVENTF_UNICODE = 0x0004
@@ -1399,10 +1410,6 @@ class _INPUTUNION(ctypes.Union):
 
 class _INPUT(ctypes.Structure):
     _fields_ = [("type", wintypes.DWORD), ("u", _INPUTUNION)]
-
-
-user32.SendInput.argtypes = (wintypes.UINT, ctypes.POINTER(_INPUT), ctypes.c_int)
-user32.SendInput.restype = wintypes.UINT
 
 
 KEY_MAP: dict[str, int] = {
@@ -1545,6 +1552,26 @@ import types as _types
 
 _LAST_OBS = {"action_index": {}, "screen_elements": [], "desktop_tree_text": ""}
 
+# The single eager Windows surface runs now, unless the operator declared a
+# GUI-less host with --no-gui. Without the flag a non-Windows host still fails
+# hard here (WinDLL is absent), which is honest: the flag is a stated fact about
+# the host, never a swallowed error.
+if not NO_GUI:
+    _bind_windows()
+
+
+def _no_gui_hand():
+    """A desktop hand that keeps the prompt's promise (the bare name exists) but
+    raises the moment the actor tries to touch a GUI that is not here, so a GUI
+    deed on a headless host faults visibly and routes to recovery."""
+    def _absent(*_a, **_k):
+        raise RuntimeError("no GUI on this host (--no-gui): the desktop hand cannot act here")
+    return _types.SimpleNamespace(
+        click=_absent, type_text=_absent, paste_clipboard=_absent,
+        set_clipboard=_absent, press_key=_absent, hotkey=_absent,
+        scroll=_absent, open_url=_absent,
+    )
+
 
 def build(kind, sections):
     """actor -> full hand + indices; witness -> read-only eyes, no hand."""
@@ -1557,18 +1584,28 @@ def build(kind, sections):
     }
     if kind == "witness":
         return common
+    if NO_GUI:
+        common["desktop"] = _no_gui_hand()
+        return common
     d = get_desktop()
-    hand = _types.SimpleNamespace(
+    common["desktop"] = _types.SimpleNamespace(
         click=d.click, type_text=d.type_text, paste_clipboard=d.paste_clipboard,
         set_clipboard=d.set_clipboard, press_key=d.press_key, hotkey=d.hotkey,
         scroll=d.scroll, open_url=d.open_url,
     )
-    common["desktop"] = hand
     return common
 
 
 def environment(sections):
-    """Refresh the `environment` section with a fresh window-first screen scan."""
+    """Refresh the `environment` section with a fresh window-first screen scan.
+    On a GUI-less host (--no-gui) there is no screen to scan, so exploration
+    contributes a thin honest reading instead of crashing."""
+    if NO_GUI:
+        _LAST_OBS["action_index"] = {}
+        _LAST_OBS["screen_elements"] = []
+        _LAST_OBS["desktop_tree_text"] = ""
+        sections["environment"] = "(no GUI on this host: --no-gui; no screen observed)"
+        return
     d = get_desktop()
     obs_result = d.observe({"step_px": 64, "max_subtree_nodes_per_point": 120})
     _LAST_OBS["action_index"] = obs_result.get("action_index", {}) or {}
@@ -1579,85 +1616,30 @@ def environment(sections):
 
 ## goal
 
-
 ## living_word
-[execute] world idle, obstacle none, distance to outcome infinite, next true deed: wait for non‑empty goal or UNSET sentinel; no proof required.
-[verify] world idle, obstacle none, distance infinite, next true deed: halt
+[execute] (not yet interpreted)
+[verify] (not yet interpreted)
 [recover] (not yet interpreted)
 
 ## ledger
-none yet
 
 ## action_frame
-await further instruction
 
 ## perceived
-GOAL=UNSET; claim: no action taken
 
 ## alternatives
-none (idle)
 
 ## code
-print('GOAL=UNSET')
 
 ## evidence
-GOAL=UNSET
 
 ## verdict
-GOAL=UNSET
 
 ## counsel
-(empty)
 
 ## environment
-W0 Screen Desktop
-W1 Window Window_131364
-  e1 Button ChatGPT - 1 running window [click]
-  e2 Button Start [click]
-  e3 Button Search [click]
-    e4 Text Search [read]
-  e5 Button File Explorer pinned [click]
-  e6 Button Google Chrome pinned [click]
-  e7 Button Task Manager - 1 running window [click]
-  e8 Button LM Studio - 1 running window [click]
-  e9 Button Show Hidden Icons [click]
-  e10 Button Task Manager CPU 29% Memory 61% Disk 0% Network 0% [click]
-  e11 Button Clock 12:53:53 AM ‎7/‎23/‎2026 [click]
-W2 Window Task Manager
-W3 Window LM Studio
-W4 Window Settings
-W5 Window Settings
-W6 Window Window_327714
-W7 Window Window_65968
-W8 Window Program Manager
-  e12 ListItem Recycle Bin [click]
 
 ## failure_streak
 0
 
 ## developer_feedback
-{"execute":"Root ## goal section in the execute prompt is empty while the response contract still demands goal_interpretation and pursuit of the root goal without substitutes; that contradiction forces either paralysis or hallucinated quarry. Least amendment: guarantee a non-empty goal string (or explicit sentinel like UNSET) in the rendered prompt before invoking execute, and allow execute to return a no-op claim when goal is UNSET without violating pursue-the-root-goal."}
-{"verify":"Root ## goal is empty while verify must still judge goal_satisfied and pursue-the-root-goal without substitutes; empty goal makes halt unreachable and confuses deed vs goal. Least amendment: render a non-empty goal or sentinel UNSET into the prompt for all faculties, and treat goal_satisfied=true only for explicit UNSET-when-idle policy if that is desired, else keep false."}
-{"execute":"Root ## goal section in the execute prompt is empty while the response contract still demands goal_interpretation and pursuit of the root goal without substitutes; that contradiction forces either paralysis or hallucinated quarry. Least amendment: guarantee a non-empty goal string (or explicit sentinel like UNSET) in the rendered prompt before invoking execute, and allow execute to return a no-op claim when goal is UNSET without violating pursue-the-root-goal."}
-{"verify":"Root ## goal is empty while verify must still judge goal_satisfied and pursue-the-root-goal without substitutes; empty goal makes halt unreachable and confuses deed vs goal. Least amendment: render a non-empty goal or sentinel UNSET into the prompt for all faculties, and treat goal_satisfied=true only for explicit UNSET-when-idle policy if that is desired, else keep false."}
-{"execute":""}
-{"execute":""}
-{"execute":""}
-{"execute":""}
-{"execute":""}
-{"execute":""}
-{"verify":""}
-{"execute":"Root ## goal section in the execute prompt is empty while the response contract still demands goal_interpretation and pursuit of the root goal without substitutes; that contradiction forces either paralysis or hallucinated quarry. Least amendment: guarantee a non-empty goal string (or explicit sentinel like UNSET) in the rendered prompt before invoking execute, and allow execute to return a no-op claim when goal is UNSET without violating pursue-the-root-goal."}
-{"verify":"Root ## goal is empty while verify must still judge goal_satisfied and pursue-the-root-goal without substitutes; empty goal makes halt unreachable and confuses deed vs goal. Least amendment: render a non-empty goal or sentinel UNSET into the prompt for all faculties, and treat goal_satisfied=true only for explicit UNSET-when-idle policy if that is desired, else keep false."}
-{"recover":"Root ## goal is empty while recovery (like execute/verify) must still supply goal_interpretation and pursue-the-root-goal without substitutes; this forces paralysis or hallucination. Least amendment: guarantee a non-empty goal string or explicit UNSET sentinel in the rendered prompt for every faculty before invocation, and treat UNSET as a valid terminal state allowing clean no-op halt."}
-{"execute":"Root ## goal section in the execute prompt is empty while the response contract still demands goal_interpretation and pursuit of the root goal without substitutes; that contradiction forces either paralysis or hallucinated quarry. Least amendment: guarantee a non-empty goal string (or explicit sentinel like UNSET) in the rendered prompt before invoking execute, and allow execute to return a no-op claim when goal is UNSET without violating pursue-the-root-goal."}
-{"verify":"Root ## goal is empty while verify must still judge goal_satisfied and pursue-the-root-goal without substitutes; empty goal makes halt unreachable and confuses deed vs goal. Least amendment: render a non-empty goal or sentinel UNSET into the prompt for all faculties, and treat goal_satisfied=true only for explicit UNSET-when-idle policy if that is desired, else keep false."}
-{"recover":"Root ## goal is empty while recovery must still supply goal_interpretation and pursue-the-root-goal without substitutes; this forces paralysis or hallucination. Least amendment: guarantee a non-empty goal string or explicit UNSET sentinel in the rendered prompt for every faculty before invocation, and treat UNSET as a valid terminal state allowing clean no-op halt."}
-{"execute":""}
-{"recover":""}
-{"execute":""}
-{"execute":""}
-{"verify":""}
-{"execute":"Problem: The execute prompt contains an empty goal section, which contradicts the contract demanding a non‑empty root goal and a valid goal_interpretation. This hinders proper execution because there is nothing to pursue or prove. The present design sufficeth not as it forces paralysis or hallucinated outcomes. Least amendment: guarantee a non‑empty goal string (or explicit sentinel UNSET) in the rendered prompt before invoking execute, and allow execute to return a no‑op claim when GOAL=UNSET."}
-{"execute":""}
-{"verify":""}
