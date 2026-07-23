@@ -17,13 +17,14 @@ Everything after the board path is passed straight through to the engine. Append
 - `--mode xai` — brain is xAI Responses (`grok`); reads your `XAI_API_KEY`.
 - `--mode lmstudio` — brain is a local LM Studio Chat Completions server.
 - `--mode acp` — brain is a native `grok agent` spoken to over stdio.
-- `--mode file_proxy` — no direct call: the turn is published to `runtime_request.json`; you answer in `runtime_response.json` as `{"id":"copied request id","record":{...}}`.
+- `--mode file_proxy` — no model call: the turn is written to `runtime_request.json` and the process exits, printing the file name and how to answer. You write your record to `runtime_response.json` as `{"id":"copied request id","record":{"record_type":"...","data":{...}}}`, then run the same command again — it consumes your answer, advances one step, and emits the next request. The caller is the brain, one half-turn per run.
 - `--no-gui` — run on a host with no desktop (Linux / WSL2). The body still loads and environment exploration still feeds the request; any desktop deed faults honestly instead of crashing at load.
+- `--reset` — start a fresh life: clear the memory slots (living word, ledger, evidence, state) while preserving the body and the goal. Give it on the first launch; omit it to resume an existing life. Under `--mode file_proxy` a run and a resume are the same command, so reset is opt-in — otherwise every resume would wipe memory.
 - `--once` — run a single turn, then stop.
 - `--dry` — print the assembled prompt and exit without calling the model.
 - `--inject <file>` — feed a saved reply from `<file>` instead of calling the model (mode/transport is then unused).
 
-Pick one `--mode`. Add `--no-gui`, `--once`, `--dry`, or `--inject <file>` as needed. Example: `--mode xai --once --no-gui`.
+Pick one `--mode`. Add `--no-gui`, `--reset`, `--once`, `--dry`, or `--inject <file>` as needed. A fresh headless life over the file-proxy brain: `--reset --no-gui --mode file_proxy`; resume it by dropping `--reset`.
 
 ## The commands
 
@@ -101,6 +102,7 @@ disagree, the document wins. This explains how and why; the document is what is.
 - [Perception and the environment](#perception-and-the-environment)
 - [The brain: selectable transports](#the-brain-selectable-transports)
 - [Running with or without a GUI](#running-with-or-without-a-gui)
+- [The brain that pauses: file proxy and the caller as mind](#the-brain-that-pauses-file-proxy-and-the-caller-as-mind)
 - [How the prompt is assembled](#how-the-prompt-is-assembled)
 - [The records and their enforcement](#the-records-and-their-enforcement)
 - [The hand and the capabilities](#the-hand-and-the-capabilities)
@@ -144,7 +146,10 @@ goal, the organism holds stable rather than halting or inventing one (see
 The brain is chosen at launch from four interchangeable transports (see
 [The brain](#the-brain-selectable-transports)): a hosted xAI Responses endpoint, a local LM Studio
 Chat Completions server, a native agent spoken to over stdio, and a file proxy that exchanges the turn
-through two JSON files. Each is an independent stateless call under the same strict record schema; a
+through two JSON files and, alone among them, pauses the process between the question and the answer so
+the caller itself is the mind (see
+[The brain that pauses](#the-brain-that-pauses-file-proxy-and-the-caller-as-mind)). Each is an
+independent stateless call under the same strict record schema; a
 launch flag selects which.
 
 The body loads and turns on any host, not only Windows. The eyes and hand are Windows-only, and the
@@ -624,10 +629,13 @@ The four transports:
   JSON-RPC handshake on standard input and output. The organism opens a session, sends the schema and
   the prompt, collects the agent's message, and shuts the process down cleanly; any tool-permission
   request from the agent is declined, because the organism's only tool is its own code.
-- File proxy — no network call at all. The turn is published to a request file beside the document
-  and the organism waits for a reply file bearing the matching id, then reads the record from it. This
-  lets a human or another program stand in for the model, and lets the whole plumbing be exercised
-  offline.
+- File proxy — no network call and no waiting process. On the emit half of a turn the organism writes
+  the turn to a request file beside the document, prints to the console only that file's name and an
+  instruction, and exits; on a later invocation, when a reply file bearing the matching id is present,
+  it reads the record and runs the rest of the turn. This is the one transport that pauses and resumes
+  rather than blocking, so the caller — a human, another program, or the very agent that launched the
+  script — becomes the brain, one half-turn per invocation (see
+  [The brain that pauses](#the-brain-that-pauses-file-proxy-and-the-caller-as-mind)).
 
 Because each transport ends in the same `{record_type, data}` envelope bound by the same wire schema,
 the rest of the organism cannot tell which brain answered. Choosing a brain is an operator's launch
@@ -666,6 +674,54 @@ witness-proven honesty are all exercisable on an ordinary server or developer ma
 GUI-driving hand held in reserve for the Windows host. The prompts do not change between hosts; what
 was once "observation" of a screen is the broader "environment exploration," and a screenless host is
 a thinner reading of the world rather than a broken one.
+
+---
+
+## The brain that pauses: file proxy and the caller as mind
+
+Three of the four transports answer within the running process: the call goes out, a reply comes back,
+the turn completes, and the wheel turns again — a whole life in one invocation. The file proxy is
+different in kind. It does not carry the prompt to a model at all; it splits a turn at the model-call
+boundary and lets the process exit in between, so that whatever launched the organism becomes its
+mind. This is a real pause-and-resume, and it rests entirely on the atemporal law: the only thing that
+must survive between the two halves is the current stage, and that already lives in the document's own
+state. Nothing is held in memory, so nothing is lost by exiting.
+
+A turn under the file proxy has two halves across two invocations:
+
+- Emit. The engine assembles the stage's prompt exactly as any transport would, then writes it to a
+  request file beside the document — a small JSON object carrying the prompt, the exact response
+  schema the reply must satisfy, and a unique request id. It prints to the console only the request
+  file's bare name and a short instruction: open that file, write your record to the response file
+  under this id, and run the same command again. It does not print the prompt itself, so the caller
+  must actually read the file and do the work rather than answer from a glimpse. Then the process
+  exits, having advanced nothing.
+- Consume. On the next invocation, if a response file is present whose id matches the pending request,
+  the engine reads the record from it, deletes both files, and runs the rest of the turn — posting the
+  fields, running the deed, folding the result, appending to the ledger on a witnessed advance, and
+  advancing the stage. Having consumed the answer it then emits the next stage's request and exits
+  again. So one invocation eats the last answer and hands out the next question: the caller is pumped
+  one half-turn at a time.
+
+The two scratch files plus the stage already saved in the document are the entire state machine, and
+none of its states is corrupt. Three cases cover it: no request file means write one and exit; a
+request present but no matching answer means re-print the same instruction and exit, changing nothing,
+so a caller that has not yet answered can run again harmlessly and idempotently; a request with its
+matching answer means consume, run, advance, and emit the next. A killed process between halves loses
+nothing, because the pending request on disk and the saved stage are all that a resume needs. There is
+no polling and no waiting loop anywhere; the organism is never blocked holding a process open — it
+does its half and stops. Answer mismatch (a response whose id does not match the pending request), a
+malformed envelope, or any other fault raises hard, as everywhere else.
+
+The consequence is the reason this transport exists: the mind driving the organism need not be a
+model behind an API. It can be a person answering by hand, another program, or an AI agent that ran
+the launch command and reads the printed instruction as its own tool output — and, following that
+honest instruction, opens the request, writes the record, and runs the command again. The launcher
+becomes the transport. It is the same principle as the native-agent transport inverted: instead of the
+organism opening a child mind, the mind opens the organism and feeds it. Because a run and a resume
+are the same command, a fresh life must be started deliberately (see
+[Running and observing](#running-and-observing)); otherwise every resume would wipe the memory it is
+trying to carry forward.
 
 ---
 
@@ -796,9 +852,22 @@ turns its wheel headless on any host when told the host has no GUI. Set the mode
 chosen transport needs one, then drop a needle on the document with a one-sentence goal: a tiny
 bootstrap reads the document's `engine` section and executes it, handing in the document path and the
 launch flags. A bare one-liner works; no separate launcher file is required. Flags select the brain
-(which transport), declare a GUI-less host, run a single turn, print the assembled prompt without
-calling the model, or inject a saved reply in place of a model call. A fresh life first runs the
-`reset` to clear the memory slots, preserving the body and the goal.
+(which transport), declare a GUI-less host, request a fresh start, run a single turn, print the
+assembled prompt without calling the model, or inject a saved reply in place of a model call. A fresh
+life is asked for explicitly: only when the reset flag is given does the engine run the `reset` to
+clear the memory slots, preserving the body and the goal. Reset is opt-in rather than automatic
+because a run and a resume are the same command under the pausing file-proxy brain (see
+[The brain that pauses](#the-brain-that-pauses-file-proxy-and-the-caller-as-mind)); if reset fired on
+every launch, each resume would wipe the very memory it means to carry forward. So a fresh life is
+started with the reset flag, and every continuation of that life omits it.
+
+Where a launch prints a path for a human or agent to act on — the file-proxy request and response
+files — it prints the bare file name, not an absolute path. The caller always runs from the
+document's own folder, so the name alone is enough to find the file, and a bare name avoids the
+mismatch between a host-native path and the path form seen from a mounted view of the same folder. The
+engine still resolves the real location internally, from the document's own directory, so the file
+operations are correct regardless of the caller's working directory; only the human-facing hint is the
+short name.
 
 The body prints only a terse per-turn line to stderr (stage, signal, next stage, streak). On a host
 with a desktop the true progress feed is the real screen, because the organism drives the GUI; on a
@@ -832,7 +901,8 @@ confirmation prompt or any other cage.
   essentiality: a thing is essential or it is removed completely, with nothing left dangling — a slot
   no faculty reads and no faculty needs is removed, not kept "just in case." Prefer unifying scattered
   repetition into one place over guarding each copy; one eager Windows surface, one flag-parsing form,
-  one fenced-extraction helper.
+  one fenced-extraction helper. A waiting poll loop is removed in favour of exit-and-resume where the
+  saved state already makes a process-held wait unnecessary.
 - One source of truth. The document defines the organism; the prompt is assembled from its config and
   its slots, and every prompt promise is true against the document's own engine and capabilities. No
   code or definition the organism depends on may live outside the single document.
@@ -923,7 +993,17 @@ the flesh.
   fact; use this to prove the document reads, the config loads, the engine/reset/capabilities compile,
   and the wheel turns, without a screen. Verify by exercising the real wheel, not by unit tests: the
   hand needs the Windows target, but the plumbing can be proven offline by injecting a proper record
-  envelope or by the file-proxy transport.
+  envelope or, most naturally, by driving the pausing file-proxy brain by hand — emit a request,
+  hand-write a proper record, resume to consume it, and watch the stage advance.
+- A slim headless twin of the document can be derived for a GUI-less host. The Windows eyes and hand
+  are more than half of the document's bulk, and a screenless host never runs any of it; a small local
+  generator produces a twin whose `capabilities` keeps only what the headless path executes (the
+  no-GUI hand that raises on call, the environment reading, the namespace builder) and drops the whole
+  Windows surface, copying everything else verbatim. The twin is a build output, never a second source:
+  it is regenerated fresh from the document, so it cannot drift, and the moment it is committed it must
+  be regenerated after any change to the document or the two will diverge. It saves download and
+  load-and-compile cost on a lean host, not prompt tokens — the capabilities are never sent to the
+  model — and it is headless-only by construction, always run with the no-GUI fact declared.
 - Commit each unit of work with full reasoning in the body: what kind of feature or defect was added,
   removed, or replaced, and why, not a line-by-line diff, so a future reader can rebuild the context.
   Commit only when asked; stage deliberately; keep runtime scratch (extracted scripts, materialized
@@ -969,8 +1049,16 @@ the flesh.
 - Namespace: the set of names the engine puts in place for a run — the promised bare names and, for the
   actor, the hand — keeping the prompt's promise at execution.
 - Transport / brain: the interchangeable means by which a prompt reaches a model and a reply returns —
-  hosted Responses, local Chat Completions, native agent over stdio, or file proxy — chosen at launch;
-  every transport ends in the same schema-bound envelope.
+  hosted Responses, local Chat Completions, native agent over stdio, or the pausing file proxy — chosen
+  at launch; every transport ends in the same schema-bound envelope.
+- File proxy: the transport that exchanges a turn through a request file and a response file and pauses
+  the process between them, emitting the request and exiting, then consuming the matching answer and
+  advancing on a later invocation, so the caller (person, program, or launching agent) is the mind. Its
+  scratch files plus the saved stage are the whole state machine; re-running with an unanswered request
+  is idempotent, and a kill between halves loses nothing.
+- Headless twin: a slim, derived-from-the-document copy for a GUI-less host, its capabilities reduced
+  to only the no-GUI path with the whole Windows surface dropped; a build output regenerated from the
+  document, not a second source, saving download and load cost but no prompt tokens.
 - Headless / no-GUI: a launch-declared host fact that skips the eager Windows binding, gives the actor
   a desktop hand that raises when called, and writes a thin environment reading instead of a screen scan.
 - Signal: the word a run raises; routing keys on it within the current stage, and an unmapped signal
