@@ -1,5 +1,18 @@
 # endgame-ai
 
+```
+# Real Command executed in empty folder on my Windows 11 in powershell (Run as Admin)
+
+PS C:\Users\px-wjt\Downloads\random-dir> iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/main/endgame.md -OutFile endgame.md; $c = Get-Content endgame.md -Raw; $c = $c -replace '(?s)(## goal\r?\n).*?(?=\r?\n## |\z)', "`$1Open Notepad and type the word hello.`n"; [System.IO.File]::WriteAllText("$pwd\endgame.md", $c); python -c "import sys;f=chr(96)*3;p=sys.argv[1];exec(open(p,encoding='utf8').read().split('## engine\n'+f+'python\n')[1].split('\n'+f)[0],{'BOARD':p,'ARGV':sys.argv[2:]})" .\endgame.md --mode xai --reset
+
+# That is it, try that one-liner and after its done read the rest of this document.
+# It uses XAI_API key you have to have and its opening notepad and types hello.
+
+The rest commands for other systems I have not yet run but THIS ONE IS PROVEN - and that is cool.
+
+```
+
+
 > One text file wakes up, looks at a real computer, writes its own code, runs it, checks its own work
 > with a part of itself that is forbidden to lie, remembers almost nothing on purpose, and is allowed
 > to rewrite the rules that define it while it runs. No framework. No memory database. No tool menu.
