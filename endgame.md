@@ -3,13 +3,13 @@
 {
   "start": "execute",
   "state": {
-    "stage": "execute",
-    "last_signal": "ok",
-    "turn": 2,
+    "stage": null,
+    "last_signal": null,
+    "turn": 0,
     "failure_streak": 0
   },
   "model": {
-    "api": "chat_completions",
+    "api": "file_proxy",
     "responses": {
       "url": "https://api.x.ai/v1/responses",
       "request": {
@@ -1596,28 +1596,38 @@ def environment(sections):
 
 ## goal
 
+
 ## living_word
 [execute] (not yet interpreted)
 [verify] (not yet interpreted)
 [recover] (not yet interpreted)
 
 ## ledger
+none yet
 
 ## action_frame
+(empty)
 
 ## perceived
+(empty)
 
 ## alternatives
+(empty)
 
 ## code
+(empty)
 
 ## evidence
+(empty)
 
 ## verdict
+(empty)
 
 ## counsel
+(empty)
 
 ## environment
+(fresh screen scan lands here each turn)
 
 ## failure_streak
 0
