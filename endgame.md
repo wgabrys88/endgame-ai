@@ -198,6 +198,8 @@ import json, os, re, sys, io, subprocess, urllib.request, contextlib, pathlib, q
 
 BOARD = globals().get("BOARD", "endgame.md")
 ARGV = globals().get("ARGV", sys.argv)
+flag = lambda name: name in ARGV
+opt = lambda name: ARGV[ARGV.index(name) + 1] if name in ARGV else None
 SEC = re.compile(r"^##\s+(\w+)\s*$", re.M)
 
 
@@ -449,7 +451,7 @@ def caps():
             import types
             mod = types.ModuleType("capabilities")
             mod.BOARD = BOARD
-            mod.NO_GUI = "--no-gui" in ARGV
+            mod.NO_GUI = flag("--no-gui")
             exec(m.group(1), mod.__dict__)
             _CAPS = mod
     return _CAPS
@@ -606,10 +608,10 @@ def factory_reset(path):
 
 
 def main():
-    dry = "--dry" in ARGV
-    once = "--once" in ARGV
-    inject = ARGV[ARGV.index("--inject") + 1] if "--inject" in ARGV else None
-    mode = ARGV[ARGV.index("--mode") + 1] if "--mode" in ARGV else None
+    dry = flag("--dry")
+    once = flag("--once")
+    inject = opt("--inject")
+    mode = opt("--mode")
     if not dry and not inject:
         factory_reset(BOARD)
     while True:
