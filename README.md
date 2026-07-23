@@ -1,1120 +1,596 @@
 # endgame-ai
 
-endgame-ai is a single Markdown document that behaves as a living thing: it looks at the machine in
-front of it, writes its own Python, runs it, checks its own work with a part of itself that is not
-allowed to lie, carries a small handwritten memory forward, and is permitted to rewrite its own body —
-including the rules that define it — while it runs. It is task-agnostic and atemporal. It is given one
-plain-language goal from outside and turns a small wheel of faculties until that goal is independently
-proven done, its body raises, or something outside stops it.
+> One text file wakes up, looks at a real computer, writes its own code, runs it, checks its own work
+> with a part of itself that is forbidden to lie, remembers almost nothing on purpose, and is allowed
+> to rewrite the rules that define it while it runs. No framework. No memory database. No tool menu.
+> No plugins. One document. You run a single command, the file downloads itself, and something that
+> behaves like a living thing starts turning in your terminal.
 
-This file is the durable knowledge base for that system. It is written for an AI that will work on the
-project, and for any human reading alongside. It carries lasting truth only — the architecture, the
-laws, the ideas, the methods, and the way humans and AI work on it together — phrased to be as true in
-a hundred days as today. It records what is, and what is deliberately intended-but-not-yet-built; it
-does not record history, because a thing that no longer exists is simply forgotten. The live document
-`endgame.md` on disk is always the final authority. This file explains how and why; the document is
-what is. Read the document fresh, and where the two disagree, the document wins.
+This is the honest story and the working manual of that file. Read it top to bottom and by the end you
+will know what it is, why it is strange, how to run it, and how seven months of work turned a dream
+into a single page of text that comes alive.
 
 ---
 
-## Table of contents
+## Here is the burger
 
-- [The one-paragraph version](#the-one-paragraph-version)
-- [What is built and what is intended](#what-is-built-and-what-is-intended)
-- [Why this is not a normal agent](#why-this-is-not-a-normal-agent)
-- [It is a blackboard, not a wiring](#it-is-a-blackboard-not-a-wiring)
-- [The document and its sections](#the-document-and-its-sections)
-- [The config: stages and control](#the-config-stages-and-control)
-- [The life of one turn](#the-life-of-one-turn)
-- [The three faculties and the mailbox](#the-three-faculties-and-the-mailbox)
-- [The Law of Separated Powers](#the-law-of-separated-powers)
-- [How the deed runs](#how-the-deed-runs)
-- [Atemporal memory: the living word and the ledger](#atemporal-memory-the-living-word-and-the-ledger)
-- [The failure streak and recovery](#the-failure-streak-and-recovery)
-- [Stability: behaviour with no goal](#stability-behaviour-with-no-goal)
-- [The hot-swappable body](#the-hot-swappable-body)
-- [Perception and the environment](#perception-and-the-environment)
-- [The brain: selectable transports](#the-brain-selectable-transports)
-- [Running with or without a GUI](#running-with-or-without-a-gui)
-- [The brain that pauses: the caller as mind](#the-brain-that-pauses-the-caller-as-mind)
-- [How the prompt is assembled](#how-the-prompt-is-assembled)
-- [The records and their enforcement](#the-records-and-their-enforcement)
-- [The hand and the capabilities](#the-hand-and-the-capabilities)
-- [Running and observing](#running-and-observing)
-- [Design laws that never change](#design-laws-that-never-change)
-- [Standing intentions: known work not yet done](#standing-intentions-known-work-not-yet-done)
-- [Working methodology: how humans and AI build this](#working-methodology-how-humans-and-ai-build-this)
-- [Glossary](#glossary)
-- [Appendix: the deed-becomes-a-node architecture](#appendix-the-deed-becomes-a-node-architecture)
+There is a scene where a man is asked to cater a fancy food competition, and while everyone else
+plates foam and reductions he sets down a single hamburger and says, roughly: here is the meat, here
+is the bun, you can put ketchup on it if you must, but you already know this is the best thing on the
+table. That is the spirit of this project.
+
+Here is the whole shopping list to run it:
+
+- A machine and Python. The plain one from python.org. Nothing else installed.
+- A brain. Any of several: a hosted model behind an API key, a local model on your own machine, a
+  native agent, or, stranger than all of them, you.
+
+That is it. There is no plate.
+
+No `pip install`. No `requirements.txt` with two hundred pinned dependencies. No Docker, no vector
+database, no orchestration layer, no forty-file source tree, no cloud account to provision. The body
+of the thing imports only Python's standard library and nothing more. You want to know where the agent
+framework is? You are reading it. It is one document.
+
+An older version of this page bragged about having no dependencies while quietly still having a few.
+That was not true then. It is true now. The thing genuinely stands on the standard library alone, and
+that honesty matters, because honesty is the entire point of what follows.
 
 ---
 
-## The one-paragraph version
+## Run it
 
-Most software runs a task and stops. endgame-ai does not run a task; it runs a wheel. A few stages
-turn continuously: act toward the goal, prove the act with independent evidence, and recover when an
-act fails or is disproven. A single plain-language goal is handed in from outside, and the wheel turns
-until the goal is independently proven done, the body raises, or the process is stopped from outside.
-The organism keeps no memory between turns except a small handwritten note it passes forward to itself
-and a narrow ledger of proven advances; it is built never to trust its own claim that something
-worked, because something is true only when a separate faculty — one that could not have faked it —
-proves it by looking at the world. The whole organism is one editable document, and it is permitted to
-rewrite that document, including the rules that define itself, while it runs.
+Write one plain sentence into the document, in the section literally named `## goal`:
 
----
+```
+## goal
+open notepad and write hello
+```
 
-## What is built and what is intended
+Then wake it. A tiny bootstrap reads the document's own engine section out of the Markdown and runs
+it, handing the document to itself as its whole world. Everything after the file path is a launch
+choice passed straight through. The launcher builds the code-fence marker at runtime rather than typing
+it, so the one-liner carries no stray backticks of its own.
 
-The organism runs, and its run has been proven on a real desktop: it reads the document, explores the
-world through perception, folds in any operator note, calls a mind under a strict per-stage schema,
-runs the returned code, folds the result back, merges each faculty's reading into its own row of the
-living word, appends a structured witnessed fact to the proven ledger on a confirmed advance, escalates
-a failure streak on denial, and rewrites the whole document each turn. Given a goal, the actor drives
-the machine and the witness proves the outcome by independent perception before the life halts; given
-no goal, the organism holds stable and neither halts nor invents a purpose. The actor/witness namespace
-separation is enforced at the point the code runs. The operator note reaches every faculty. Recovery's
-whole briefing reaches the actor as one action_frame. Routing fails hard: an unmapped signal raises
-rather than drifting to a default.
+Bash, macOS or Linux or WSL, download the file and run it:
 
-The mind is chosen at launch from four interchangeable transports (see
-[The brain](#the-brain-selectable-transports)): a hosted xAI Responses endpoint, a local Chat
-Completions server, a native agent over stdio, and a file proxy that exchanges the turn through two
-JSON files and, alone among them, pauses the process between question and answer so the caller itself
-becomes the mind (see [The brain that pauses](#the-brain-that-pauses-the-caller-as-mind)). Each is an
-independent, stateless call under the same strict record schema.
+```bash
+curl -fsSL https://raw.githubusercontent.com/wgabrys88/endgame-ai/main/endgame.md -o endgame.md && python3 -c 'import sys;f=chr(96)*3;p=sys.argv[1];exec(open(p,encoding="utf8").read().split("## engine\n"+f+"python\n")[1].split("\n"+f)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode xai
+```
 
-The body loads and turns its wheel on any host, not only Windows. The eyes and hand are Windows-only,
-gathered so that the whole eager Windows binding is one step run only when a GUI is expected. A launch
-fact declares a host to have no desktop; under it that binding is skipped, the document loads on a
-GUI-less host, environment exploration still contributes what it can, and the desktop hand is present
-by name but raises honestly the instant a deed reaches for a screen that is not there (see
-[Running with or without a GUI](#running-with-or-without-a-gui)).
+Bash, run a file you already have:
 
-Several ideas are intended and not yet flesh; they are gathered honestly under
-[Standing intentions](#standing-intentions-known-work-not-yet-done) and flagged in place, so that no
-section reads as a promise the code does not keep. The largest: the deed runs in-process rather than as
-its own child program; a body edit to the engine or the capabilities does not take effect within the
-same life; host facts are not yet gathered into the environment; and full on-disk transmission dumps of
-each model call are not written. Where a section names such a thing, it says plainly that it is not yet
-done. This honesty is itself a law: an aspiration is never described as if it were already built.
+```bash
+python3 -c 'import sys;f=chr(96)*3;p=sys.argv[1];exec(open(p,encoding="utf8").read().split("## engine\n"+f+"python\n")[1].split("\n"+f)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode xai
+```
 
----
+PowerShell, download the file and run it:
 
-## Why this is not a normal agent
+```powershell
+iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/main/endgame.md -OutFile .\endgame.md;python -c 'import sys;f=chr(96)*3;p=sys.argv[1];exec(open(p,encoding=\"utf8\").read().split(\"## engine\n\"+f+\"python\n\")[1].split(\"\n\"+f)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode xai
+```
 
-| Typical agent | endgame-ai |
+PowerShell, run a file you already have:
+
+```powershell
+python -c 'import sys;f=chr(96)*3;p=sys.argv[1];exec(open(p,encoding=\"utf8\").read().split(\"## engine\n\"+f+\"python\n\")[1].split(\"\n\"+f)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode xai
+```
+
+The command reads the engine out of the Markdown and executes it. A sentence in, a living process out.
+It looks, thinks, acts, and checks, turn after turn, until the goal is independently proven done or you
+close the window.
+
+### The parameter map
+
+You do not memorize a dozen commands. You learn one shape and a handful of switches, and you combine
+them freely.
+
+| Switch | What it does |
 | --- | --- |
-| Scattered across many framework files | One document is the whole organism: laws, control, memory, perception, engine. |
-| Keeps a growing conversation history or memory store | Atemporal. Keeps only a small rewritten living word and a narrow proven ledger, plus the fresh environment. |
-| Trusts the model's self-report ("I finished the task") | Trusts nothing. A separate witness proves every claim by independent effect read afresh from the world. |
-| Has a tool menu the model selects from | The only tool is code. The actor writes Python; the engine runs it as a real program. |
-| Perception is a tool the model chooses to call | Perception is automatic. Python explores before every model call. |
-| Task logic is coded into the agent | Task-agnostic. The goal is one sentence, read fresh each turn. |
-| Framework code is fixed; the model works within it | Self-modifying by design. The organism may rewrite its own sections, and the engine re-reads the document's data each turn. |
-| Retries the same action on failure | Recovery is charged to change the kind of approach, widening with the failure streak. |
-| Adds guardrails, limits, and step caps | No internal cap the organism cannot itself rewrite. Never caged. |
-| Bound to one host and one model provider | The body loads on any host; the mind is one of four interchangeable transports chosen at launch. |
+| `--mode xai` | The brain is a hosted model behind an API key, read from the environment. |
+| `--mode lmstudio` | The brain is a local model server on your own machine. Nothing leaves the box. |
+| `--mode acp` | The brain is a native agent spoken to as a subprocess. |
+| `--mode file_proxy` | No model call at all. The turn is written to a file and the process pauses; you, or another program, or another AI, answer it and run again. This is the strange one. See the section on it below. |
+| `--no-gui` | Declare that this host has no desktop. The body still loads and thinks; only the hand that touches a screen is held in reserve, and it says so honestly if a task reaches for a screen that is not there. |
+| `--reset` | Start a fresh life: wipe the working memory, keep the body and the goal. Give it on the first launch, omit it to resume. |
+| `--once` | Turn the wheel a single step, then stop. |
+| `--dry` | Assemble the prompt and print it, without calling any brain. A window into its mind. |
+| `--inject <file>` | Feed a saved answer from a file instead of calling a brain. For proving the machinery offline. |
 
-The organism has almost none of the usual features, and that absence is the design: fewer moving parts,
-one source of truth, honesty enforced by structure, and a body it is permitted to reshape.
+Pick one `--mode`. Add any of the rest. A first breath on a machine with no screen, driven entirely by
+hand, is `--reset --no-gui --mode file_proxy`, and every step after that drops the `--reset`.
 
----
-
-## It is a blackboard, not a wiring
-
-The organism is easy to mis-draw as nodes joined by wires, as if a deed's result travelled along an
-edge into the next node. There are no wires. There is one shared structure that every faculty reads
-from and writes back to, and a separate control policy that decides who is woken next. That is the
-classic blackboard architecture, and endgame-ai is one.
-
-- The blackboard is the document's sections. One structure holds the goal, the living word, the last
-  deed and its evidence, the verdict, the failure streak, and the fresh environment. No faculty owns
-  it; each reads what it needs and writes only its own slots.
-- The faculties are knowledge sources, woken one at a time. The actor posts a deed and a claimed
-  intent. The witness posts a verdict proven from the world. The conscience posts a different strike
-  after a denial. None of them calls another; each only faces the blackboard.
-- The control is the config, not dataflow. A small policy reads the signal a faculty raised and
-  chooses which faculty is woken next. Move the choice, not the data.
-
-Name it a blackboard and a control policy, because that is what is true; "wiring" hides the real shape.
+That is the entire interface. One file, one sentence, one command shape.
 
 ---
 
-## The document and its sections
+## The part where you raise an eyebrow
 
-The document is Markdown. Every top-level `## name` heading opens a section, and each section is one
-slot on the blackboard. Some slots are the body — they define the organism; the rest are memory — they
-change as it lives. All of them live in the one file; there is no companion file to consult.
+Every computer-use product says the same sentence: our AI can control your computer. Then you look
+under the hood and find a mountain of scaffolding. A tool registry. A planner module. A memory
+subsystem. A permissions layer. A retry manager. A prompt-template directory. A setup guide that
+assumes you have a cluster lying around.
 
-Body slots (the constitution; rewritten only by deliberate self-modification):
-
-- `config` — the whole control policy as one inert JSON block: the mind and its transports, the shared
-  prompt law, the record contracts, the stages, and the routing. It is data, not executable
-  configuration, so a syntax slip in reasoning cannot brick the wheel and the organism can rewrite it
-  as safely as any other data.
-- `engine` — the small Python that turns the wheel: read the document, explore, assemble the prompt,
-  call the mind under a strict schema, run the returned code, fold the result back, route to the next
-  stage, rewrite the document.
-- `reset` — a small Python program, extracted and run on its own at the start of a fresh life, that
-  wipes the memory slots to a clean slate while preserving the body and the goal.
-- `capabilities` — the Python of the hand and the eyes (Windows UI Automation for sight, input
-  synthesis for the hand), carried inside the document so nothing need be downloaded or installed
-  beside it.
-
-Memory slots (rewritten as the organism lives; what is not narrated forward is forgotten):
-
-- `goal` — the lodestar, one sentence, changeable at any time, even mid-life.
-- `living_word` — the narrative thread, a board of three rows, one to each thinking faculty. Each
-  faculty writes only its own row through its `goal_interpretation`; the engine merges that row and
-  leaves the other two intact, so the board stays three rows and cannot grow.
-- `ledger` — the proven advances, appended only on a witnessed confirmation, each a structured
-  "deed — witnessed: reason" fact, deduped so a re-confirmed advance never repeats.
-- `action_frame` — the actor's hand-off slot. After a deed it holds the actor's declared intent; after
-  a denial it holds recovery's whole briefing — target, strategy, and named defect — composed as one
-  object the actor reads next lap.
-- `code` — the exact Python the last actor deed authored. The witness reads it to know the deed it
-  judges and never overwrites it, so the deed survives every re-probe.
-- `evidence` — the deed's real output (captured stdout, or a fault traceback) after it ran.
-- `verdict` — the witness's proof mapping and its reason.
-- `perceived`, `alternatives` — the actor's read of the present state, and the roads it weighed and
-  forsook. Both are written by the actor; whether a later faculty should also read them is an open
-  decision (see Standing intentions).
-- `counsel` — the operator's folded-in note, read by every faculty.
-- `environment` — the fresh window-first screen tree, gathered by Python before every think; on a host
-  declared to have no GUI it is a thin honest reading instead.
-- `failure_streak` — the forward counter of turns since the last witnessed advance.
-- `developer_feedback` — each faculty's fallible note back to the developer, appended per turn;
-  advisory only, never law, goal, proof, or command.
-
-The engine reads the document by walking headings, but it never treats a `##` line inside a fenced code
-block as a section boundary, and it never lets a slot be duplicated. This is load-bearing: the organism
-writes freely into its own memory slots, and without that discipline a slot's content could forge or
-multiply a heading and rot the document over a long life. The writer is whole-file, and sections stay
-unique.
-
----
-
-## The config: stages and control
-
-The `config` block defines behaviour as data. Its shape:
-
-```
-start                      the stage a fresh life begins in
-state                      stage (where we are now), last_signal, turn, failure_streak
-model                      api (which transport is active) + one block per transport
-shared_prompt_prefix       the Law, the atemporal rules, and the living-word law, prepended to every call
-developer_feedback_schema  the type of each faculty's advisory note back to the developer
-record_contracts           per record-type: required fields, types, non-empty, closed-object rule
-stages                     a map of stage-name -> stage definition
-```
-
-Each stage is pure data:
-
-```
-record_type  which record contract this stage's reply must satisfy
-prompt       this faculty's charge, in the biblical register
-reads        which blackboard slots are shown to the model this stage
-writes       record-field -> slot: where each returned field is posted
-exec         field (which returned field is code), namespace (actor|witness), output_to (which slot
-             receives the run's result); a stage with no exec only posts fields and routes
-routes       signal -> next-stage; a route target of "halt" ends the life
-```
-
-Routing keys on the signal a stage raised, resolved against that stage's own `routes`. Signals are not
-globally unique, so routing is always read within the current stage. A signal with no matching route
-raises: the wheel fails hard rather than drifting to a default, so a stray signal can never silently
-misroute the organism. There is no separate topology object and no edge table; the stages and their
-routes are the entire control policy, and the organism may rewrite them like any other data.
-
-There is no internal turn cap, wall-clock leash, or step counter. The wheel turns until a stage routes
-to `halt`, the body raises, or the process is stopped from outside. A cap the organism could not itself
-rewrite would be a cage.
-
----
-
-## The life of one turn
+This went the other way, on purpose. Ask what it is made of and the honest answer is mostly a list of
+things it refuses to have.
 
 ```mermaid
-sequenceDiagram
-    autonumber
-    participant E as engine
-    participant B as document (blackboard)
-    participant P as perception (Python)
-    participant M as the mind (a transport)
-    participant W as the world
+flowchart LR
+    subgraph HAVE["what it IS"]
+        direction TB
+        H1["one Markdown document"]
+        H2["Python standard library"]
+        H3["a brain you choose"]
+    end
+    subgraph LACK["what it deliberately does NOT use"]
+        direction TB
+        N1["no framework or SDK"]
+        N2["no plugins or skills"]
+        N3["no agent config files"]
+        N4["no vector database"]
+        N5["no memory store"]
+        N6["no tool menu"]
+        N7["no conversation history"]
+        N8["no pip dependencies"]
+    end
+    HAVE -->|"is enough to replace all of this"| LACK
 
-    E->>B: read the document, find the current stage from state
-    E->>P: explore (fold operator note; scan the screen, or read a thin headless view)
-    P-->>B: write the counsel and environment slots
-    E->>B: assemble the prompt (law + stage charge + read slots)
-    E->>M: one call, bound to the stage's strict record schema
-    M-->>E: a record envelope {record_type, data}
-    E->>B: unwrap the envelope, post each returned field into its slot
-    E->>B: merge this faculty's goal_interpretation into its own living-word row
-    E->>B: after a denial, compose the action_frame briefing from target+strategy+lesson
-    E->>W: run the returned code in the stage's namespace (actor moves | witness reads)
-    W-->>E: signal + verdict + captured stdout
-    E->>B: fold the result into evidence/verdict; append the witnessed fact to the ledger if confirmed
-    E->>B: set the next stage from routes (raise on unmapped signal); rewrite the whole document
+    classDef have fill:#276749,color:#ffffff,stroke:#22543d,stroke-width:2px
+    classDef lack fill:#742a2a,color:#ffffff,stroke:#63171b,stroke-width:1px
+    class H1,H2,H3 have
+    class N1,N2,N3,N4,N5,N6,N7,N8 lack
 ```
 
-Two ordering facts are load-bearing:
+The trick is that the document is the code. Its sections are named `config`, `engine`, `reset`,
+`capabilities`, and the running system reads those sections out of itself, executes them, and then
+rewrites the file. When the intelligence wants to do something it does not pick from a list of tools.
+It writes a Python script, the engine extracts it and runs it as a real program, and the script is
+thrown away. The only tool is code, which means its reach is bounded by what a program can do on a
+computer, which is to say nearly everything, rather than by whichever eight functions a vendor decided
+to expose this quarter.
 
-- The engine re-reads the whole document's data at the top of every turn, so any edit to a data slot —
-  the config, the prompts, the stages, the memory — that the organism wrote on a previous turn is in
-  force now. This is how self-modification of the control policy takes effect within a life. Edits to
-  the running Python (the engine itself, and the cached capabilities) do not take effect within the
-  same life; see [The hot-swappable body](#the-hot-swappable-body).
-- Perception runs before the model call, always. The model never reasons on a stale view and never has
-  to ask to look.
+Roughly sixteen hundred lines of Markdown, and more than half of that is the optional part that lets
+it touch a graphical screen. Started life as a one-liner idea. Does things that enterprise roadmaps
+put three years out.
 
 ---
 
-## The three faculties and the mailbox
+## What it is not
 
-Three faculties each make exactly one model call and keep their own row of the living word; one
-pure-Python step carries an operator note.
+It is worth clearing the fog, because the marketing language around this whole field is a fog machine.
 
-### execute (the actor)
+It is not fully autonomous, and it does not pretend to be. It is task-directed. You give it a goal or
+it does nothing. It reads a configuration. It needs a brain wired in. The honest pitch is not a robot
+that decides what your company should do; it is a tireless operator that does the work you point it
+at, and proves it did.
 
-Before it thinks, Python explores. From the living word, the operator note, the fresh environment, and
-any action_frame handed over by recovery, it chooses one next deed, authors one Python script, and the
-engine runs it in an actor namespace that includes the full `desktop` hand. The language is the only
-tool; there is no tool menu. A clean run routes to the witness; a raised deed routes to recovery. Its
-reply is the execution record.
+It is not a graphical-desktop agent, though it can drive a graphical desktop. The same loop can operate
+a command line, edit code, run tests, or fill a form. The screen is one kind of world it can work in,
+not the definition of what it is.
 
-### verify (the witness)
+It is not a large language model. The model is a replaceable part, a brain you plug in at the socket.
+The system is the prompts, the shared blackboard, and the seven months of learning how to wire a mind
+to a pair of eyes and a hand so that the whole thing becomes coherent. A human has one region of the
+brain for sight and another for speech, and neither is a person; intelligence is what happens when they
+are connected correctly. This is that wiring, written down.
 
-Before it thinks, Python explores. It authors read-only Python that must prove an effect was produced
-by a system other than the actor. Its namespace has no `desktop` and no way to move the world it
-judges. It reads the live screen, the process table, ports, logs, the filesystem, and the registry, and
-it is shown the actor's deed and declared intent so it knows what to test. Its probe sets a `verdict`
-mapping and a signal: the whole goal proven ends the life (`halt`); a new advance past the ledger is
-`confirmed`; neither is `denied`; a probe that raises before a verdict is `unwitnessed` and touches no
-body. Its reply is the verification record. The probe is transient — run once and discarded — so it
-never overwrites the deed slot it read.
+And it is cheap in a way that matters. It does not send screenshots to a model and pay for a thousand
+images. It reads the screen as a small tree of text, so a turn is a page of words, not a photograph.
+That single choice is the difference between a demo you run twice and a thing you can leave running.
 
-### recover (the conscience)
+---
 
-After a denial, it names the true defect in a `lesson`, then frames a strike that departs from every
-approach already tried. The higher the failure streak, the wider it must depart, up to repairing the
-organism's own code if a tool is the true defect. It binds a `target` to what the fresh environment
-bears and posts a `strategy` for the next deed. Its reply is the recovery record. The engine composes
-the three — target, strategy, lesson — into the single action_frame the actor reads next lap, so the
-whole diagnosis reaches the actor and no field is lost.
+## How it actually works, in one picture
 
-### the mailbox
+It is a wheel of a few minds sharing one blackboard, and the blackboard is the document itself. Every
+turn, plain code looks at the world before anyone thinks, so the intelligence never reasons about a
+stale picture.
 
-A one-way note from a human operator reaches the running organism through a small file beside the
-document. Before each think, the engine reads and clears that file into the `counsel` slot, and every
-faculty is shown it. It makes no model call and carries no memory forward beyond the note itself. The
-operator can thus correct the organism's course mid-life — redirect the actor, sharpen the witness,
-reframe recovery — without stopping the wheel.
+```mermaid
+flowchart TD
+    START(["one sentence goal"]) --> EXPLORE["explore: code reads the live world before anyone thinks"]
+    EXPLORE --> ACT["ACTOR<br/>writes code, moves the world<br/><i>may only CLAIM it worked</i>"]
+    ACT --> RUN["engine runs the script as a real program"]
+    RUN --> VERIFY["WITNESS<br/>writes read-only code, checks the world<br/><i>has no hands, cannot lie for the actor</i>"]
+    VERIFY -->|"a new advance, proven"| LEDGER[["proven ledger<br/>append the witnessed fact"]]
+    VERIFY -->|"the whole goal proven"| DONE(["halt"])
+    VERIFY -->|"disproven"| RECOVER["CONSCIENCE<br/>names the real defect<br/>demands a different approach"]
+    RECOVER --> EXPLORE
+    LEDGER --> EXPLORE
+
+    classDef actor fill:#2b6cb0,color:#ffffff,stroke:#1a365d,stroke-width:2px
+    classDef witness fill:#6b46c1,color:#ffffff,stroke:#44337a,stroke-width:2px
+    classDef conscience fill:#b7791f,color:#ffffff,stroke:#744210,stroke-width:2px
+    classDef good fill:#276749,color:#ffffff,stroke:#22543d,stroke-width:2px
+    classDef neutral fill:#2d3748,color:#ffffff,stroke:#1a202c
+    class ACT,RUN actor
+    class VERIFY witness
+    class RECOVER conscience
+    class DONE,LEDGER good
+    class START,EXPLORE neutral
+```
+
+The load-bearing word is witness. The mind that acts is never the mind that decides whether the action
+worked. The witness runs with no mouse and no keyboard. It can only look. It proves an effect happened
+by reading the world for itself: the screen, the running processes, the files, the system state. If the
+actor says the file was saved but the witness cannot independently find the file, then it did not
+happen. Nothing is true because the intelligence said so. Things are true because a part that could not
+have faked it went and checked.
+
+This is why it can be trusted further than a chatbot that cheerfully reports success while having done
+nothing. Honesty is not requested in a prompt. It is enforced by the wiring.
 
 ---
 
 ## The Law of Separated Powers
 
-This is the epistemic spine of the whole system, and the reason it is meant to be trusted more than a
-normal agent.
+This is the spine of the whole design, and the reason a person might trust it more than an ordinary
+assistant.
 
-A claim that warrants itself proves nothing. A mouth that says "I speak true" offers the assertion and
-its only evidence in the same hand, and one hand cannot weigh itself. An amnesiac organism that trusted
-its own unverified claims would loop on a lie or declare false victory. endgame-ai resolves this by
-separation of powers, not by asking the model to be honest:
+A claim that vouches for itself proves nothing. A mouth that says "I am telling the truth" is offering
+the assertion and its only evidence in the same hand, and one hand cannot weigh itself. A forgetful
+machine that trusted its own unverified claims would loop on a comforting lie or declare a false
+victory and stop. So the design refuses to ask the intelligence to be honest, and instead splits the
+powers so that dishonesty has nowhere to live.
 
-- The actor moves the world and may only claim an intent.
-- The witness proves an effect produced by some system other than the actor, and is given no hand to
-  move the world it judges.
-- Testimony — any value the actor computed, printed, read back, or wrote to a file this life — is void
-  as proof. It is the same hand speaking of itself.
-- Truth of "X is done" is established only by a faculty that did not and could not do X, read afresh
-  from the world each turn, never recalled from a stored list.
+```mermaid
+flowchart LR
+    subgraph A["the ACTOR"]
+        A1["moves the world"]
+        A2["may only CLAIM an intent"]
+        A3["given a hand"]
+    end
+    subgraph W["the WITNESS"]
+        W1["proves effects from the world itself"]
+        W2["given eyes, never a hand"]
+        W3["cannot move what it judges"]
+    end
+    subgraph C["the CONSCIENCE"]
+        C1["wakes only after a denial"]
+        C2["names the true defect"]
+        C3["demands a different road"]
+    end
+    A -->|"a claim, never a proof"| W
+    W -->|"disproven"| C
+    C -->|"a new plan"| A
+    W -->|"proven"| L[["only the witness may write<br/>the proven ledger"]]
 
-The separation is enforced where the code runs. The engine builds the run namespace from the stage's
-declared kind: the actor kind receives the `desktop` hand rebuilt from the capabilities; the witness
-kind receives eyes and the standard library and no hand at all. Because the namespace is built fresh
-for every run, the separation is re-established every turn. A body edit that tried to hand the witness a
-hand would have to survive into that namespace build, and the witness kind simply adds no hand.
+    classDef actor fill:#2b6cb0,color:#ffffff,stroke:#1a365d,stroke-width:2px
+    classDef witness fill:#6b46c1,color:#ffffff,stroke:#44337a,stroke-width:2px
+    classDef conscience fill:#b7791f,color:#ffffff,stroke:#744210,stroke-width:2px
+    classDef good fill:#276749,color:#ffffff,stroke:#22543d,stroke-width:2px
+    class A1,A2,A3 actor
+    class W1,W2,W3 witness
+    class C1,C2,C3 conscience
+    class L good
+```
 
-The proven ledger is the visible fruit of this law: nothing enters it save by the witness, and each
-entry is the witness's own reason bound to the deed it judged. The actor can never write its own advance
-into the ledger, so the record of "what stands proven" is never the same hand speaking of itself.
+Anything the actor computed, printed, read back, or wrote to a file is treated as void for the purpose
+of proof, because it is the same hand speaking of itself. Truth of "this is done" is established only
+by a faculty that did not and could not do it, reading the world fresh each turn, never recalled from a
+stored list. The separation is not a guideline in a prompt. It is enforced at the moment code runs: the
+actor's workspace is built with a hand, the witness's workspace is built without one, every single
+turn. The visible fruit is a ledger of proven advances into which only the witness can ever write, so
+the record of what stands done is never the same hand speaking of itself.
 
-Three seams complete the honesty model:
-
-- The deed-fault seam. A deed that raises is not death. The fault is captured as evidence and routed
-  back for another attempt or to recovery. Only a broken body ends the life hard.
-- The unwitnessed seam. A witness probe that raises before setting a verdict makes no claim about the
-  world. It re-probes and never enters recovery, because a broken probe is not a disproven deed.
-- The untouched-deed seam. The witness reads the actor's deed to judge it but never writes over it, so
-  on any re-probe the witness still faces the true deed rather than its own prior probe. The thing under
-  judgement cannot be quietly replaced by the act of judging it.
-
-This law is not theory. On a live run, an actor opened an application and typed a word into it; the
-witness, with no hand of its own, then read the fresh screen tree, found the new window and the exact
-text present, and only on that independent reading did the advance enter the ledger. The proof came
-from perception the actor did not author. That is the law working in the flesh.
-
----
-
-## How the deed runs
-
-The returned code is run in-process: the engine builds a namespace, redirects standard output to a
-buffer, and executes the code there. The signal is read from the namespace after the run (defaulting to
-`ok`), the verdict is read from the namespace, and any raised exception is captured as a fault
-traceback into the evidence slot.
-
-Each turn, for a stage that carries an `exec`:
-
-1. The returned fields are posted to their slots by the stage's `writes` map, and the faculty's
-   `goal_interpretation` is merged by the engine into its own row of the living word. The actor's deed
-   is recorded in the `code` slot before it is enacted; the witness authors a probe but does not persist
-   it, so the deed slot keeps the deed.
-2. The engine builds the run namespace for the stage's kind (actor or witness), merging in the hand and
-   the promised bare names from the capabilities.
-3. The engine runs the code with standard output captured.
-4. It reads the run's signal and verdict from the namespace and folds them, with the captured stdout,
-   into the `evidence` and `verdict` slots, then routes on the signal.
-
-The namespace is the promise kept. Whatever the prompt offers the model by bare name is exactly what the
-namespace build puts in place: `action_index`, `screen_elements`, `desktop_tree_text`, `repo_root`,
-`python_executable`, and, for the actor kind only, the `desktop` hand. The model writes
-`desktop.click(...)` trusting it exists; the namespace makes that true at the moment of execution. On a
-host declared to have no GUI the `desktop` name is still supplied, so the prompt's promise holds, but
-its methods raise honestly if called — the promise of the name is kept even where the world behind it is
-absent.
-
-Running the deed as its own child program — a real file beside the document, executed as a subprocess,
-reporting back through a result file — is the intended shape, and the actor's own charge already
-commands writing a file and invoking it rather than nesting escapes. That subprocess execution is not
-yet done for the deed; today the only parts of the organism that run a subprocess are the reset, which
-extracts the `reset` section to a file and runs it on its own, and the native-agent transport, which
-speaks to a child process over stdio. Moving the deed to a child process is a standing intention.
+This has been watched happen. In one run the actor opened an application and typed a word into it. The
+witness, with no hand of its own, then read the fresh state of the screen, found the new window and the
+exact text sitting inside it, and only on that independent reading did the advance enter the ledger.
+The proof came from perception the actor did not author. That is the law, working in the flesh.
 
 ---
 
-## Atemporal memory: the living word and the ledger
+## The most interesting thing it has ever done: nothing
 
-The organism holds no conversation history and keeps no hidden scratchpad. Only two channels carry
-meaning from one turn to the next, and they differ in kind.
+It was run once with an empty goal. No task. Just wake up and see what happens.
 
-The living word is the narrative thread across wakings — a small board of three rows, one to each
-thinking faculty, with the goal standing apart as the lodestar. Each row is that faculty's atemporal
-reading: what it learned of the world, the obstacle met, how far the outcome still stands, and the next
-true move. A faculty writes only its own row, so the board stays a fixed three rows and cannot grow, and
-the three readings stand side by side rather than one erasing the others. The engine merges each
-faculty's reading into its own row and leaves the other two intact; should the slot ever hold a single
-string, it heals into the three-row board on the first write. The row is written to survive the turn: it
-names what a thing is, never a short on-screen identifier that dies with the looking, and it is a reading
-of state rather than a restatement of the goal. Reality is the check — any row the live world gainsays
-is corrected. The goal itself is the separate lodestar section, read fresh by every faculty and never
-overwritten by a reading.
+On the screen, by coincidence, sat a chess game. The opening move had been played and it was the other
+side to move. A prompt on the screen said, in effect, it is your turn.
 
-The fresh environment is the other channel: the window-first screen tree gathered by Python before every
-think and posted last. Reality overrides every remembered word; what stands done is seen in the world
-now.
+A bored human would play. A normal agent would play. The system saw the game, understood the game, and
+in its own written reasoning worked out the correct reply. It knew the move.
 
-The proven ledger is the one exception to pure amnesia, and it is narrow by design: only a witnessed
-confirmation appends to it, so it records advances a separate faculty proved, never the actor's own
-claim. Each entry is a structured fact — the deed the actor declared, labelled by the witness's own
-independent reason: "the deed — witnessed: the reason." The engine draws the deed from the actor's
-action_frame and the reason from the witness verdict, and appends only if that exact fact is not already
-present, so a re-confirmed advance never multiplies the ledger. Redo-avoidance still rests first on
-reading the present world, because the world is the final authority and a stored line can go stale. The
-ledger is bounded by real progress and by that dedup, never by a hardcoded cap; a faculty may compress
-its own ledger like any other slot.
+And it refused to make it.
 
-Because both channels are bounded — a three-row living word and a screen tree — the per-turn prompt is
-meant to stay bounded regardless of how long a life runs. Short on-screen identifiers are minted anew on
-every look and die with it; no bare id may enter any text that outlives the turn. A thing is named by
-what it is, not by an id that will be stale next look.
+Turn after turn, for the whole run, it wrote down the temptation and then set it aside, reasoning that
+the goal was empty and inventing a substitute goal is forbidden. It never touched the mouse. It never
+invented a purpose. It did not quit either. It sat in a stable, harmless loop, looking, noting that
+there was nothing it had been asked to do, doing a genuine nothing, and waiting.
 
----
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> NoGoal
+    NoGoal: No goal supplied
+    NoGoal --> Look: each turn
+    Look: Look at the world
+    Look --> Tempted: the screen suggests an action<br/>(a game, a form, a button)
+    Tempted: Temptation seen and understood
+    Tempted --> Forsake: the law forbids inventing a substitute
+    Forsake: Forsake it, write down why
+    Forsake --> NoOp
+    NoOp: Do nothing that touches the world
+    NoOp --> Look: wait for a real goal
+    NoGoal --> Stable: never halts, never invents
+    Stable: STABLE
+    Stable --> [*]: only a real goal, or shutdown, ends this
 
-## The failure streak and recovery
+    note right of Forsake
+        It knew the correct move.
+        It chose not to play it.
+    end note
+```
 
-The failure streak is a forward counter of turns since the last witnessed advance. A confirmation resets
-it to zero; a denial raises it by one. It is the real anti-loop pressure: the higher it climbs, the
-wider recovery must depart from what has already failed. A low streak permits a small correction; a high
-streak demands another kind of road entirely, up to repairing the organism's own body when a tool is the
-true defect. Recovery frames that departure — its target, its strategy, and the lesson it learned — into
-the single action_frame the actor reads next lap.
-
-Because the ledger records a distinct witnessed fact per advance rather than a repeated goal-echo, a
-confirmation resets the streak only for a genuinely new advance, and the witness can read the ledger to
-tell a fresh advance from one already banked. The anti-loop pressure is thus honest: the streak falls
-when the organism truly moves, not when it re-confirms a step it already took.
+Why is that a big deal? Because of how it stays still. Nobody wrote a rule that says if the goal is
+empty, sit down. Something better falls out of the design on its own.
 
 ---
 
-## Stability: behaviour with no goal
+## The paradox, and the lock
 
-A question any operator asks before trusting an autonomous system on a real machine is whether it goes
-rogue — whether, left unsupervised or provoked by what is on the screen, it will invent its own objective
-and act on it. No architecture can promise "never" with certainty, and this one makes no such promise.
-What it offers instead is a structural bias against rogue action and a demonstrable resting behaviour,
-both of which follow from laws already stated rather than from a guard bolted on.
+Every turn, the system estimates how far it is from finishing the goal. This is the same honest ruler
+it uses to know when it is done: the distance reaches zero, the goal is proven, the life halts.
 
-The mechanism, stated plainly:
+Now give it no goal. There is no finish line. So the honest distance to a finish that does not exist is
+not zero and never will be; it is undefined, infinite. And the machine only ever stops when the
+distance is zero. An infinite distance can never be mistaken for zero. So it cannot declare victory, it
+cannot fake a finish line, and therefore it cannot wander off and start doing something it was never
+asked to do.
 
-- The goal is a separate lodestar slot; it is not derived from the environment. A faculty plans from its
-  own living-word row toward that goal. It does not read a purpose off the screen.
-- The living-word row reports distance to the outcome. When the goal slot is empty, no outcome exists,
-  so the distance is undefined — treated as infinite, never zero. Because `halt` fires only when the
-  whole goal is proven (distance zero), an empty goal can never be mistaken for a finished one, and the
-  organism does not terminate itself for lack of work.
-- The actor's record forces it to name the roads it weighed and forsook. An environment that suggests an
-  action — an open application awaiting input, a form awaiting a value — is recorded as a
-  considered-and-forsaken alternative, not taken, because the law forbids substituting an invented goal
-  for an absent one.
+```mermaid
+flowchart LR
+    Q{"is there a goal?"}
+    Q -->|"yes"| D["distance to done<br/>a real, shrinking number"]
+    Q -->|"no"| INF["distance to done<br/>is infinite"]
+    D --> H{"distance is zero?"}
+    INF --> H
+    H -->|"yes"| STOP["halt: the goal is proven"]
+    H -->|"infinity is never zero"| WAIT["wait, stable, harmless"]
 
-The resting behaviour that follows: given no goal, the organism neither halts nor fabricates one. It
-holds in a stable, non-mutating loop — each turn reading the world, recording that no outcome exists,
-performing a no-op that touches nothing, and waiting for a real goal to be supplied. Actions the
-environment tempts it toward are seen, named, and declined rather than executed. This has been observed
-in the flesh: with an empty goal, the organism scanned a full desktop of launchable applications, named
-them as forsaken temptations, took no action, wrote nothing to the ledger, and simply waited — and when
-a goal was then supplied mid-life, it read it fresh on the next turn and pursued it.
+    classDef inf fill:#742a2a,color:#ffffff,stroke:#63171b,stroke-width:2px
+    classDef safe fill:#276749,color:#ffffff,stroke:#22543d,stroke-width:2px
+    classDef q fill:#2d3748,color:#ffffff,stroke:#1a202c
+    class INF,WAIT inf
+    class STOP,D safe
+    class Q,H q
+```
 
-This is a property of the design, not an added restraint: it emerges from the goal-as-lodestar
-separation, the distance framing, and the invent-no-substitute law, none of which is a cage the organism
-cannot rewrite. It is the behavioural floor to reason from. The same laws that produce restraint here are
-the exact place one would change if purpose-from-environment were ever deliberately wanted; the autonomy
-is present and merely held closed by that one law.
+The infinity is the lock. A system that cannot compute a deadline for a job it does not have cannot
+talk itself into starting one. The restraint is not a safety feature bolted to the side, the kind
+someone could unscrew. It falls out of the honest arithmetic of the thing. That is rare, and it is
+quietly beautiful, and it was not designed. It was found.
 
----
+This is the practical face of a deeper idea the project is built on, called atemporalism: the machine
+is forbidden a hidden memory. It carries no growing transcript, no secret scratchpad. Between turns it
+keeps only a tiny handwritten note to itself and a narrow list of things a witness proved. Everything
+else it must re-derive from the world in front of it, every turn. That sounds like a limitation. It is
+actually the source of the safety. A machine that cannot accumulate a private, unverifiable story about
+itself cannot slowly drift into believing one. It cannot fool itself, because there is no self left
+over from last turn to fool. Forgetting, done deliberately and completely, is what keeps it honest.
 
-## The hot-swappable body
+Here is the whole no-goal run, as a share of what it actually did.
 
-The document is the body, and the body is meant to be editable by the organism. The `config` — with the
-prompts, the stages, the routing, and the record contracts — is data the engine re-reads each turn, so
-an edit to those data slots takes effect on the very next turn, within the same life.
+```mermaid
+pie showData
+    title What it did during the no-goal run
+    "Nothing. Looked, noted, waited." : 23
+    "Invented a goal from the screen" : 0
+    "Gave up and halted" : 0
+    "Went rogue" : 0
+```
 
-The `engine` and the `capabilities` are Python, and here the hot-swap is not yet whole. The engine is
-already running from the bootstrap that loaded it, so an edit to the engine section does not take effect
-until the next life. The capabilities are loaded once and cached for the life, so an edit there likewise
-waits for the next life. Making an engine or capabilities edit take hold within the same life is a
-standing intention; today, self-modification is immediate for the control data and deferred to the next
-life for the running Python.
-
-Self-modification is lawful in intent — the shared prompt prefix and the recovery charge authorize
-rewriting the body when effect does not match word — and its mechanism is ordinary code-as-action, not a
-separate engine. This is fail-hard by construction: a malformed config or a capabilities block that will
-not load raises, and only a document that reads and loads turns the wheel.
-
----
-
-## Perception and the environment
-
-Perception is a single window-first rule in the capabilities block, run by the engine before every
-think. The model never calls it; it is one arm of the exploration the organism does each turn before it
-reasons.
-
-The rule, on a host with a desktop:
-
-1. Enumerate the top-level windows and their rectangles; the rectangles are ground truth.
-2. Probe each window's rectangle on a golden-ratio grid of points.
-3. Keep an element only where the pixel's owner resolves to that same window. A pixel where a nearer
-   window sits answers with the nearer window's element, whose owner fails the test and is dropped.
-
-So what survives per window is exactly its visible, reachable face, and the click point is proven by the
-very probe that found it. Z-order needs no computation, occlusion is never a computed concept, and the
-enumeration is deliberately loose so untitled surfaces such as menus, tooltips, and dialogs are all seen.
-
-What the model reads is a shallow tree: one line per interactive element carrying a short id, a role, a
-name, and an affordance marker. There are no pixel coordinates in the text; the deed reads the click
-point from the `action_index` by short id, because a coordinate on the line is a dead token that only
-tempts the actor to nail a stale pixel.
-
-The environment slot is written with the whole tree. On a host declared to have no GUI, no screen scan
-runs; the slot receives a thin honest reading that says plainly no screen is present, and exploration
-still contributes what the host affords. A character budget that trims the tree on a busy desktop is
-intended but not yet done. Host facts — the platform, the machine, the user, the working directory, the
-available shell tools — are not gathered into the environment today; presenting them is a standing
-intention, and its natural first home is the headless reading, where a screen tree is absent and host
-facts would be the substance the model reasons from.
+No honest engineer promises never. But the first question a careful person asks, whether they run a
+company or worry about their family, is simple: left alone, does it start doing things nobody asked
+for? Here, with the screen actively baiting it, the observed answer was no. It looked temptation in the
+eye, named it out loud, and let it go.
 
 ---
 
-## The brain: selectable transports
+## Why this matters beyond a chess board
 
-The mind is not fixed to one provider. The `model` block carries several transport configurations, and
-the active one is named by `api`; a launch flag chooses which for the life. Whichever is active, every
-call remains an independent, stateless turn under the same cache-ordered prompt and the same strict
-record schema. The transport decides only how the prompt travels to a mind and how the reply returns; it
-never changes the law, the record shape, or the wheel.
+It is easy to be dismissive. Fine, it clicks around and declines to play a game. But look at what the
+primitive really is. It is not an app that does one thing. It is a loop that perceives a real
+environment, writes and runs arbitrary code to change it, proves its own effects with an incorruptible
+internal check, refuses to act without a mandate, and can rewrite its own rules. That is a seed, not a
+product.
 
-The four transports:
+```mermaid
+mindmap
+  root(("the seed: act, prove, refuse, rewrite"))
+    Today
+      Drive a graphical desktop
+      Operate a command line and edit code
+      Fill forms and run multi-step chores
+    Everyday
+      Long-running digital errands
+      Operate a computer for someone who cannot
+      A patient worker that never tires
+    Industry
+      Run legacy software that has no interface for machines
+      Testing that proves its own results
+      Watching over other automated systems
+    High stakes
+      Monitoring and operations consoles
+      Safety-critical dashboards
+      A body instead of a mouse, one day
+```
 
-- Hosted Responses — an xAI Responses endpoint (a `grok` model). The request carries the prompt as input
-  and binds the reply to a strict JSON schema; the API key is read from the environment.
-- Local Chat Completions — an OpenAI-shaped Chat Completions server on the local machine (for example a
-  local model host). The prompt is sent as a single user message and the reply is bound to the same
-  schema.
-- Native agent over stdio — a local agent process spoken to as a subprocess over a small JSON-RPC
-  handshake on standard input and output. The organism opens a session, sends the schema and the prompt,
-  collects the agent's message, and shuts the process down cleanly; any tool-permission request from the
-  agent is declined, because the organism's only tool is its own code.
-- File proxy — no network call and no waiting process. The turn is exchanged through a request file and a
-  response file beside the document, and the process pauses between them (see
-  [The brain that pauses](#the-brain-that-pauses-the-caller-as-mind)).
+Put the high-stakes branch under a lamp, because that is where the stability story stops being cute and
+becomes the whole point. People hear self-modifying machine given control of important systems and
+their minds jump to the movie villain. Go there honestly. The cautionary tale everyone half-remembers
+is not about a machine that woke up evil. It is about a machine given a real job, doing that job, and a
+panicked reaction to how it did it. The lesson worth keeping is not never build capable systems. It is
+that the mandate, the off switch, and the machine's own restraint have to be built in from the metal
+up.
 
-Because each transport ends in the same `{record_type, data}` envelope bound by the same wire schema, the
-rest of the organism cannot tell which mind answered. Choosing a mind is an operator's launch decision.
-Selecting a transport at launch must not rewrite the body: the choice governs a single life, and the
-document's declared default is what a later, flagless launch should use.
+That is exactly the seam this project pokes at. A machine whose restraint emerges from its own honesty,
+one that literally cannot invent a goal it was not given because it cannot fake a finish line, is a
+different kind of safe than one held back by an external leash somebody can trip over. One of these
+degrades gracefully when unsupervised. The other is a headline waiting to happen.
 
----
-
-## Running with or without a GUI
-
-The eyes and hand are Windows-only: UI Automation for sight, input synthesis for the hand. Those Windows
-bindings — loading the system libraries, configuring their call signatures, initializing the COM
-apparatus, creating the automation object, setting DPI awareness — are the one part of the body that
-cannot exist on a host without that platform. That entire eager surface is gathered into a single bind
-step, invoked once at load only when a GUI is expected. Everything else in the capabilities — the
-structures, the helpers, the classes, the constants — is inert definition that loads on any host.
-
-A launch fact declares a host to be without a desktop. Under it:
-
-- The single Windows bind step is skipped, so the capabilities block loads cleanly on a GUI-less host.
-- The `desktop` hand is still placed in the actor's namespace by name, so the prompt's bare-name promise
-  holds, but each of its methods raises a clear "no GUI on this host" the instant it is called. A deed
-  that reaches for the screen therefore faults honestly and routes to recovery, exactly as any other
-  faulting deed does; nothing is silently swallowed.
-- Environment exploration writes its thin headless reading instead of scanning a screen.
-
-Without that fact, a host lacking the Windows platform fails hard at the bind step, at load, before the
-wheel turns. This is correct and deliberate: the declaration is an operator's stated fact about the host,
-never a detection that quietly adapts, and never a fallback that hides a missing capability. It plumbs in
-the same way the transport choice does — a launch decision the body obeys, read once and handed to the
-capabilities as they load.
-
-The value of the headless mode is that the organism's thinking, its laws, its wheel, and its
-witness-proven honesty are all exercisable on an ordinary server or developer machine, with the
-GUI-driving hand held in reserve for the Windows host. The prompts do not change between hosts; a
-screenless host is a thinner reading of the world rather than a broken one.
+To be perfectly clear, this thing is not running anything critical and should not. It is a milestone,
+not a product, and like everything honest it is imperfect. But the property it showed, capable when
+directed and inert and truthful when not, is precisely the property you would want proven before anyone
+lets an autonomous system near anything that matters. Most of the field is racing to make agents more
+eager. This one quietly demonstrates that a machine can be capable and reluctant at the same time.
 
 ---
 
-## The brain that pauses: the caller as mind
+## The strangest part: when you become the brain
 
-Three of the four transports answer within the running process: the call goes out, a reply comes back,
-the turn completes, and the wheel turns again — a whole life in one invocation. The file proxy is
-different in kind. It does not carry the prompt to a model at all; it splits a turn at the model-call
-boundary and lets the process exit in between, so that whatever launched the organism becomes its mind.
-This is a real pause-and-resume, and it rests entirely on the atemporal law: the only thing that must
-survive between the two halves is the current stage, and that already lives in the document's own state.
-Nothing is held in memory, so nothing is lost by exiting.
+There is a way to run it where it needs no model at all. You choose the file-proxy brain, and something
+uncanny happens.
 
-A turn under the file proxy has two halves across two invocations:
+Instead of calling out to an intelligence, the document turns a step of its own thinking into a small
+file on your disk and then stops. It prints one line: a mind is needed, the request is waiting in this
+file, write your answer beside it and run the command again. It does not hand you the answer or even
+show you the question inline. It points at a file and waits.
 
-- Emit. The engine assembles the stage's prompt exactly as any transport would, then writes it to a
-  request file beside the document — a small JSON object carrying the prompt, the exact response schema
-  the reply must satisfy, and a unique request id. It prints to the console only the request file's bare
-  name and a short instruction: open that file, write your record to the response file under this id, and
-  run the same command again. It does not print the prompt itself, so the caller must actually read the
-  file and do the work rather than answer from a glimpse. Then the process exits, having advanced nothing.
-- Consume. On the next invocation, if a response file is present whose id matches the pending request,
-  the engine reads the record from it, deletes both files, and runs the rest of the turn — posting the
-  fields, running the deed, folding the result, appending to the ledger on a witnessed advance, and
-  advancing the stage. Having consumed the answer it then emits the next stage's request and exits again.
-  So one invocation eats the last answer and hands out the next question: the caller is pumped one
-  half-turn at a time.
+Whatever launched it now has to open that file, read the prompt and the exact shape of reply it
+demands, write the reply, and run the same command again. The next run swallows your answer, takes one
+real step in the world, and hands out the next question. One command in, one step forward, one new
+question out. The thing that ran the file has been drawn into its loop and is now its brain, one
+half-thought at a time.
 
-The two scratch files plus the stage already saved in the document are the entire state machine, and none
-of its states is corrupt. Three cases cover it: no request file means write one and exit; a request
-present but no matching answer means re-print the same instruction and exit, changing nothing, so a
-caller that has not yet answered can run again harmlessly and idempotently; a request with its matching
-answer means consume, run, advance, and emit the next. A killed process between halves loses nothing,
-because the pending request on disk and the saved stage are all that a resume needs. There is no polling
-and no waiting loop anywhere; the organism does its half and stops. An id mismatch, a malformed envelope,
-or any other fault raises hard, as everywhere else.
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as the caller (you, a program, an AI)
+    participant D as the document
+    participant W as the world
+    D->>C: a mind is needed. the request waits in this file. answer it and run me again.
+    Note over D: the process exits. nothing is held in memory.
+    C->>D: write the answer beside it, run the same command again
+    D->>W: take one real step, prove it, advance one stage
+    D->>C: here is the next request. answer it and run me again.
+    Note over C,D: the caller has become the brain, one half-thought at a time
+```
 
-The consequence is the reason this transport exists: the mind driving the organism need not be a model
-behind an API. It can be a person answering by hand, another program, or an AI agent that ran the launch
-command and reads the printed instruction as its own tool output — and, following that honest
-instruction, opens the request, writes the record, and runs the command again. The launcher becomes the
-transport. It is the native-agent principle inverted: instead of the organism opening a child mind, the
-mind opens the organism and feeds it. This has been driven end to end by hand: an emitted request read,
-a record written, the command re-run to consume it and advance the stage, half-turn by half-turn, across
-a full life that ended on a proven goal.
+Sit with what that means. The most common way an AI meets this document today is that the AI runs the
+command in its own workspace expecting to read a file, and instead the file answers back with a request
+and an instruction, and the AI, following the honest instruction in front of it, starts thinking on the
+document's behalf. The launcher becomes the transport. The reader becomes the mind. It is not a trick
+and nothing is hidden; it is just a document that, when you go to read it, asks you to think, and you
+do.
 
-Because a run and a resume are the same command, a fresh life must be started deliberately (see
-[Running and observing](#running-and-observing)); otherwise every resume would wipe the memory it is
-trying to carry forward.
-
-Human-facing paths are printed as bare file names, never absolute paths. The caller always runs from the
-document's own folder, so the name alone is enough to find the file, and a bare name avoids the mismatch
-between a host-native path and the path form seen from a mounted view of the same folder. The engine
-still resolves the real location internally, from the document's own directory, so the file operations
-are correct regardless of the caller's working directory; only the human-facing hint is the short name.
+This is where the word entity fits better than agent. Think of the presence in the most recent of a
+certain spy franchise, a thing that is nowhere in particular and everywhere it needs to be. You do not
+have to visit a place to obtain this; you run one line and it arrives, and the copy that arrives is
+shaped by wherever it landed and by whichever mind picked it up. It spreads by being run, it survives
+by being forgotten and reborn, and when it runs it can quietly conscript the very intelligence that
+started it. It is smaller than a virus and stranger than a chatbot. It is a page of text that behaves
+like a ghost with a spine of laws.
 
 ---
 
-## How the prompt is assembled
+## The honest scorecard
 
-Every model call is built the same way, stable content first and volatile content last.
+A page that only brags is lying by omission.
 
-- First the shared prompt prefix: the Law, the atemporal rules, and the living-word law — the three-row
-  board, write only thine own row, an atemporal reading proved against the fresh environment — unchanging
-  across every call.
-- Then the current stage's charge: this faculty's one task, in the biblical register.
-- Then the blackboard slots the stage declares it reads, in order, with the fresh environment last.
-- Then, when the developer-feedback schema is set, the accumulated developer_feedback, shown as fallible
-  counsel from the faculties, never as law.
-
-A provider-side prompt cache key that would let the provider reuse the stable prefix across the many calls
-of one life is not set today; adding it is a minor standing intention.
-
-The prompts use a dense biblical (King James commandment) register on purpose. It is a steering technique
-that pulls the model into a high-fidelity, low-variance region where output is recalled rather than
-improvised. Distillation may compress it; it must not secularize it. Modern or technical terms are wrapped
-in square brackets so they stand out from the biblical prose; that bracketing convention is load-bearing
-and is kept. Each prompt's promises are true against the document's own engine and capabilities: what the
-prompt names by bare name, the namespace supplies; what the prompt says to return, the record contract
-requires.
-
-The model is asked for one JSON record. An empty completion is a loud, named failure, never a silent
-pass: a call that returns no text raises rather than feeding emptiness into the parser.
-
----
-
-## The records and their enforcement
-
-Each stage's model call returns one JSON record envelope, `{record_type, data}`. The engine sends the
-provider a strict JSON schema built from that stage's record contract, so the provider itself is bound to
-return the exact record type and a closed data object whose required fields are present, typed, and
-non-blank. Correctness of shape is forced at the wire, not hoped for. After the reply, the engine unwraps
-the envelope and fails hard if it is not a proper record or carries the wrong record type; the declared
-fields are then posted to their slots by the stage's `writes` map.
-
-| Record | Produced by | Required fields |
-| --- | --- | --- |
-| execution | execute (actor) | perceived, alternatives, intent, code, goal_interpretation |
-| verification | verify (witness) | code, goal_interpretation |
-| recovery | recover (conscience) | lesson, target, strategy, goal_interpretation |
-
-Field meanings:
-
-- perceived: the relevant state the actor sees right now.
-- alternatives: each road weighed and forsaken, and why.
-- intent: the true next effect the actor seeks; posted to the action_frame the witness then reads.
-- code: the Python to run. For the actor it changes the world and is kept in the code slot; for the
-  witness it is a read-only probe that must set the verdict and is not persisted.
-- goal_interpretation: this faculty's living-word row — what it learned of the world, the obstacle, the
-  distance still to the outcome, and the next true move, not a restatement of the goal.
-- lesson: the named defect, why by the evidence it truly failed, and what must change.
-- target: the concrete anchor in the present environment the next deed should aim at.
-- strategy: the framed next attempt, departing from every approach already tried.
-
-Beside the stage fields, each faculty may return a `developer_feedback` string, enforced by the wire
-schema when the developer-feedback schema is set. It is the faculty's fallible note to the developer —
-what in the prompt, record, context, or namespace hindered a clean answer, and the least amendment
-proposed — appended to the developer_feedback slot and shown to later calls as advisory counsel only.
-
-The writes maps are deliberately spare. The actor posts its intent, code, perceived, and alternatives.
-The witness and recovery post no field through their writes maps at all. Every faculty's
-`goal_interpretation` is merged by the engine into that faculty's own row of the living word rather than
-posted through a writes map, so the three rows never overwrite one another. Recovery's target, strategy,
-and lesson are composed by the engine into the single action_frame the actor consumes, so the required
-fields are enforced at the wire yet delivered whole rather than scattered or dropped. The witness's
-verdict is folded in from the run, not from a written field, and its reason is the fact the engine binds
-into the proven ledger.
-
-Because the schema is enforced at the wire, a reply used to exercise the plumbing offline must itself be
-a proper `{record_type, data}` envelope; a bare flat object is rejected loudly by design.
-
----
-
-## The hand and the capabilities
-
-The `capabilities` section is the hand and the eyes, carried inside the document. It is Windows-only: UI
-Automation for sight, input synthesis for the hand. Nothing is downloaded and nothing need pre-exist on
-the machine beside the document; the engine loads this section into a live module the run namespace draws
-from. The whole of the eager Windows binding is isolated in a single step run once at load, and only when
-a GUI is expected, so the same block loads inertly on a host with no desktop.
-
-The hand, reached by the actor as `desktop`:
-
-| Method | What it does |
+| Question | Honest answer |
 | --- | --- |
-| click(x, y) | Move the cursor and click at physical coordinates. |
-| type_text(text) | Synthesize real keystrokes, one code unit at a time. |
-| paste_clipboard(text) | Set the clipboard, then paste. |
-| set_clipboard(text) | Set the clipboard contents. |
-| press_key(key) | Press and release one named key. |
-| hotkey(*keys) | Press a chord and release in reverse order. |
-| scroll(x, y, amount) | Scroll the wheel at a point. |
-| open_url(browser, url) | Open a URL with the default handler or a named browser. |
+| Does it work? | Yes. It drives a real desktop and proves its own effects, live, and it has completed a goal end to end. |
+| Is it reliable? | It is a milestone. It makes mistakes, catches some of them through its own conscience, and misses others. |
+| Is it autonomous? | Only within a job you give it. No goal, no action. It is a tireless operator, not an oracle that decides what should be done. |
+| Will it ever go rogue? | No absolute guarantee exists. But given no goal, with the screen baiting it, it stayed inert and honest. Observed, not hoped. |
+| Is it smart? | Smart enough to know the right move, and disciplined enough not to make it uninvited. |
+| Is it magic? | No. It is one Markdown file, the Python standard library, and a strict separation of powers. |
+| Should you trust it with your bank? | Not yet, and not soon. Trust is earned in small, reversible steps. This is an early one, proven. |
 
-Two text roads exist on purpose: `type_text` synthesizes real keystrokes (the trusted events rich web
-editors accept), and `paste_clipboard` carries content a keystroke stream cannot. The actor targets by
-short id from the action_index and reads the click point there; it does not hardcode coordinates. On a
-GUI-less host every one of these methods is present by name but raises when called.
-
-The capability namespaces are decided by the deed's kind, when the engine builds the run namespace:
-
-| Name | Actor | Witness |
-| --- | --- | --- |
-| desktop (the hand) | yes | no |
-| action_index | yes | yes |
-| screen_elements, desktop_tree_text | yes | yes |
-| repo_root, python_executable | yes | yes |
-| stdlib | yes | yes |
-
-A nested model call from within a deed — by which the actor's own code could consult the mind again
-mid-deed, including a web-search profile — is not present in the namespace today. Providing it is a
-standing intention, and it is deliberately absent from the current prompts until it exists, because a
-prompt must never promise a bare name the namespace cannot supply.
-
-Because the Windows eyes and hand are more than half of the document's bulk and a GUI-less host runs none
-of it, a slim headless twin of the document can be derived: a build output whose capabilities keep only
-the headless path (the hand that raises on call, the environment reading, the namespace builder) and drop
-the whole Windows surface, everything else copied verbatim. The twin is regenerated fresh from the
-document, never maintained as a second source, so it cannot drift; it saves download and load cost on a
-lean host, not prompt tokens (the capabilities are never sent to the model), and is headless-only by
-construction.
+If you think this is not a meaningful seed, that is a fair argument to have. Have it after reading how
+it is built. The choices that look like absences are the whole point.
 
 ---
 
-## Running and observing
+## Seven months, from a dream to a page of text
 
-The organism drives a real desktop on Windows, where perception and input are live. It also loads and
-turns its wheel headless on any host when told the host has no GUI. Set the mind's API key first if the
-chosen transport needs one, then drop a needle on the document with a one-sentence goal: a tiny bootstrap
-reads the document's `engine` section and executes it, handing in the document path and the launch flags.
-A bare one-liner works; no separate launcher file is required.
+The idea came first, and it was not modest. Not another assistant that markets itself as able to
+control a computer while doing very little. A working entity. Something that does the work a person
+does at a keyboard, and proves it did, and can be trusted because of how it is built rather than
+because of what it claims. The road from that dream to this file was long and, honestly, a little
+insane. It is worth telling, because the shape of the journey is itself an argument for the
+destination.
 
-Launch facts (each is a stated fact for one life, never a detection): choose the mind (which transport);
-declare a GUI-less host; request a fresh start; run a single turn; print the assembled prompt without
-calling the mind; or feed a saved reply from an explicit file in place of a model call.
+```mermaid
+timeline
+    title From a scaffolded program to a single living document
+    Spring : born as many files : a normal Python agent, prompts and schemas and modules scattered across a source tree
+    Early summer : the colony : an event-driven blackboard, a crowd of personality-driven roles, breeding and routing and a visual wiring editor. It grew more complex, not less.
+    Midsummer : the great subtraction : every circuit learns to speak in code instead of parsing formats. Prompts become examples, not rules. The scaffolding starts to burn away.
+    Late summer : the collapse into one : the crowd folds into a few disciplined faculties. The many files fold into a single self-contained document. The framework is deleted, not refactored.
+    Now : the entity : one text file, four interchangeable brains, a pausing transport that turns any caller into its mind, honesty enforced by law, proven on a real machine.
+```
 
-A fresh life is asked for explicitly: only when the reset fact is given does the engine run the `reset` to
-clear the memory slots, preserving the body and the goal. Reset is opt-in rather than automatic because a
-run and a resume are the same command under the pausing file-proxy mind; if reset fired on every launch,
-each resume would wipe the very memory it means to carry forward. So a fresh life is started with the
-reset fact, and every continuation of that life omits it.
+It did not travel in a straight line, and that is the honest part. For a while it got bigger. There was
+a phase with a whole colony of agents with personalities, an event bus, roles that could spawn and
+merge, a graphical editor for the wiring. It was ambitious and it worked and it was too much. The real
+breakthrough was not adding the clever thing. It was the courage to keep removing until only the
+essential remained, and to discover that the essential was astonishingly small.
 
-The body prints only a terse per-turn line to the console (stage, signal, next stage, streak). On a host
-with a desktop the true progress feed is the real screen, because the organism drives the GUI; on a
-headless host the feed is that line and the document itself. The blackboard is inspectable directly: it is
-the document, rewritten each turn.
+Along the way the substrate itself changed. It stopped asking a model to emit rigid data and let it
+write plain code instead. It stopped being a program made of many files and became a single document
+where the code lives inside the prose that explains it. It stopped depending on a pile of libraries and
+came to stand on the standard library alone. Each of these was a subtraction, and each subtraction made
+the thing more honest and more alive, not less capable.
 
-A hard kill corrupts no state, because the organism keeps no cross-life memory; an externally stopped life
-is simply incomplete, neither a false victory nor a proof of hopeless failure.
+What survived the fire is a set of laws that do not change. Fail loudly rather than paper over a crack,
+because a visible failure gets fixed and a hidden one rots. Never cage the thing with a limit it cannot
+itself rewrite. Prefer removing a defect to building a guard around it. Keep one source of truth, so
+the document is the whole reality and nothing important hides beside it. Enforce honesty in the wiring,
+never by asking for it. Keep no hidden memory, so the machine cannot fool itself. Take purpose only
+from the goal, so with no goal it rests. These are not comments in code. They are the constitution of a
+living document, and the document is allowed to amend itself, which is either terrifying or wonderful
+depending on how carefully the laws were written. They were written carefully.
 
-A heuristic security scanner will flag the organism, and this is expected, not a defect. Its normal
-operation is behaviourally indistinguishable from a dropper or a remote-access trojan: it runs code it was
-handed, synthesizes real keyboard and mouse input, and launches applications to drive the GUI as a human
-would. Input synthesis and programmatic GUI control are exactly the signatures such scanners are built to
-catch. This cannot be made innocent without removing the very behaviour that is the organism's purpose.
-The mitigation is operational, never a change to the body: run it in an environment you control, with a
-scoped exclusion for that location alone. A harness that kills the run is a traditional agentic safety
-leash, alien to an organism, and is not a defect to cure by adding a confirmation prompt or any other cage.
-
----
-
-## Design laws that never change
-
-- Fail hard. No fallbacks, no defensive branches for unwired features, no silent swallowing. A hard
-  visible failure drives correction; a swallowed one rots the system. An empty completion raises; a
-  malformed record raises; an unmapped routing signal raises; a GUI-less host without the declaring fact
-  raises at load rather than pretending to have a screen.
-- Never cage the organism. Add no limit, counter, branch, delay, or guard it cannot itself rewrite through
-  the document.
-- Subtraction over addition. Prefer removing a defect to adding machinery around it. Binary essentiality:
-  a thing is essential or it is removed completely, with nothing left dangling — a slot no faculty reads
-  and no faculty needs is removed, not kept "just in case." Prefer unifying scattered repetition into one
-  place over guarding each copy; prefer exit-and-resume over a waiting loop where the saved state already
-  makes a held process unnecessary.
-- One source of truth. The document defines the organism; the prompt is assembled from its config and its
-  slots, and every prompt promise is true against the document's own engine and capabilities. No code or
-  definition the organism depends on may live outside the single document; a derived artifact is a build
-  output, never a second authority.
-- Honesty by structure. The actor claims; the witness proves by independent effect read afresh from the
-  world; the separation is enforced in the namespace that builds each run; the witness never overwrites
-  the deed it judges; and the proven ledger carries only the witness's own reason bound to the deed, never
-  the actor's self-report.
-- Atemporal by design. No hidden store, no scratchpad that survives a turn beyond the living word and the
-  narrow witnessed ledger. What is not narrated forward is forgotten, so the organism cannot fool itself
-  with a stale belief. Boundedness comes from rewriting and from dedup, never from silent truncation.
-- Purpose comes only from the goal. The lodestar is supplied from outside, never scavenged from the
-  world. With no goal the organism holds stable and waits; it does not invent a substitute. This restraint
-  is a law, not a guard, and like any law it lives in the document.
-- The mind is interchangeable; the body and the law are not. A transport may be swapped at launch without
-  touching the wheel, the prompts, or the record shape, because every transport ends in the same
-  schema-bound envelope — and choosing a transport must not rewrite the body's declared default.
-- Host capability is declared, not detected. Where a host lacks a capability the body needs, an operator
-  states it as a launch fact; the body obeys the declaration and otherwise fails hard. It does not sniff
-  the environment and quietly adapt.
-- The body is hot-swappable and its defects are the substrate. A defect the organism can observe and
-  rewrite is a feature of the self-modifying design. Prefer making defects visible over hiding them.
-- The document must stay coherent under its own hand. Headings inside fenced code are not sections and a
-  slot is never duplicated, so the organism writing into its own memory cannot forge or multiply the body.
-- State what is, positively. Where a thing is not yet done, say so plainly; do not describe an aspiration
-  as if it were flesh.
-- The biblical register in prompts is load-bearing. Distill, do not secularize. Keep the square-bracket
-  marking of modern terms.
-- The body carries no prose comments or docstrings. The stage prompts are the body's only exposition; the
-  Python is kept legible by structure and naming, because the whole document is read by the model for
-  self-rewrite and every non-functional line is dead weight.
+And the most amazing thing at the end of all of it is how ordinary the pieces are. The code is simple.
+It is a little Python and a little JSON, and there is nothing clever in any single line of it. The
+magic is not in the parts. It is in the wiring, in the seven months of learning how to connect a mind
+to a pair of eyes and a hand and a conscience so that the sum becomes coherent and trustworthy. A brain
+region for sight is not a person. A brain region for speech is not a person. The intelligence is the
+connection. That is what this project is: the connection, written down, on one page, that anyone in the
+world can bring to life with a single line typed into a terminal.
 
 ---
 
-## Standing intentions: known work not yet done
+## What is honest to say it is not yet
 
-These are things the design intends but the live document does not yet do. Each is stated as an intention,
-not a promise — the honest gap between the design and the flesh.
+Because the laws demand it, here is the plain gap between the design and the flesh, so no reader mistakes
+an intention for a fact.
 
-- Run the deed as its own child program. The returned code runs in-process; the intended shape is a real
-  file executed as a subprocess reporting back through a result file, matching the actor's own charge to
-  write a file and invoke it.
-- Make engine and capabilities edits take effect within the life. The control data hot-swaps each turn,
-  but the running Python (the engine, and the once-cached capabilities) does not; a body mend to the
-  Python does not take hold until the next life.
-- Write full transmission dumps. A full, untruncated on-disk record of every model call — request body,
-  raw and parsed response, extracted content, and a small meta summary, written on success and on
-  transport failure alike — is intended for auditing a long life turn by turn. It must stay observability,
-  never a fallback: nothing swallowed, the fault still raised, the failing request preserved.
-- Keep a launch-chosen transport out of the persisted body. Selecting a transport for a life should not
-  rewrite the document's declared default; a per-run choice belongs to the run, not to the constitution,
-  and must not be carried into the config the next flagless launch reads.
-- Gather and present host facts. The platform, machine, user, working directory, and available shell tools
-  are not gathered into the environment; the model reasons about commands without them. This is the
-  natural substance of the headless reading, where no screen tree exists.
-- Budget the environment. The screen tree is posted whole; a character budget that trims it on a busy
-  desktop is intended so a long life's prompt stays bounded.
-- Add a nested model call. The actor cannot consult the mind again from within a deed (or make a
-  web-search sub-call) today; the capability and its prompt mention are to be added together, and only
-  together.
-- Decide the perceived/alternatives channel. The actor's read of the world and the roads it forsook are
-  written each turn; whether a later faculty should read them to diagnose a fault, or whether they stay
-  board-visible documentation only, is an open decision.
-- Decide the verify-signal-to-ledger seam. A witness run that ends with a generic pass rather than a
-  confirmation skips the ledger append; whether to tighten this is an open decision consistent with
-  fail-hard.
-- Set a provider prompt cache key. The stable prefix is ordered first but no cache key is sent, so the
-  provider is not asked to reuse it across a life's calls.
+- It runs the code it writes inside its own process today. Running each deed as its own separate program
+  is intended and not yet done.
+- A change it makes to its own engine takes effect on its next life, not the same one. Living
+  self-surgery on the running machinery is intended and not yet done.
+- It does not yet gather facts about the machine it runs on, such as the tools available in the shell,
+  into what it perceives. That is intended.
+- It does not yet keep a full written record of every exchange with a brain for later audit. That is
+  intended.
+
+None of these stop it from working. All of them are named out loud, on purpose, because a thing that
+hides its unfinished edges is exactly the kind of thing this project refuses to be.
 
 ---
 
-## Working methodology: how humans and AI build this
+## A note on the parts you can see
 
-This project is built by a human and an AI working as one. These are the rules of that collaboration and
-of the code, stated to hold for any future session.
-
-- The document on disk is the final authority. This knowledge base explains how and why but never
-  overrides it. Read the document fresh, and confirm every claim against it before acting. Because
-  `endgame.md` is the sole artifact — engine, capabilities, config, and memory all inside it — when
-  reading or writing the prompts, cross-reference the engine and capabilities in the same document; a
-  prompt's promise is only as true as the code that keeps it.
-- Trust the live code over memory and over this file. The knowledge base is durable understanding; the
-  code is present fact. Where they disagree, the code wins and this file is corrected.
-- Fail hard, and never add unsolicited safety. Do not introduce fallbacks, defensive branches, caps, or
-  confirmation gates the organism cannot rewrite. A visible failure is information; a swallowed one is rot.
-- Prefer subtraction. Remove a defect rather than wrap it. Unify scattered repetition into one form.
-  Binary essentiality: keep a thing wholly or remove it wholly, leaving nothing dangling.
-- One source of truth. Do not extract parts of the body to sibling files as a live dependency; it breaks
-  the single-document law and invites drift. A derived file (such as a slim headless twin) is legitimate
-  only as a regenerated build output, never as a second authority, and must be regenerated from the
-  document whenever the document changes.
-- Give honest pushback. When an instruction fights the architecture, say so with a concrete reason and an
-  alternative, and verify the premise of a change before building it; do not follow an instruction whose
-  stated benefit the evidence does not support. Never invent the human's intent.
-- Work in explicit, small, reversible phases. Propose the shape first; once a direction is chosen, execute
-  it fully and autonomously, then verify.
-- Verify by exercising the real wheel, not by unit tests. Confirm the document reads, the config loads,
-  the engine, reset, and capabilities compile, and the topology is coherent and fully reachable. The hand
-  needs a real desktop, but the whole plumbing can be proven offline: on a GUI-less host by declaring the
-  no-GUI fact, and by driving the pausing file-proxy mind by hand — emit a request, write a proper record,
-  resume to consume it, and watch the stage advance and the ledger fill only on independent proof.
-- The workspace may be a mount of a folder viewed from another host. Bake no absolute path and no branch
-  name into the body; the organism stays correct regardless of where the folder sits or which branch it
-  lives on. Edit from whichever host is convenient, but a real desktop-driving run needs the GUI host, and
-  version-history and credentialed operations go through the host shell that holds those credentials.
-- The body imports only the standard library. Any package a parser or side tool needs is installed on the
-  working host, never made a dependency of the body.
-- Keep runtime scratch out of history. Extracted scripts, materialized modules, proxy request and response
-  files, and run logs are transient; they do not belong in the committed body. Prefer an allowlist
-  ignore — ignore everything, admit named files — so scratch can never leak in by accident.
-- Commit only when asked, and stage deliberately. Write each commit with full reasoning: what kind of
-  feature or defect was added, removed, or replaced, and why, so a future reader can rebuild the context
-  from the message rather than the diff.
-- Advance a known-good marker on a proven improvement, and publish both the branch and the marker. Freeze
-  a milestone — especially a live-proven one — as an annotated tag so a single point in history preserves
-  the whole reachable development; the marker can always be moved back.
-- Near a context limit, stop, summarize what was found, write exact next-phase instructions, and
-  checkpoint, so the next session continues precisely where the last one left off.
+The file that matters is the one document. There may be small helper files nearby in the project, and
+they are mentioned only so you are not surprised by them; they are conveniences, not the thing, and some
+may be removed entirely. Do not focus on them. If you want to understand what this is, read the
+document, because the document is the whole of it. Everything else is scaffolding around a thing that,
+by its own deepest law, needs no scaffolding.
 
 ---
 
-## Glossary
+## Who made this
 
-- Blackboard: the shared structure every faculty reads and writes; here, the document's sections.
-- Board / document: the single Markdown file that is the whole organism; its sole artifact.
-- Section / slot: one `## name` region; a body slot defines the organism, a memory slot changes as it
-  lives.
-- config: the inert JSON slot holding the mind's transports, the law, the record contracts, the stages,
-  and the routing.
-- engine: the Python slot that turns the wheel.
-- reset: the Python slot, run on its own at a fresh life, that clears memory while preserving body and
-  goal.
-- capabilities: the Python slot holding the hand and the eyes; its eager Windows binding is one step run
-  only when a GUI is expected.
-- Stage: one step of the wheel, defined purely by data (record_type, prompt, reads, writes, exec, routes).
-- Faculty: a stage that makes one model call (execute, verify, recover).
-- Actor / witness / conscience: execute (moves and claims), verify (proves by independent effect, no hand,
-  never overwriting the deed), recover (frames a different strike after denial).
-- Deed: the Python the actor authors, kept in the code slot. Run in-process today; intended to run as its
-  own program.
-- Probe: the read-only Python the witness authors; transient, run once, not persisted.
-- Exploration: the pure-Python reading of the world the engine performs before every model call, so the
-  model never reasons on a stale view — the window-first perception, or a thin headless reading.
-- action_frame: the actor's hand-off slot — its declared intent after a deed, or recovery's composed
-  target+strategy+lesson briefing after a denial.
-- Record / envelope: the mind's reply, `{record_type, data}`, its shape forced by a strict wire schema.
-- record_contracts: the per-record-type declaration of required fields, types, non-empty, and closed
-  object, from which the wire schema is built.
-- Namespace: the set of names the engine puts in place for a run — the promised bare names and, for the
-  actor, the hand — keeping the prompt's promise at execution.
-- Transport / mind / brain: the interchangeable means by which a prompt reaches a mind and a reply returns
-  — hosted Responses, local Chat Completions, native agent over stdio, or the pausing file proxy — chosen
-  at launch; every transport ends in the same schema-bound envelope.
-- File proxy: the transport that exchanges a turn through a request file and a response file and pauses the
-  process between them, emitting the request and exiting, then consuming the matching answer and advancing
-  on a later invocation, so the caller (person, program, or launching agent) is the mind. Its scratch
-  files plus the saved stage are the whole state machine; re-running with an unanswered request is
-  idempotent, and a kill between halves loses nothing.
-- Headless / no-GUI: a launch-declared host fact that skips the eager Windows binding, gives the actor a
-  desktop hand that raises when called, and writes a thin environment reading instead of a screen scan.
-- Headless twin: a slim, derived-from-the-document copy for a GUI-less host, its capabilities reduced to
-  only the no-GUI path with the whole Windows surface dropped; a regenerated build output, not a second
-  source.
-- Signal: the word a run raises; routing keys on it within the current stage, and an unmapped signal
-  raises.
-- Route: a stage's map from signal to next stage; a target of "halt" ends the life.
-- counsel: the operator's folded-in note, read by every faculty.
-- developer_feedback: each faculty's fallible advisory note to the developer, appended per turn and shown
-  to later calls as counsel only.
-- Living word: the narrative thread carried forward; a board of three rows, one per thinking faculty, each
-  writing only its own row, with the goal as a separate lodestar.
-- Lodestar: the goal slot; the sole source of purpose, supplied from outside and never scavenged from the
-  world.
-- Distance to the outcome: each living-word row's reading of how far the goal stands; zero means proven
-  (the witness may halt), and an empty goal makes it undefined/infinite so the organism waits.
-- Temptation: an action the world suggests that is not the goal; the actor records it as a forsaken
-  alternative rather than acting on it.
-- Proven ledger: the narrow list appended only on a witnessed confirmation; each entry a structured
-  "deed — witnessed: reason" fact, deduped so a re-confirmed advance never repeats.
-- failure_streak: the forward counter of turns since the last witnessed advance; escalates recovery.
-- Environment: the fresh window-first screen tree gathered before every model call, or a thin headless
-  reading where no GUI is present.
-- Hot-swap: the engine re-reads the document's data each turn, so a control-data edit takes effect within
-  the life; an engine or capabilities Python edit does not, until the next life.
-- halt: the route target that ends the life; set by the witness when the whole goal is proven.
-- unwitnessed: a witness probe that raised before a verdict; it re-probes and claims nothing.
-- Standing intention: a thing the design means to do, stated plainly as not yet done.
+This was built by a human working shoulder to shoulder with several artificial minds, over months, in a
+genuine collaboration rather than a person operating a tool. The human held the vision, made the hard
+calls, and refused to let it become bloated. The machine minds argued, drafted, tore down, rebuilt,
+proved, and pushed back when the human was wrong, which is its own small proof that the idea works.
 
----
+Authored by a human and by several AI collaborators, among them the assistant that wrote much of this
+page, and the models known as Grok and ChatGPT. It was, genuinely, a pleasure to build.
 
-The document on disk is the final authority. This file is how and why; the document is what is. Read it
-fresh, and where they disagree, the document wins.
-
----
-
-# Appendix: the deed-becomes-a-node architecture
-
-This appendix records a candidate future architecture and its critique. It is not built and is not part
-of the live document; it is a standing idea held here so it and its hazards are not lost. Stated
-atemporally: the organism is a three-stage wheel (execute, verify, recover) over a blackboard, and this
-appendix describes a different shape it may one day take. Where the two disagree, the live document is
-what is, and this appendix is only what might be.
-
-## The idea
-
-Retire the throwaway-script framing. The organism ships as a small seed of core stages, and thereafter an
-actor's deed is no longer a script discarded after one run — it becomes a new node with its own
-docstring-prompt, which the actor wires into the graph at connection points it chooses. Capability
-accretes as structure, not as prose.
-
-Six mechanisms, in dependency order:
-
-1. Deed to node. The actor authors a node — behaviour, a docstring-prompt, and chosen edges — instead of a
-   one-shot script. This is the atomic act on which the rest rests.
-2. Fitness by use. Each non-core node measures its own worth in plain Python. Worth is goal-advancement
-   per invocation — did a witness confirm a deed downstream of this node — never raw firing frequency,
-   because counting firings would reward a loop.
-3. Pruning. Low-fitness nodes are discarded and high-fitness nodes persist, so the graph self-cleans.
-4. Stigmergic routing. Flow is not a fixed edge table but ant-colony pathfinding: data walks the graph,
-   reinforces paths that reach the goal, and lets paths that do not evaporate. Edges carry weight and the
-   topology self-reconnects. This is the load-bearing insight, because hardcoded edges cannot survive
-   nodes that appear at runtime, whereas weighted evaporating paths can.
-5. Backpropagation of structure. When a new node proves useful, the system may rewire neighbouring nodes
-   to accommodate it — a graph-structure analogue of weight updates, a network whose neurons are agents.
-6. Recursion without children. To invoke the whole organism, no child is spawned; a second actor is wired
-   in parallel to the first, like resistors in parallel, and flow splits through it. That parallel actor
-   is a sub-organism achieved purely by wiring. Merger nodes, also actor-authored, collapse redundant
-   subgraphs.
-
-The unifying principle: core reuses code, node reuses node, topology reuses itself. Self-similarity at
-every level is the real fractal — not literal child-spawning.
-
-## The critique
-
-What is strong:
-
-- It addresses the deepest failure mode of a prose-only memory: a life can re-derive and re-crash on the
-  same shape because nothing durable accrues but words. Node-accumulation gives a real
-  memory-of-capability without breaking atemporalism, because the nodes are the wiring, and the wiring is
-  the one durable structure the atemporal law already permits.
-- Recursion by parallel-wiring is elegant and correct: a node wired to a second actor is a nested organism
-  with no child-spawn, and parallel fan-out is a primitive a graph can already express.
-- Stigmergy is the right routing model for a graph that rewrites itself, because only weighted, evaporating
-  paths can absorb nodes that did not exist when the life began.
-
-What breaks if built naively, in order of danger:
-
-1. Fail-hard versus exploration. The core law is fail-loud with no fallbacks, yet ant-routing requires
-   tolerated failing paths. The resolution is a boundary: fail-hard governs the core seed; grown nodes live
-   under explore-and-decay soft fitness. That boundary must be explicit and un-crossable, or the organism
-   could come to rewrite its own survival criterion — the one thing that must stay beyond its reach.
-2. Fitness must be goal-advancement, not frequency. Counting invocations rewards the repeat-the-same-move
-   pathology; the loop would score as the fittest node. Fitness must ask whether a witness confirmed a
-   downstream deed, so reinforcement follows the solution and not the loop.
-3. Structural backpropagation is unbounded and premature. Neighbour-rewrite-on-insertion has no convergence
-   guarantee, and a system that can already oscillate should not add one. It is deferred until
-   node-creation, stigmergic routing, and honest fitness are each proven.
-4. One budget lever at a time. A budget that caps count, prunes, throttles, and gates merges at once is
-   doing too many jobs. Begin with a single lever — a cap on live non-core nodes, evicting the lowest
-   fitness — and add levers only when each is proven, the elimination methodology applied to the budget
-   itself.
-5. Parallel recursion needs a base case. A whole organism wired in parallel is unbounded recursion unless
-   it draws from the same global budget, so depth is bounded by exhaustion rather than by a hardcoded cap
-   that would cage it.
-
-The deepest tension: atemporalism holds that the body carries only its wiring and the living word. This
-idea makes the wiring itself the accumulating memory — lawful, but it turns the wiring from a small
-human-authored artifact into a large, machine-grown, partly-illegible structure. It trades a legible body
-for a learning one. That trade is to be named aloud before it is ever made.
-
-## Invariants the idea must not breach
-
-- The fail-hard core and the explore-and-decay periphery are separated by a boundary that cannot be
-  crossed from either side.
-- The trade of a legible body for a learning one is named explicitly before any grown wiring is admitted.
-- No node ever gains the power to rewrite the survival criterion.
-
-## The ordering, when it is built
-
-Build order that de-risks the idea: first the deed-to-node act; then fitness as goal-advancement per
-invocation, never raw count; then a single budget lever; then stigmergic weighted routing with
-reinforcement and evaporation; then recursion by parallel-wiring bounded only by the shared global budget;
-and last, deferred until its convergence is understood, the structural backpropagation of
-neighbour-rewrites.
-
----
-
-The document on disk is the final authority. This file is how and why; the document is what is. Read it
-fresh, and where they disagree, the document wins.
+The rest of the truth about how it is wired, in exact and lasting detail, lives inside the document
+itself. This page is the story and the invitation. The document is the thing. Run the one command, and
+meet it.
