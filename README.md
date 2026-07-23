@@ -54,152 +54,45 @@ goal is independently proven done, or you close the window.
 
 ---
 
----
+## The flags
 
-## Every command, one line each
+Everything after the board path is passed straight through to the engine. Append any of these to any command below, in any combination:
 
-Combine the flags freely. `--mode` selects the brain and transport: `xai` (xAI Responses, reads `XAI_API_KEY`), `lmstudio` (LM Studio Chat Completions), `acp` (native grok agent over stdio), or `file_proxy` (answer `runtime_request.json` in `runtime_response.json`). `--no-gui` runs on a host with no desktop (Linux / WSL2): the body loads, environment exploration still feeds the request, and any GUI deed faults honestly. `--once` runs a single turn and stops. `--dry` prints the assembled prompt and exits without calling the model. `--inject <file>` feeds a saved reply instead of calling the model (the transport/mode is then unused). Every line below is one self-contained command — copy, paste, run.
+- `--mode xai` — brain is xAI Responses (`grok`); reads your `XAI_API_KEY`.
+- `--mode lmstudio` — brain is a local LM Studio Chat Completions server.
+- `--mode acp` — brain is a native `grok agent` spoken to over stdio.
+- `--mode file_proxy` — no direct call: the turn is published to `runtime_request.json`; you answer in `runtime_response.json` as `{"id":"copied request id","record":{...}}`.
+- `--no-gui` — run on a host with no desktop (Linux / WSL2). The body still loads and environment exploration still feeds the request; any desktop deed faults honestly instead of crashing at load.
+- `--once` — run a single turn, then stop.
+- `--dry` — print the assembled prompt and exit without calling the model.
+- `--inject <file>` — feed a saved reply from `<file>` instead of calling the model (mode/transport is then unused).
 
-### PowerShell · download the board, then run
+Pick one `--mode`. Add `--no-gui`, `--once`, `--dry`, or `--inject <file>` as needed. Example: `--mode xai --once --no-gui`.
 
-```powershell
-iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -OutFile .\endgame.md;python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode xai
-iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -OutFile .\endgame.md;python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode xai --once
-iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -OutFile .\endgame.md;python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode xai --dry
-iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -OutFile .\endgame.md;python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode xai --no-gui
-iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -OutFile .\endgame.md;python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode xai --once --no-gui
-iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -OutFile .\endgame.md;python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode xai --dry --no-gui
+## The commands
 
-iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -OutFile .\endgame.md;python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode lmstudio
-iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -OutFile .\endgame.md;python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode lmstudio --once
-iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -OutFile .\endgame.md;python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode lmstudio --dry
-iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -OutFile .\endgame.md;python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode lmstudio --no-gui
-iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -OutFile .\endgame.md;python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode lmstudio --once --no-gui
-iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -OutFile .\endgame.md;python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode lmstudio --dry --no-gui
+Four one-liners. Two shells, each in a download-and-run form and a run-what-you-already-have form. The flags are yours to append.
 
-iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -OutFile .\endgame.md;python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode acp
-iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -OutFile .\endgame.md;python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode acp --once
-iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -OutFile .\endgame.md;python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode acp --dry
-iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -OutFile .\endgame.md;python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode acp --no-gui
-iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -OutFile .\endgame.md;python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode acp --once --no-gui
-iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -OutFile .\endgame.md;python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode acp --dry --no-gui
-
-iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -OutFile .\endgame.md;python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode file_proxy
-iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -OutFile .\endgame.md;python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode file_proxy --once
-iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -OutFile .\endgame.md;python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode file_proxy --dry
-iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -OutFile .\endgame.md;python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode file_proxy --no-gui
-iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -OutFile .\endgame.md;python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode file_proxy --once --no-gui
-iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -OutFile .\endgame.md;python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode file_proxy --dry --no-gui
-```
-
-### PowerShell · run a board you already have
-
-```powershell
-python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode xai
-python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode xai --once
-python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode xai --dry
-python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode xai --no-gui
-python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode xai --once --no-gui
-python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode xai --dry --no-gui
-
-python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode lmstudio
-python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode lmstudio --once
-python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode lmstudio --dry
-python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode lmstudio --no-gui
-python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode lmstudio --once --no-gui
-python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode lmstudio --dry --no-gui
-
-python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode acp
-python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode acp --once
-python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode acp --dry
-python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode acp --no-gui
-python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode acp --once --no-gui
-python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode acp --dry --no-gui
-
-python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode file_proxy
-python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode file_proxy --once
-python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode file_proxy --dry
-python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode file_proxy --no-gui
-python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode file_proxy --once --no-gui
-python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode file_proxy --dry --no-gui
-```
-
-### Bash (Linux / WSL2 / macOS) · download the board, then run
+Bash (Linux / WSL2 / macOS) — download the board, then run:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -o endgame.md && python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode xai
-curl -fsSL https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -o endgame.md && python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode xai --once
-curl -fsSL https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -o endgame.md && python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode xai --dry
-curl -fsSL https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -o endgame.md && python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode xai --no-gui
-curl -fsSL https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -o endgame.md && python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode xai --once --no-gui
-curl -fsSL https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -o endgame.md && python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode xai --dry --no-gui
-
-curl -fsSL https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -o endgame.md && python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode lmstudio
-curl -fsSL https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -o endgame.md && python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode lmstudio --once
-curl -fsSL https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -o endgame.md && python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode lmstudio --dry
-curl -fsSL https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -o endgame.md && python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode lmstudio --no-gui
-curl -fsSL https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -o endgame.md && python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode lmstudio --once --no-gui
-curl -fsSL https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -o endgame.md && python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode lmstudio --dry --no-gui
-
-curl -fsSL https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -o endgame.md && python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode acp
-curl -fsSL https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -o endgame.md && python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode acp --once
-curl -fsSL https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -o endgame.md && python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode acp --dry
-curl -fsSL https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -o endgame.md && python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode acp --no-gui
-curl -fsSL https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -o endgame.md && python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode acp --once --no-gui
-curl -fsSL https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -o endgame.md && python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode acp --dry --no-gui
-
-curl -fsSL https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -o endgame.md && python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode file_proxy
-curl -fsSL https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -o endgame.md && python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode file_proxy --once
-curl -fsSL https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -o endgame.md && python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode file_proxy --dry
-curl -fsSL https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -o endgame.md && python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode file_proxy --no-gui
-curl -fsSL https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -o endgame.md && python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode file_proxy --once --no-gui
-curl -fsSL https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -o endgame.md && python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode file_proxy --dry --no-gui
+curl -fsSL https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -o endgame.md && python3 -c 'import sys;p=sys.argv[1];exec(open(p,encoding="utf8").read().split("## engine\n```python\n")[1].split("\n```")[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode xai
 ```
 
-### Bash · run a board you already have
+Bash — run a board you already have:
 
 ```bash
-python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode xai
-python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode xai --once
-python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode xai --dry
-python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode xai --no-gui
-python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode xai --once --no-gui
-python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode xai --dry --no-gui
-
-python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode lmstudio
-python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode lmstudio --once
-python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode lmstudio --dry
-python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode lmstudio --no-gui
-python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode lmstudio --once --no-gui
-python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode lmstudio --dry --no-gui
-
-python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode acp
-python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode acp --once
-python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode acp --dry
-python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode acp --no-gui
-python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode acp --once --no-gui
-python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode acp --dry --no-gui
-
-python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode file_proxy
-python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode file_proxy --once
-python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode file_proxy --dry
-python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode file_proxy --no-gui
-python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode file_proxy --once --no-gui
-python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode file_proxy --dry --no-gui
+python3 -c 'import sys;p=sys.argv[1];exec(open(p,encoding="utf8").read().split("## engine\n```python\n")[1].split("\n```")[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --mode xai
 ```
 
-### Inject a saved reply — no model call, transport/mode ignored
+PowerShell — download the board, then run:
 
 ```powershell
-iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -OutFile .\endgame.md;python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --inject reply.json
-iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -OutFile .\endgame.md;python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --inject reply.json --no-gui
-python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --inject reply.json
-python -c 'import sys;p=sys.argv[1];s=open(p,encoding=\"utf8\").read();exec(s.split(\"## engine\n```python\n\",1)[1].split(\"\n```\",1)[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --inject reply.json --no-gui
+iwr https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -OutFile .\endgame.md;python -c 'import sys;p=sys.argv[1];exec(open(p,encoding=\"utf8\").read().split(\"## engine\n```python\n\")[1].split(\"\n```\")[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode xai
 ```
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -o endgame.md && python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --inject reply.json
-curl -fsSL https://raw.githubusercontent.com/wgabrys88/endgame-ai/lego-refactor/endgame.md -o endgame.md && python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --inject reply.json --no-gui
-python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --inject reply.json
-python3 -c 'import sys;p=sys.argv[1];s=open(p,encoding="utf8").read();exec(s.split("## engine\n```python\n",1)[1].split("\n```",1)[0],{"BOARD":p,"ARGV":sys.argv[2:]})' ./endgame.md --inject reply.json --no-gui
+PowerShell — run a board you already have:
+
+```powershell
+python -c 'import sys;p=sys.argv[1];exec(open(p,encoding=\"utf8\").read().split(\"## engine\n```python\n\")[1].split(\"\n```\")[0],{\"BOARD\":p,\"ARGV\":sys.argv[2:]})' .\endgame.md --mode xai
 ```
