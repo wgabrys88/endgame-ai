@@ -229,9 +229,13 @@ def write_board(path, sections, order):
     pathlib.Path(path).write_text(body.rstrip() + "\n", encoding="utf-8")
 
 
+def fenced(text):
+    m = re.search(r"```(?:\w+)?\s*(.*?)```", text, re.S)
+    return m.group(1).strip() if m else ""
+
+
 def get_config(sections):
-    m = re.search(r"```(?:json)?\s*(.*?)```", sections["config"], re.S)
-    return json.loads(m.group(1) if m else sections["config"])
+    return json.loads(fenced(sections["config"]) or sections["config"])
 
 
 def strip_fence(s):
@@ -443,16 +447,15 @@ def caps():
     global _CAPS
     if _CAPS == "unloaded":
         sections, _order = read_board(BOARD)
-        src = sections.get("capabilities", "")
-        m = re.search(r"```(?:python)?\s*(.*?)```", src, re.S)
-        if not m or not m.group(1).strip():
+        src = fenced(sections.get("capabilities", ""))
+        if not src:
             _CAPS = None
         else:
             import types
             mod = types.ModuleType("capabilities")
             mod.BOARD = BOARD
             mod.NO_GUI = flag("--no-gui")
-            exec(m.group(1), mod.__dict__)
+            exec(src, mod.__dict__)
             _CAPS = mod
     return _CAPS
 
@@ -597,13 +600,12 @@ def turn(path, dry, inject, mode):
 
 def factory_reset(path):
     sections, _order = read_board(path)
-    src = sections.get("reset", "")
-    m = re.search(r"```(?:python)?\s*(.*?)```", src, re.S)
-    if not m or not m.group(1).strip():
+    src = fenced(sections.get("reset", ""))
+    if not src:
         raise RuntimeError("no `## reset` script section found; cannot factory reset")
     here = pathlib.Path(path).resolve().parent
     rp = here / "reset.py"
-    rp.write_text(m.group(1).strip() + "\n", encoding="utf-8")
+    rp.write_text(src + "\n", encoding="utf-8")
     subprocess.run([sys.executable, str(rp), str(path)], cwd=str(here), check=True)
 
 
