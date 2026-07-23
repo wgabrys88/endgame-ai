@@ -1149,9 +1149,9 @@ class UiaScanner:
             name = _to_str(_cached(element, PID_NAME)) or _to_str(_current(element, PID_NAME))
             class_name = _to_str(_cached(element, PID_CLASS_NAME))
             pattern_values: dict[str, str] = {}
-            for pid, label in ((PID_VALUE_PATTERN, "Value"), (PID_TEXT_PATTERN, "Text"), (PID_LEGACY_PATTERN, "LegacyIAccessible")):
+            for pid, label in ((PID_VALUE_PATTERN, "Value"), (PID_LEGACY_PATTERN, "LegacyIAccessible")):
                 pattern_values.update(self._pattern_text(_pattern(element, pid), label))
-            text_full = pattern_values.get("text") or pattern_values.get("text_ranges") or pattern_values.get("value") or pattern_values.get("legacy_value") or pattern_values.get("legacy_name") or name or ""
+            text_full = pattern_values.get("value") or pattern_values.get("legacy_value") or pattern_values.get("legacy_name") or name or ""
             px, py = (rect["left"] + rect["right"]) // 2, (rect["top"] + rect["bottom"]) // 2
             return {
                 "id": _node_id(runtime_id, hwnd, rect),
