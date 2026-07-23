@@ -5,3 +5,5 @@
 !.gitattributes
 !.gitignore
 !endgame.md
+!make_headless_twin.py
+!endgame-headless.md
