@@ -268,7 +268,6 @@ def _extract_content(obj):
 
 
 def _record_response_format(cfg, record_type):
-    """Build the shared strict json_schema body from the record contract."""
     contract = cfg["record_contracts"][record_type]
     data_properties = {key: {} for key in contract["required"]}
     for key, type_name in contract.get("types", {}).items():
@@ -439,8 +438,6 @@ def call_llm(cfg, stage, prompt_text):
 
 _CAPS = "unloaded"
 def caps():
-    """Load the Windows hand from this board's own `## capabilities` python block.
-    Fully self-contained: nothing is downloaded and no sibling file is required."""
     global _CAPS
     if _CAPS == "unloaded":
         sections, _order = read_board(BOARD)
@@ -479,7 +476,6 @@ def run_exec(code, ns_kind, sections):
 
 
 def refresh_environment(sections):
-    # [PORT] node_guidance folded here: read+clear guidance.txt into `counsel`.
     g = pathlib.Path(BOARD).resolve().parent / "guidance.txt"
     if g.exists():
         note = g.read_text(encoding="utf-8").strip()
@@ -506,9 +502,6 @@ def _render_living_word(rows):
 
 
 def _set_living_word_row(sections, faculty, sentence):
-    """Merge one faculty's atemporal reading into its own row of the three-row
-    living word, leaving the other faculties' rows intact. Rebuilt from the canonical
-    skeleton each turn so a legacy single-string slot self-heals into the table."""
     rows = _parse_living_word(sections.get("living_word", ""))
     rows[faculty] = str(sentence or "").strip().replace("\n", " ")
     sections["living_word"] = _render_living_word(rows)
@@ -555,13 +548,8 @@ def turn(path, dry, inject, mode):
     for field, tag in stage.get("writes", {}).items():
         if field in data:
             sections[tag] = str(data[field])
-    # Living word is a three-row board: each faculty writes only its own row via its
-    # goal_interpretation; the engine merges it so the other rows survive the turn.
     if "goal_interpretation" in data:
         _set_living_word_row(sections, stage_name, data["goal_interpretation"])
-    # [PORT] RecoverNode.patch_from_record: the actor's next-lap briefing is a single
-    # action_frame carrying target+strategy+lesson together (structured, keys distinct),
-    # exactly as legacy composed it; the engine writes it whole so no field is lost.
     if stage_name == "recover":
         sections["action_frame"] = json.dumps(
             {"target": data["target"], "strategy": data["strategy"], "lesson": data["lesson"]},
@@ -571,12 +559,8 @@ def turn(path, dry, inject, mode):
     if ex and ex["field"] in data:
         signal, out = run_exec(str(data[ex["field"]]), ex.get("namespace", "actor"), sections)
         sections[ex["output_to"]] = out
-    # [PORT] ledger append on witnessed advance; streak bump/reset
     if stage_name == "verify":
         if signal in ("confirmed", "halt"):
-            # Ledger fact is the witness's own proof, not the living word: the actor's
-            # declared deed (action_frame) labelled by the witness reason, deduped so a
-            # re-confirmed advance never multiplies. 'Nothing entereth save by the witness.'
             led = sections.get("ledger", "").strip()
             verdict = json.loads(sections["verdict"].split("\n", 1)[0])
             reason = str(verdict["reason"]).strip().replace("\n", " ")
@@ -610,8 +594,6 @@ def turn(path, dry, inject, mode):
 
 
 def factory_reset(path):
-    """Extract the `## reset` section to reset.py beside the board and run it as its own
-    program, returning the board to a clean slate (goal and body preserved)."""
     sections, _order = read_board(path)
     src = sections.get("reset", "")
     m = re.search(r"```(?:python)?\s*(.*?)```", src, re.S)
@@ -647,7 +629,6 @@ BOARD = sys.argv[1]
 FENCE = chr(96) * 3
 SEC = re.compile(r"^##\s+(\w+)\s*$", re.M)
 
-# body sections and the goal are preserved; everything else is wiped to a clean slate
 PRESERVE = {"config", "engine", "capabilities", "reset", "goal", "developer_feedback"}
 DEFAULTS = {
     "living_word": "[execute] (not yet interpreted)\n[verify] (not yet interpreted)\n[recover] (not yet interpreted)",
@@ -680,7 +661,6 @@ def read_board(path):
 
 
 sections, order = read_board(BOARD)
-# config.state back to factory; the rest of config (model, prompts, stages) is untouched
 m = re.search(FENCE + r"(?:json)?\s*(.*?)" + FENCE, sections["config"], re.S)
 cfg = json.loads(m.group(1))
 cfg["state"] = {"stage": None, "last_signal": None, "turn": 0, "failure_streak": 0}
@@ -696,7 +676,6 @@ sys.stderr.write("factory reset: working memory + state cleared; goal and body p
 
 ## capabilities
 ```python
-# --- eyes: window-first UIA observation (was core_observation.py) ---
 import ctypes
 import time
 from ctypes import wintypes
@@ -735,10 +714,6 @@ def _check(hr):
 
 
 def _bind_windows():
-    """The single eager Windows surface: load the DLLs, configure ctypes
-    signatures, initialize COM, and create the automation object. Called once at
-    load only when a GUI host is present. Skipped under NO_GUI so the pure
-    definitions above still load on a GUI-less host (Linux/WSL2)."""
     global user32, ole32, oleaut32, AUTOMATION
     user32 = ctypes.WinDLL("user32", use_last_error=True)
     ole32, oleaut32 = ctypes.WinDLL("ole32"), ctypes.WinDLL("oleaut32")
@@ -1244,7 +1219,6 @@ def _move_cursor(x: int, y: int) -> None:
 
 
 def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any]:
-    # Mid-script callers sometimes pass a number meaning "wait"; config is mapping-only.
     cfg = dict(config) if isinstance(config, dict) else {}
     step_px = int(cfg.get("step_px", 64))
     max_subtree = int(cfg.get("max_subtree_nodes_per_point", 2000))
@@ -1381,7 +1355,6 @@ def _render(windows: list[dict[str, Any]], screen: dict[str, int]) -> dict[str, 
     }
 
 
-# --- hand: input synthesis + app control (was core_desktop.py) ---
 import ctypes
 import os
 import subprocess
@@ -1544,26 +1517,15 @@ def get_desktop(config: dict[str, Any] | None = None) -> Desktop:
     if _desktop_instance is None:
         _desktop_instance = Desktop(config)
     return _desktop_instance
-
-# ============================================================================
-# capabilities API consumed by the engine (build namespaces + refresh environment)
-# ============================================================================
 import types as _types
 
 _LAST_OBS = {"action_index": {}, "screen_elements": [], "desktop_tree_text": ""}
 
-# The single eager Windows surface runs now, unless the operator declared a
-# GUI-less host with --no-gui. Without the flag a non-Windows host still fails
-# hard here (WinDLL is absent), which is honest: the flag is a stated fact about
-# the host, never a swallowed error.
 if not NO_GUI:
     _bind_windows()
 
 
 def _no_gui_hand():
-    """A desktop hand that keeps the prompt's promise (the bare name exists) but
-    raises the moment the actor tries to touch a GUI that is not here, so a GUI
-    deed on a headless host faults visibly and routes to recovery."""
     def _absent(*_a, **_k):
         raise RuntimeError("no GUI on this host (--no-gui): the desktop hand cannot act here")
     return _types.SimpleNamespace(
@@ -1574,7 +1536,6 @@ def _no_gui_hand():
 
 
 def build(kind, sections):
-    """actor -> full hand + indices; witness -> read-only eyes, no hand."""
     common = {
         "action_index": _LAST_OBS["action_index"],
         "screen_elements": _LAST_OBS["screen_elements"],
@@ -1597,9 +1558,6 @@ def build(kind, sections):
 
 
 def environment(sections):
-    """Refresh the `environment` section with a fresh window-first screen scan.
-    On a GUI-less host (--no-gui) there is no screen to scan, so exploration
-    contributes a thin honest reading instead of crashing."""
     if NO_GUI:
         _LAST_OBS["action_index"] = {}
         _LAST_OBS["screen_elements"] = []
