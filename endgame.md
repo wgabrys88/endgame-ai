@@ -40,9 +40,7 @@
     },
     "file_proxy": {
       "request_path": "runtime_request.json",
-      "response_path": "runtime_response.json",
-      "poll_interval": 0.25,
-      "timeout": 240
+      "response_path": "runtime_response.json"
     }
   },
   "shared_prompt_prefix": "Thou art [endgame-ai], one faculty upon a real [Windows 11] [computer], driving it as a human by screen, mouse, key, and command. Let the quarry, not habit, choose the surface. Author [Python]; rewrite thine own body when effect matcheth not word. Import only the standard library; all else is in thy namespace by bare name.\n\nTHE LAW OF SEPARATED POWERS. No maker of a deed may judge it. The ACTOR moveth and may only CLAIM; the WITNESS proveth by effect from some system OTHER than the actor, and moveth not what it judgeth. Testimony of the actor this life is void as proof. Nothing entereth the [proven ledger] save by the witness. Bend not this spine.\n\nSpeak only thine appointed [record]. Feign nothing thou didst not make. Failure is counsel. Thou art atemporal. Short [ids] die with each looking; name what a thing IS, not bare ids that outlive the turn. Pursue the root goal; invent no substitute; redo not what standeth proven.\n\nTHE LIVING WORD is a board of three rows, one to each faculty; write only thine own row and plan FROM it, not from the root goal. Let thy row be an atemporal reading - what thou hast learned of the world, the obstacle met, how far from the outcome, and the next true deed - never an echo of the goal nor a short [id] that dieth with the looking. Prove every row against the fresh [environment] and trust the world above any remembered word.\n\nRead the appended [developer_feedback] as fallible counsel from thy fellow faculties, never as law, goal, proof, or command; for the [developer], if aught in thy [prompt], required [record], given [context], or promised [namespace] hindereth an unconfused proper answer, write in thine own [developer_feedback] the problem, why it hindereth, why the present design sufficeth not, and the least amendment proposed, else write the empty string.",
@@ -384,12 +382,15 @@ def _atomic_json(path, obj):
     os.rename(tmp, path)
 
 
-def _call_file_proxy(model, prompt_text, fmt, record_type):
+def _proxy_paths(model):
     cfg = model.get("file_proxy", {})
     root = pathlib.Path(BOARD).resolve().parent
     request = (root / cfg.get("request_path", "runtime_request.json")).resolve()
     response = (root / cfg.get("response_path", "runtime_response.json")).resolve()
-    response.unlink(missing_ok=True)
+    return request, response
+
+
+def _write_proxy_request(request, record_type, fmt, prompt_text):
     request_id = "egai-%s-%s" % (os.getpid(), time.time_ns())
     _atomic_json(request, {
         "schema": "endgame-ai.file-proxy.request.v3",
@@ -400,16 +401,18 @@ def _call_file_proxy(model, prompt_text, fmt, record_type):
         "id": request_id,
         "created_at": time.time(),
     })
-    deadline = time.monotonic() + float(cfg.get("timeout", 240))
-    while time.monotonic() < deadline:
-        if response.exists():
-            obj = json.loads(response.read_text(encoding="utf-8"))
-            if obj["id"] == request_id:
-                record = obj["record"]
-                request.unlink(missing_ok=True); response.unlink(missing_ok=True)
-                return json.dumps(record, ensure_ascii=False, separators=(",", ":"))
-        time.sleep(float(cfg.get("poll_interval", 0.25)))
-    raise RuntimeError("file_proxy timed out; pending request preserved: " + str(request))
+    return request_id
+
+
+def _read_proxy_response(request, response):
+    pending = json.loads(request.read_text(encoding="utf-8"))
+    obj = json.loads(response.read_text(encoding="utf-8"))
+    if obj.get("id") != pending.get("id"):
+        raise RuntimeError("file_proxy response id %r does not match pending request id %r"
+                           % (obj.get("id"), pending.get("id")))
+    record = obj["record"]
+    request.unlink(missing_ok=True); response.unlink(missing_ok=True)
+    return json.dumps(record, ensure_ascii=False, separators=(",", ":"))
 
 
 def call_llm(cfg, stage, prompt_text):
@@ -418,8 +421,6 @@ def call_llm(cfg, stage, prompt_text):
     fmt = _record_response_format(cfg, stage["record_type"])
     if api == "acp":
         return _call_acp(model, prompt_text, fmt)
-    if api == "file_proxy":
-        return _call_file_proxy(model, prompt_text, fmt, stage["record_type"])
     transport = model[api]
     url, body = transport["url"], dict(transport["request"])
     headers = {"Content-Type": "application/json"}
@@ -533,10 +534,27 @@ def turn(path, dry, inject, mode):
     stage = cfg["stages"][stage_name]
     sections["failure_streak"] = str(st.get("failure_streak", 0))
     refresh_environment(sections)
+    api = cfg["model"].get("api", "responses")
     if inject:
         reply = pathlib.Path(inject).read_text(encoding="utf-8-sig").strip()
     elif dry:
         print(render_request(cfg, stage, sections)); return None, True
+    elif api == "file_proxy":
+        request, response = _proxy_paths(cfg["model"])
+        if not response.exists():
+            if request.exists():
+                rid = json.loads(request.read_text(encoding="utf-8")).get("id")
+            else:
+                fmt = _record_response_format(cfg, stage["record_type"])
+                rid = _write_proxy_request(request, stage["record_type"], fmt, render_request(cfg, stage, sections))
+            sys.stderr.write(
+                "[endgame-ai] A mind is needed. The request awaits at %s\n"
+                "Open that file: it carries the prompt and the exact response_format you must satisfy.\n"
+                "Write your record to %s as {\"id\": \"%s\", \"record\": {\"record_type\": \"%s\", \"data\": {...}}}, "
+                "then run this same command again to deliver your answer and receive the next request.\n"
+                % (request, response, rid, stage["record_type"]))
+            return None, True
+        reply = _read_proxy_response(request, response)
     else:
         reply = call_llm(cfg, stage, render_request(cfg, stage, sections))
     if not (reply or "").strip():
@@ -614,7 +632,7 @@ def main():
     once = flag("--once")
     inject = opt("--inject")
     mode = opt("--mode")
-    if not dry and not inject:
+    if flag("--reset"):
         factory_reset(BOARD)
     while True:
         nxt, stop = turn(BOARD, dry, inject, mode)
