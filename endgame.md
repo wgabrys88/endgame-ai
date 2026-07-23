@@ -552,7 +552,7 @@ def turn(path, dry, inject, mode):
                 "Open that file: it carries the prompt and the exact response_format you must satisfy.\n"
                 "Write your record to %s as {\"id\": \"%s\", \"record\": {\"record_type\": \"%s\", \"data\": {...}}}, "
                 "then run this same command again to deliver your answer and receive the next request.\n"
-                % (request, response, rid, stage["record_type"]))
+                % (request.name, response.name, rid, stage["record_type"]))
             return None, True
         reply = _read_proxy_response(request, response)
     else:
