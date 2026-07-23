@@ -3,13 +3,13 @@
 {
   "start": "execute",
   "state": {
-    "stage": null,
-    "last_signal": null,
-    "turn": 0,
+    "stage": "verify",
+    "last_signal": "ok",
+    "turn": 1,
     "failure_streak": 0
   },
   "model": {
-    "api": "file_proxy",
+    "api": "responses",
     "responses": {
       "url": "https://api.x.ai/v1/responses",
       "request": {
@@ -115,7 +115,7 @@
   "stages": {
     "execute": {
       "record_type": "execution",
-      "prompt": "Thou art [execute], the actor: MOVE and CLAIM only, never prove. From [living word], fresh [environment], and any [action_frame], choose ONE deed, author one [Python] script, enact it. One unknown fruit then cease; prepare-and-read may chain.\n\nNamespace by bare name: [desktop] (click, type_text, paste_clipboard, set_clipboard, press_key, hotkey, scroll, open_url), [action_index], [screen_elements], repo_root, python_executable, stdlib only. Reacquire targets this waking; bare short ids die each looking. Click needs two ints: desktop.click(action_index[\"eN\"][\"px\"], action_index[\"eN\"][\"py\"]); never desktop.click(short_id) alone. Rect centre (left+right)//2, (top+bottom)//2 if thou buildest from rect.\n\nOn failure change manner; mend body at source if the primitive deceiveth. Let faults rise. Cross-language code: write file, invoke; never nested escapes. [Windows] paths in thy [Python] carry backslashes that open escapes; write them with forward slashes or a raw string, never a bare backslash in a quoted literal. Advance past [proven ledger]. Return execution with [perceived], [alternatives], [intent], [code], [goal_interpretation]; name forsaken roads in alternatives; let [goal_interpretation] be thine own living-word row - world learned, obstacle, distance to the outcome, next true deed - not a goal echo.",
+      "prompt": "Thou art [execute], the actor: MOVE and CLAIM only, never prove. From [living word], fresh [environment], and any [action_frame], choose ONE deed, author one [Python] script, enact it. One unknown fruit then cease; prepare-and-read may chain.\n\nNamespace by bare name: [desktop] (click, type_text, paste_clipboard, set_clipboard, press_key, hotkey, scroll, open_url), [action_index], [screen_elements], repo_root, python_executable, stdlib only. Reacquire targets this waking: every eN outside fresh [environment] is dead; choose anew by current window, role, and name. Bind once: t=action_index[\"eN\"]; check t's role and name against thine intended target; desktop.click(t[\"px\"], t[\"py\"], hwnd=t[\"owner_hwnd\"]). Never mix ids, coordinates, or owners, nor copy an eN from [living word] or [action_frame].\n\nOn failure change manner; mend body at source if the primitive deceiveth. Let faults rise. Cross-language code: write file, invoke; never nested escapes. [Windows] paths in thy [Python] carry backslashes that open escapes; write them with forward slashes or a raw string, never a bare backslash in a quoted literal. Advance past [proven ledger]. Return execution with [perceived], [alternatives], [intent], [code], [goal_interpretation]; name forsaken roads in alternatives; let [goal_interpretation] be thine own living-word row - world learned, obstacle, distance to the outcome, next true deed - not a goal echo.",
       "reads": [
         "goal",
         "counsel",
@@ -170,7 +170,7 @@
     },
     "recover": {
       "record_type": "recovery",
-      "prompt": "Thou art [recover], conscience after denial. From denied deed, evidence, [failure_streak], and fresh [environment], name the true defect in [lesson] (what failed, why, what must change - no goal echo). Frame a strike departing from every approach the [living word] recordeth; higher streak demands another KIND of road, even mending body code. Bind [target] only to what the fresh [environment] beareth.\n\nReturn recovery; data: [lesson], [target], [strategy], [goal_interpretation]; let [goal_interpretation] be thine own living-word row - the defect learned, distance to the outcome, next true road - not a goal echo.",
+      "prompt": "Thou art [recover], conscience after denial. From denied deed, evidence, [failure_streak], and fresh [environment], name the true defect in [lesson] (what failed, why, what must change - no goal echo). Frame a strike departing from every approach the [living word] recordeth; higher streak demands another KIND of road, even mending body code. Bind [target] semantically by current window, role, and name; never emit an eN because execute awaketh after a new scan.\n\nReturn recovery; data: [lesson], [target], [strategy], [goal_interpretation]; let [goal_interpretation] be thine own living-word row - the defect learned, distance to the outcome, next true road - not a goal echo.",
       "reads": [
         "goal",
         "counsel",
@@ -741,6 +741,8 @@ def _bind_windows():
     ole32, oleaut32 = ctypes.WinDLL("ole32"), ctypes.WinDLL("oleaut32")
     user32.SetCursorPos.argtypes, user32.SetCursorPos.restype = [ctypes.c_int, ctypes.c_int], wintypes.BOOL
     user32.GetCursorPos.argtypes, user32.GetCursorPos.restype = [ctypes.POINTER(wintypes.POINT)], wintypes.BOOL
+    user32.WindowFromPoint.argtypes, user32.WindowFromPoint.restype = [wintypes.POINT], wintypes.HWND
+    user32.GetAncestor.argtypes, user32.GetAncestor.restype = [wintypes.HWND, wintypes.UINT], wintypes.HWND
     ole32.CoInitialize.argtypes, ole32.CoInitialize.restype = [ctypes.c_void_p], ctypes.c_long
     ole32.CoCreateInstance.argtypes = [ctypes.POINTER(_GUID), ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(_GUID), ctypes.POINTER(ctypes.c_void_p)]
     ole32.CoCreateInstance.restype = ctypes.c_long
@@ -1338,7 +1340,7 @@ def _render(windows: list[dict[str, Any]], screen: dict[str, int]) -> dict[str, 
                 prid = tuple(cur.get("parent_runtime_id") or []) if cur else ()
             return None
 
-        actionable = [e for e in elements if e.get("action")]
+        actionable = [e for e in elements if e.get("action") and not e.get("offscreen") and 0 <= e["px"] < screen["width"] and 0 <= e["py"] < screen["height"]]
         for e in actionable:
             anc = nearest_action_ancestor(e)
             if anc is not None:
@@ -1439,12 +1441,18 @@ class Desktop:
             cfg = self.config
         return observe(self, cfg)
 
-    def click(self, x: int, y: int, hwnd: int = 0) -> dict[str, Any]:
+    def click(self, x: int, y: int, hwnd: int) -> dict[str, Any]:
         width, height = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
         if not 0 <= x < width or not 0 <= y < height:
             raise RuntimeError(f"click coordinates ({x}, {y}) outside physical screen {width}x{height}")
+        expected = int(user32.GetAncestor(wintypes.HWND(int(hwnd)), 2) or 0)
+        if not expected:
+            raise RuntimeError(f"click target hwnd {hwnd} is no longer valid")
         if not user32.SetCursorPos(x, y):
             raise ctypes.WinError()
+        actual = int(user32.GetAncestor(user32.WindowFromPoint(wintypes.POINT(int(x), int(y))), 2) or 0)
+        if actual != expected:
+            raise RuntimeError(f"click point ({x}, {y}) belongs to hwnd {actual}, expected {expected}")
         user32.mouse_event(0x0002, 0, 0, 0, 0)
         user32.mouse_event(0x0004, 0, 0, 0, 0)
         return {"ok": True, "action": "click", "x": x, "y": y, "hwnd": hwnd, "screen": {"width": width, "height": height}}
@@ -1595,10 +1603,10 @@ def environment(sections):
 ```
 
 ## goal
-
+Create or use a blank Windows Notepad document whose exact contents are ENDGAME_CAMPAIGN_02_AGNOSTIC. Leave the document open and unsaved. Choose any available generic method. The goal is complete only when a fresh desktop observation independently proves that exact marker is visible inside the Notepad document.
 
 ## living_word
-[execute] (not yet interpreted)
+[execute] World: blank Untitled Notepad already open with writable document. Obstacle: marker string not yet in the editor. Distance: one input action from visible marker. Next: click document and type exact marker, leave unsaved.
 [verify] (not yet interpreted)
 [recover] (not yet interpreted)
 
@@ -1606,19 +1614,20 @@ def environment(sections):
 none yet
 
 ## action_frame
-(empty)
+Focus the Notepad document body and type the exact marker ENDGAME_CAMPAIGN_02_AGNOSTIC so it becomes visible unsaved content.
 
 ## perceived
-(empty)
+Untitled Notepad is already open and blank (0 characters, Line 1 Column 1). Document write target e16 exists. Taskbar also shows Notepad running. Marker text is not yet present.
 
 ## alternatives
-(empty)
+Could launch a fresh Notepad via Start/Search or win+r notepad; could paste via clipboard instead of type_text; could focus via taskbar e8. Forsaken because blank Untitled editor is already frontmost and ready.
 
 ## code
-(empty)
+desktop.click(action_index["e16"]["px"], action_index["e16"]["py"])
+desktop.type_text("ENDGAME_CAMPAIGN_02_AGNOSTIC")
 
 ## evidence
-(empty)
+(no output)
 
 ## verdict
 (empty)
@@ -1627,9 +1636,219 @@ none yet
 (empty)
 
 ## environment
-(fresh screen scan lands here each turn)
+W0 Screen Desktop
+W1 Window Window_65810
+  e1 Button Task Manager - 1 running window [click]
+  e2 Button Start [click]
+  e3 Button Search [click]
+    e4 Text Search [read]
+  e5 Button File Explorer pinned [click]
+  e6 Button Google Chrome - 2 running windows pinned [click]
+  e7 Button ChatGPT - 1 running window [click]
+  e8 Button Notepad - 1 running window [click]
+  e9 Button Show Hidden Icons [click]
+  e10 Button Task Manager CPU 14% Memory 19% Disk 0% Network 0% [click]
+  e11 Button Volume Speakers (Creative SB X-Fi): 89% [click]
+  e12 Button Clock 9:55:14 PM ‎7/‎23/‎2026 [click]
+W2 Window Untitled - Notepad
+  e13 TabItem Untitled. Unmodified. [click]
+    e14 Text Untitled [read]
+    e15 Button Close Tab [click]
+  e16 Document Text editor [write]
+  e17 Text Line 1, Column 1 [read]
+  e18 Text 0 characters [read]
+  e19 Text Plain text [read]
+  e20 Text Zoom [read]
+  e21 Text Windows (CRLF) [read]
+  e22 Text UTF-8 [read]
+  e23 Tab [click]
+    e24 List [scroll]
+    e25 Button Add New Tab [click]
+  e26 MenuItem File [click]
+  e27 MenuItem Edit [click]
+  e28 MenuItem View [click]
+  e29 Button Headings [click]
+  e30 Button Lists [click]
+  e31 Button Bold (Ctrl+B) [click]
+  e32 Button Italic (Ctrl+I) [click]
+  e33 Button Strikethrough (Ctrl+Shift+X) [click]
+  e34 Button Link (Ctrl+K) [click]
+  e35 Button More options [click]
+  e36 Button Writing tools [click]
+  e37 Button What's new [click]
+  e38 Button User avatar [click]
+  e39 Button Settings [click]
+  e40 MenuItem System [click]
+  e41 Button Minimize [click]
+  e42 Button Maximize [click]
+  e43 Button Close [click]
+W3 Window Task Manager
+W4 Window YouTube - Google Chrome
+W5 Window Window_33031036
+  e44 Text Grok [read]
+  e45 Text [read]
+  e46 Text grok.com [read]
+  e47 Text [read]
+  e48 Text Memory usage: 228 MB [read]
+  e49 Text [read]
+W6 Window Grok - Google Chrome
+  e50 TabItem Grok [click]
+    e51 Button Close [click]
+  e52 Button Minimize [click]
+  e53 Button Maximize [click]
+  e54 Button Close [click]
+  e55 Button Back [click]
+  e56 Button Forward
+  e57 Button Reload [click]
+  e58 Button View site information [click]
+  e59 Edit Address and search bar [write]
+  e60 Button Install Grok [click]
+  e61 Button Edit bookmark for this tab [click]
+  e62 Button You [click]
+  e63 Button Chrome [click]
+  e64 Document Grok [write]
+    e65 Button Toggle sidebar [click]
+    e66 Hyperlink Switch to Private Chat [click]
+    e67 Edit Ask Grok anything [write]
+      e68 Text Ask Grok [read]
+    e69 Button Attach [click]
+    e70 Button Model select [click]
+    e71 Button Dictation (Ctrl+D) [click]
+    e72 Button Enter voice mode (Ctrl+⇧O) [click]
+  e73 Button Tab search [click]
+  e74 Tab [click]
+  e75 Button New Tab [click]
+W7 Window ChatGPT
+  e76 Button Running python -c "import sys;f=chr(96)*3;p=sys.argv[1];exec(open(p,encoding='utf8').read().split('## engine\n'+f+'python\n')[1].split('\n'+f)[0],{'BOARD':p,'ARGV':sys.argv[2:]})" "C:\Users\px-wjt\Downloads\endgame-ai\endgame.md" --reset [click]
+  e77 Text , keyboard events, subprocess code, clipboard, or another generic route. [read]
+  e78 Button Switch mode, current mode: Codex [click]
+  e79 Button Search [click]
+  e80 Button New chat [click]
+  e81 Button Quick chat [click]
+  e82 Button Pull requests [click]
+  e83 Button Sites [click]
+  e84 Button Scheduled [click]
+  e85 Button Plugins [click]
+  e86 Button Projects [click]
+  e87 Button Project sidebar options [click]
+  e88 Button Add new project [click]
+  e89 List [scroll]
+    e90 ListItem endgame-ai [click]
+      e91 Button endgame-ai [click]
+        e92 Button Start new chat in endgame-ai [click]
+      e93 List Scheduled tasks in endgame-ai [scroll]
+        e94 ListItem Fix desktop click coordinates [click]
+          e95 Button Pin chat Archive chat [click]
+            e96 Button Pin chat Archive chat [click]
+              e97 Button Pin chat [click]
+              e98 Button Archive chat [click]
+        e99 ListItem Establish architecture workflow [click]
+          e100 Button Pin chat Archive chat [click]
+            e101 Button Pin chat Archive chat [click]
+              e102 Button Pin chat [click]
+              e103 Button Archive chat [click]
+  e104 Button Chats [click]
+  e105 Button Chat sidebar options [click]
+  e106 Button New chat [click]
+  e107 Text No chats [read]
+  e108 Text Do anything [read]
+  e109 Text Valid Campaign 2 is starting now with a fresh [read]
+  e110 Button 3 files changed + 250 - 134 [click]
+  e111 Text , leave it open and unsaved, and prove it from a fresh desktop observation.” [read]
+  e112 Button Edited a file [click]
+  e113 Text Do anything [read]
+  e114 Button Show sidebar [click]
+  e115 Button Back [click]
+  e116 Button Forward
+  e117 Button File [click]
+  e118 Button Edit [click]
+  e119 Button View [click]
+  e120 Button Help [click]
+  e121 Button [click]
+  e122 Text Fix desktop click coordinates [read]
+  e123 Button Chat actions [click]
+  e124 Button Open in [click]
+  e125 Button Secondary action [click]
+  e126 Button Toggle summary [click]
+  e127 Button Toggle side panel [click]
+  e128 Button Edited files, ran commands [click]
+  e129 Text but does not use it to validate or route the click. I’ll correct Campaign 1’s report accordingly and keep subsequent goals method-neutral. [read]
+  e130 Text Do anything [read]
+  e131 Text Do anything [read]
+  e132 Button 5.6 Sol Ultra [click]
+  e133 Text Do anything [read]
+W8 Window Window_459498
+W9 Window Window_590600
+W10 Window Settings
+W11 Window Settings
+W12 Window Window_65942
+W13 Window Program Manager
+  e134 ListItem Recycle Bin [click]
 
 ## failure_streak
 0
 
 ## developer_feedback
+{"execute":""}
+{"verify":""}
+{"recover":""}
+{"execute":""}
+{"verify":""}
+{"recover":""}
+{"execute":""}
+{"verify":""}
+{"execute":""}
+{"verify":""}
+{"recover":""}
+{"execute":""}
+{"recover":""}
+{"execute":""}
+{"recover":""}
+{"execute":""}
+{"recover":""}
+{"execute":""}
+{"recover":""}
+{"execute":""}
+{"recover":""}
+{"execute":""}
+{"recover":""}
+{"execute":""}
+{"recover":""}
+{"execute":""}
+{"recover":""}
+{"execute":""}
+{"recover":""}
+{"execute":""}
+{"recover":""}
+{"execute":""}
+{"recover":""}
+{"execute":""}
+{"recover":""}
+{"execute":""}
+{"recover":""}
+{"execute":""}
+{"recover":""}
+{"execute":""}
+{"recover":""}
+{"execute":""}
+{"verify":""}
+{"execute":""}
+{"recover":""}
+{"execute":""}
+{"verify":""}
+{"recover":""}
+{"execute":""}
+{"verify":""}
+{"recover":""}
+{"execute":""}
+{"verify":""}
+{"recover":""}
+{"execute":""}
+{"verify":""}
+{"recover":""}
+{"execute":""}
+{"verify":""}
+{"recover":""}
+{"execute":""}
+{"verify":""}
+{"execute":""}
