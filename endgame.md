@@ -173,7 +173,7 @@
         "denied": "recover",
         "unwitnessed": "recover",
         "ok": "execute",
-        "fault": "verify"
+        "fault": "recover"
       }
     },
     "recover": {
@@ -1287,7 +1287,8 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
             hwnd, rect = win["hwnd"], win["rect"]
             kept: dict[str, dict[str, Any]] = {}
             for x, y in _probe_points(rect, step_px):
-                x, y = max(0, min(sw - 1, x)), max(0, min(sh - 1, y))
+                if not (0 <= x < sw and 0 <= y < sh):
+                    continue
                 _move_cursor(x, y)
                 pt = wintypes.POINT(int(x), int(y))
                 try:
@@ -1401,7 +1402,7 @@ def _render(windows: list[dict[str, Any]], screen: dict[str, int]) -> dict[str, 
                       "short_id": sid, "action_key": sid, "observation_id": observation_id,
                       "window_id": wid, "window_title": window_title}
             action_index[sid] = public
-            screen_elements.append(public)
+            screen_elements.append({k: v for k, v in public.items() if k not in ("short_id", "action_key")})
             for child in action_children.get(id(e), []):
                 emit(child, indent + 1)
 
@@ -1723,7 +1724,7 @@ def environment(sections, cfg=None):
 ```
 
 ## goal
-Open google chrome using your capabilities to chain actions and write arbitrary python code and use grok.com to find out about endgame-ai project of wgabrys88 and then based on that knowledge generate and publish on linkedin an article about the endgame system, during your work always populate developer_feedback field
+(no goal set)
 
 ## living_word
 [execute] (not yet interpreted)
