@@ -2,7 +2,7 @@
 ```json
 {
   "start": "execute",
-  "separated_powers": false,
+  "separated_powers": true,
   "state": {
     "stage": null,
     "last_signal": null,

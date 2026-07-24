@@ -85,14 +85,14 @@ The last two commits are two distinct, coherent organisms. They are not versions
 
 ```mermaid
 flowchart TB
-    subgraph A["IDEA ONE - the proving organism (separated_powers = true)"]
+    subgraph A["IDEA ONE - the proving organism (separated_powers = true, shipped default)"]
         direction TB
         A1["The actor claims; a handless witness proves by the world"]
         A2["The ledger is proof to anyone, because the prover could not fake it"]
         A3["More machinery: the spine must be maintained and honored"]
         A4["Truth is guaranteed by STRUCTURE"]
     end
-    subgraph B["IDEA TWO - the truthful organism (separated_powers = false, shipped default)"]
+    subgraph B["IDEA TWO - the truthful organism (separated_powers = false)"]
         direction TB
         B1["Every faculty holds the whole namespace and the hand"]
         B2["Simpler: no wall to maintain; one namespace"]
@@ -104,9 +104,9 @@ flowchart TB
     style B fill:#14532d,stroke:#7be0a6,color:#eafff2
 ```
 
-**Idea one - the proving organism.** With `separated_powers` true, the maker of a deed may not judge it. The actor moves and only claims; the witness has eyes but no hand and proves the deed by an effect on some system other than the actor. This is the more elaborate organism, and its whole worth is one guarantee: *the ledger means something to anyone*, because a faculty that cannot act cannot fake the thing it judges. If you want an organism whose successes are independently trustworthy - an auditable autonomous worker - this is the idea. The cost is that the spine is real machinery that must be kept and never crossed.
+**Idea one - the proving organism (the shipped default).** With `separated_powers` true, the maker of a deed may not judge it. The actor moves and only claims; the witness has eyes but no hand and proves the deed by an effect on some system other than the actor. This is the more elaborate organism, and its whole worth is one guarantee: *the ledger means something to anyone*, because a faculty that cannot act cannot fake the thing it judges. This is what runner-zebra ships, because an autonomous worker you would stake accounts and money on must produce successes you can believe. The cost is that the spine is real machinery that must be kept and never crossed.
 
-**Idea two - the truthful organism.** With `separated_powers` false (the shipped default), the wall is gone: every faculty holds the whole namespace and the hand, and any faculty may act, edit the body, and wield the node graph. This is the simpler and more honest organism, because it stops pretending a wall is unbreakable when the body could always rewrite it anyway. Its ledger is the organism's own word - proof to itself, not to a skeptic. If you want a maximally capable self-shaping system and you accept that "proven" now means "the organism is satisfied," this is the idea. The cost is that success is self-reported.
+**Idea two - the truthful organism.** With `separated_powers` false, the wall is gone: every faculty holds the whole namespace and the hand, and any faculty may act, edit the body, and wield the node graph. This is the simpler and more honest organism, because it stops pretending a wall is unbreakable when the body could always rewrite it anyway. Its ledger is the organism's own word - proof to itself, not to a skeptic. If you want a maximally capable self-shaping system and you accept that "proven" now means "the organism is satisfied," flip the flag. The cost is that success is self-reported.
 
 **Why both are real, at 100%.** The two differ by exactly one boolean the organism reads from its own config and can flip through `commit_section`. Idea one is a strict sub-behavior of idea two: a dissolved organism can re-raise its own spine at any moment and become the proving organism again; a separated organism can dissolve it. Neither is a rewrite; both are the same body under one flag. That is why this is a genuine, reversible choice rather than a fork - and why it is now the organism's choice as much as ours.
 
@@ -204,8 +204,8 @@ Each faculty's reply is forced into a strict per-stage record. The required fiel
 ```mermaid
 flowchart LR
     F{separated_powers}
-    F -->|true| S["witness has EYES ONLY<br/>no hand, no action_index, no commit_section<br/>=> the ledger is proof to anyone"]
-    F -->|false, shipped default| D["every faculty holds the WHOLE namespace<br/>the hand, the body-edit, the node graph<br/>=> the ledger is the organism's own word"]
+    F -->|true, shipped default| S["witness has EYES ONLY<br/>no hand, no action_index, no commit_section<br/>=> the ledger is proof to anyone"]
+    F -->|false| D["every faculty holds the WHOLE namespace<br/>the hand, the body-edit, the node graph<br/>=> the ledger is the organism's own word"]
     style F fill:#5b2a86,stroke:#d7a9ff,color:#f6ecff
     style S fill:#0d3b66,stroke:#87c1ff,color:#eaf3ff
     style D fill:#14532d,stroke:#7be0a6,color:#eafff2
@@ -368,7 +368,7 @@ pie showData
 - *Repairs its own body within the life* - a deliberately-broken tool was diagnosed, mended via `commit_section`, recompiled in place, and used to finish, no human turning the wheel.
 - *Without a human* - runs are launched and then turn themselves; the human only supplies the one-sentence goal.
 
-**One honest caveat, stated plainly.** The shipped default is `separated_powers=false`, the truthful organism. In that mode the final "independently witnessed" clause becomes "witnessed by a faculty that could also have acted" - proof to itself, not to a skeptic. If you want the north star in its strongest, auditable sense, run with `separated_powers=true`; the property holds fully there. Both are reachable in the same body by one flag. Nothing is left as theory: the organism itself works.
+**The honest note on proof, stated plainly.** runner-zebra ships `separated_powers=true`, the proving organism, so the "independently witnessed" clause holds in its strongest sense by default: the witness cannot act, so its verdict is trustworthy to anyone, not only to the organism. Should you flip the flag to `false` for maximum self-shaping capability, that clause weakens to "witnessed by a faculty that could also have acted" - proof to itself. Both are the same body, one flag apart, and the organism may raise or dissolve its own spine through `commit_section`. Nothing is left as theory: the organism itself works.
 
 **Is there anything else we must do?** No required work remains. The core loop, self-healing, the full node horizon, the actor's reach (hand, mind, web, spawn), and the dissolvable spine are all built and proven. What remains is not construction but *operation* - handing it goals and letting it run - and, if ever desired, deliberate restraint rather than addition: adding no second fitness signal and no budget lever the organism cannot itself rewrite.
 
