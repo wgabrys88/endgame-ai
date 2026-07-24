@@ -55,6 +55,8 @@
     "min_window_area": 2500
   },
   "transmission_log_dir": ".transmissions",
+  "deed_subprocess": true,
+  "deed_timeout": 180,
   "counsel_url": "https://raw.githubusercontent.com/wgabrys88/endgame-ai/runner-zebra/guidance.txt",
   "record_contracts": {
     "execution": {
@@ -649,7 +651,7 @@ def _make_ask_model(cfg, api):
     return ask_model
 
 
-def run_exec(code, ns_kind, sections, cfg=None, api=None):
+def _run_in_process(code, ns_kind, sections, cfg=None, api=None):
     ns = {"json": json, "os": os, "sys": sys, "pathlib": pathlib}
     c = caps()
     if c is not None and hasattr(c, "build"):
@@ -669,6 +671,95 @@ def run_exec(code, ns_kind, sections, cfg=None, api=None):
     except Exception:
         import traceback
         return "fault", traceback.format_exc()
+
+
+def _run_as_child(code, sections, cfg, api):
+    here = pathlib.Path(BOARD).resolve().parent
+    c = caps()
+    snap = c.snapshot_observation() if c is not None and hasattr(c, "snapshot_observation") else {}
+    editable = sorted({"config", "engine", "reset", "capabilities"})
+    task = here / ("deed.%s.json" % os.getpid())
+    result = here / ("deed_result.%s.json" % os.getpid())
+    deed_py = here / "deed.py"
+    _atomic_json(task, {
+        "code": code, "observation": snap, "api": api, "model_cfg": {"model": cfg["model"], "state": cfg.get("state", {}), "transmission_log_dir": cfg.get("transmission_log_dir")},
+        "sections": {k: sections.get(k, "") for k in editable},
+    })
+    deed_py.write_text(
+        "import json, sys, io, contextlib, pathlib, os, traceback, re\n"
+        "BOARD = %r\n" % str(BOARD) +
+        "TASK = %r\n" % str(task) +
+        "RESULT = %r\n" % str(result) +
+        "sys.argv = [sys.argv[0]]\n"
+        "src = pathlib.Path(BOARD).read_text(encoding='utf-8')\n"
+        "SEC = re.compile(r'^##\\s+(\\w+)\\s*$', re.M)\n"
+        "def _read():\n"
+        "    out, cur, buf, fence, seen = {}, None, [], False, set()\n"
+        "    for ln in src.split('\\n'):\n"
+        "        if ln.lstrip().startswith('```'): fence = not fence\n"
+        "        m = None if fence else SEC.match(ln)\n"
+        "        if m and m.group(1) not in seen:\n"
+        "            if cur is not None: out[cur] = '\\n'.join(buf).strip('\\n')\n"
+        "            cur, buf = m.group(1), []; seen.add(cur)\n"
+        "        else: buf.append(ln)\n"
+        "    if cur is not None: out[cur] = '\\n'.join(buf).strip('\\n')\n"
+        "    return out\n"
+        "sections = _read()\n"
+        "def _fenced(t):\n"
+        "    m = re.search(r'```(?:\\w+)?\\s*\\n(.*)\\n```\\s*\\Z', t.strip(), re.S)\n"
+        "    return m.group(1) if m else ''\n"
+        "task = json.loads(pathlib.Path(TASK).read_text(encoding='utf-8'))\n"
+        "import types as _t\n"
+        "cap = _t.ModuleType('capabilities'); cap.BOARD = BOARD; cap.NO_GUI = False\n"
+        "exec(_fenced(sections['capabilities']), cap.__dict__)\n"
+        "if not getattr(cap, 'NO_GUI', False): cap._bind_windows()\n"
+        "cap.restore_observation(task['observation'])\n"
+        "eng = _t.ModuleType('engine'); eng.BOARD = BOARD; eng.ARGV = [sys.argv[0], '--__run_deed__']\n"
+        "exec(re.sub(r'\\nmain\\(\\)\\s*\\Z', '\\n', _fenced(sections['engine'])), eng.__dict__)\n"
+        "live = dict(task['sections'])\n"
+        "ns = cap.build('actor', live)\n"
+        "ns['ask_model'] = eng._make_ask_model(task['model_cfg'], task['api'])\n"
+        "ns.update({'json': json, 'os': os, 'sys': sys, 'pathlib': pathlib})\n"
+        "buf = io.StringIO(); sig = 'ok'; out = ''\n"
+        "try:\n"
+        "    with contextlib.redirect_stdout(buf):\n"
+        "        exec(task['code'], ns)\n"
+        "    sig = str(ns.get('signal') or 'ok')\n"
+        "    out = buf.getvalue().strip() or '(no output)'\n"
+        "except Exception:\n"
+        "    sig = 'fault'; out = traceback.format_exc()\n"
+        "edits = {k: v for k, v in live.items() if v != task['sections'].get(k)}\n"
+        "tmp = pathlib.Path(RESULT + '.tmp')\n"
+        "tmp.write_text(json.dumps({'signal': sig, 'output': out, 'section_edits': edits}, ensure_ascii=False), encoding='utf-8')\n"
+        "os.rename(tmp, RESULT)\n",
+        encoding="utf-8")
+    timeout = float(cfg.get("deed_timeout", 180))
+    proc = subprocess.Popen([sys.executable, str(deed_py)], cwd=str(here))
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            pass
+        task.unlink(missing_ok=True); result.unlink(missing_ok=True); deed_py.unlink(missing_ok=True)
+        return "fault", "deed exceeded deed_timeout of %ss and was killed" % timeout
+    if not result.exists():
+        task.unlink(missing_ok=True); deed_py.unlink(missing_ok=True)
+        return "fault", "deed child exited without writing a result (exit code %s)" % proc.returncode
+    payload = json.loads(result.read_text(encoding="utf-8"))
+    for name, body in (payload.get("section_edits") or {}).items():
+        sections[name] = body
+    task.unlink(missing_ok=True); result.unlink(missing_ok=True); deed_py.unlink(missing_ok=True)
+    return str(payload.get("signal") or "ok"), str(payload.get("output") or "(no output)")
+
+
+def run_exec(code, ns_kind, sections, cfg=None, api=None):
+    if (ns_kind == "actor" and cfg is not None and cfg.get("deed_subprocess")
+            and not flag("--no-gui") and not flag("--__run_deed__")):
+        return _run_as_child(code, sections, cfg, api)
+    return _run_in_process(code, ns_kind, sections, cfg, api)
 
 
 _LAST_COUNSEL = ""
@@ -1769,6 +1860,21 @@ def get_desktop(config: dict[str, Any] | None = None) -> Desktop:
 import types as _types
 
 _LAST_OBS = {"action_index": {}, "screen_elements": [], "desktop_tree_text": ""}
+
+
+def snapshot_observation():
+    return {
+        "action_index": _LAST_OBS["action_index"],
+        "screen_elements": _LAST_OBS["screen_elements"],
+        "desktop_tree_text": _LAST_OBS["desktop_tree_text"],
+    }
+
+
+def restore_observation(snap):
+    _LAST_OBS["action_index"] = snap.get("action_index", {}) or {}
+    _LAST_OBS["screen_elements"] = snap.get("screen_elements", []) or []
+    _LAST_OBS["desktop_tree_text"] = snap.get("desktop_tree_text", "") or ""
+
 
 if not NO_GUI:
     _bind_windows()
