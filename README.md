@@ -27,7 +27,7 @@ This file is *how and why*. The document `endgame.md` is *what is*. Where the tw
 - [Perception and the body](#perception-and-the-body)
 - [The brain: interchangeable transports](#the-brain-interchangeable-transports)
 - [The laws that never change](#the-laws-that-never-change)
-- [Nodes: durable reusable deeds](#nodes-durable-reusable-deeds-horizon-step-1-built)
+- [Nodes: a learning graph of durable deeds](#nodes-a-learning-graph-of-durable-deeds-full-horizon-built)
 - [Proven facts](#proven-facts)
 - [How far from the north star](#how-far-from-the-north-star)
 - [The logical argument for open-ended self-improvement](#the-logical-argument-for-open-ended-self-improvement)
@@ -513,7 +513,7 @@ Everything below has been exercised on a real desktop or proven by running the w
 - Every model call is **dumped to disk** for audit (key redacted), on success and failure alike, fault never swallowed.
 - The actor can **consult its mind mid-deed** with `ask_model`, and **search the live web** with `web_search` (server-side xAI web search, returning text and source URLs); both are counsel, never proof.
 - A **launch transport never mutates the persisted config**; a per-run flag stays a per-run choice.
-- The actor can **save a proven deed as a durable node** and reuse it; node fitness is witnessed goal-advancement, credited only by the core, and nodes never touch the witness or the control policy.
+- The actor can **save a proven deed as a durable node**, reuse it, follow **stigmergic edges** between nodes (`suggest_next`), and **spawn a parallel actor** for a sub-goal; node fitness is witnessed goal-advancement, pruning uses one budget lever, and the whole growing graph is actor-space - it never touches the witness, the wheel, or the fitness signal.
 - With no goal, the organism rests and invents no substitute.
 - Runs with or without a GUI; the mind is swappable across four transports; the file-proxy mind is drivable by hand.
 - Routing fails hard - an unmapped signal raises rather than drifting to a default.
@@ -548,11 +548,12 @@ flowchart LR
         D9["ask_model nested call"]
         D10["web_search live web (server-side)"]
         D11["transport never mutates config"]
+        D12["learning node graph:<br/>save/call · stigmergy · fitness · prune · spawn"]
     end
     style DONE fill:#14532d,stroke:#7be0a6,color:#eafff2
 ```
 
-Nothing named remains between the organism and self-correction. What lies beyond is the speculative deed-becomes-a-node horizon in the appendix, held back until same-life healing is not only proven but relied upon.
+Nothing named remains between the organism and self-correction, and the deed-becomes-a-node horizon that once lay beyond is now built and proven too (see [Nodes](#nodes-a-learning-graph-of-durable-deeds-full-horizon-built)). The organism acts, proves, heals, and now learns - accreting a graph of proven capability under a boundary that keeps the fail-hard core beyond its own reach.
 
 ---
 
@@ -724,48 +725,57 @@ Read the document and this section fully. Pick one thing, propose the smallest l
 
 ---
 
-## Nodes: durable reusable deeds (horizon step 1, built)
+## Nodes: a learning graph of durable deeds (full horizon, built)
 
-The organism no longer only throws each deed away. When a manner of deed proves itself, the actor may lay it down as a **node** - a named, parameterized script kept in the body's wiring - and call it again later. This is the first step of the deed-becomes-a-node horizon (below), and only the first: promotion and reuse, nothing more.
+The organism no longer throws each deed away. When a manner of deed proves itself, the actor lays it down as a **node** - a named, parameterized script kept in the body's wiring - calls it again later, follows the worn paths between nodes, and may wire a second actor beside itself for a parallel sub-goal. Capability accretes as structure, not prose. This is the whole deed-becomes-a-node horizon, built and proven.
 
 ```mermaid
 flowchart LR
-    D["a deed that worked"] -->|save_node name, code, description| N["node in config.nodes<br/>(durable, legible JSON)"]
-    N -->|call_node name, params| R["runs in a fresh full actor namespace<br/>same hand, ask_model, web_search, nested nodes"]
+    D["a deed that worked"] -->|save_node| N["node in config.nodes<br/>(durable, legible JSON)"]
+    N -->|call_node params| R["runs in a fresh full actor namespace<br/>same hand, ask_model, web_search,<br/>nested call_node, spawn_actor"]
     R --> W["witnessed like any deed"]
-    W -->|engine credits advance only on confirm| F["fitness: advances / invocations"]
+    W -->|core credits advance ONLY on confirm| F["fitness: advances / invocations"]
+    R -.->|traversal records edges| G["node_edges<br/>(stigmergic weights)"]
+    W -->|confirm: reinforce · else: evaporate| G
+    G -->|suggest_next| R
+    F -->|node_budget: evict lowest| P["prune"]
+    G -->|weight < 0.01| P
     style D fill:#1b5e20,stroke:#7be0a6,color:#eafff2
     style N fill:#4a148c,stroke:#d7a9ff,color:#f6ecff
     style R fill:#0d47a1,stroke:#87c1ff,color:#eaf3ff
     style F fill:#0d3b66,stroke:#87c1ff,color:#eaf3ff
+    style G fill:#5b2a86,stroke:#d7a9ff,color:#f6ecff
+    style P fill:#8a5a00,stroke:#ffd479,color:#fff6e0
 ```
 
-- **Nodes are data.** They live in `config.nodes` as plain JSON - legible, editable by the organism, passed through the same compile-gate, persisted automatically. A node saved with broken syntax is refused at save.
-- **`save_node(name, code, description)`** promotes a proven deed; **`call_node(name, params=None)`** runs it in a fresh full actor namespace (the same hand, `action_index`, `ask_model`, `web_search`, and nested `save_node`/`call_node`), returning what the node sets as `result`.
-- **Fitness is goal-advancement, never frequency.** `call_node` counts an invocation; the engine credits an *advance* to a node only when the next verify confirms a witnessed advance. A denied deed credits nothing. The actor sees each node's proven worth (`advances / invocations`) in a read-only `nodes` catalog.
-- **Nodes survive `--reset`.** They live in `config`, so a fresh life clears memory and goal but keeps what the organism has learned to do.
+- **Nodes are data.** They live in `config.nodes` as plain JSON - legible, editable by the organism, passed through the compile-gate, persisted automatically, and surviving `--reset` (a fresh life keeps what it learned to do). A node saved with broken syntax is refused at save.
+- **`save_node` / `call_node`** promote and enact a deed; a called node runs in a fresh full actor namespace (the same hand, `action_index`, `ask_model`, `web_search`, and nested `call_node` / `spawn_actor`), returning what it sets as `result`.
+- **Stigmergic routing.** Each `call_node` records the traversed edge (`parent -> called`). On a witnessed confirm the core evaporates every edge and reinforces the deed's edges; on denial it evaporates only. Paths that reached proven fruit strengthen; paths that led nowhere fade and are pruned below a threshold. **`suggest_next(from_node=None)`** returns the heaviest successors, so the actor can follow a worn path instead of groping anew.
+- **Fitness is witnessed goal-advancement, never frequency.** `call_node` counts an invocation; the core credits an *advance* only to the nodes an execute deed invoked, and only when the next verify confirms. A denied deed credits nothing.
+- **Pruning, one lever.** `node_budget` caps live nodes; when exceeded the core evicts the lowest witnessed-fitness nodes and drops their edges.
+- **Parallel recursion without children.** **`spawn_actor(subgoal, hint='')`** wires a second actor beside the first (same namespace, its own model call) for one narrow sub-goal, returning its fruit as counsel - never proof. The base case is **exhaustion**: a finite `spawn_budget` is spent per deed, so depth is bounded by a shared budget rather than a hardcoded cap the organism could not rewrite.
 
-**The boundary invariant** is enforced from the first line: a node is actor-space behavior only. Node tools are never placed in the witness namespace; nodes cannot touch the control policy, the core stages, or the fitness accounting (only the engine credits advances); and a runaway node is bounded by the deed subprocess timeout. The fail-hard core stays uncrossable by grown structure, so the organism cannot rewrite its own survival criterion.
+**The boundary invariant, enforced from the first line and never crossed:** all of this is actor-space. The growth tools are never placed in the witness namespace; nodes and edges cannot touch the control policy, the core stages, or the confirm/deny signal; **fitness and reinforcement are computed only by the engine core, never by a node**. So the fail-hard core and the growing periphery are separated by a boundary neither side can cross, and the organism cannot rewrite its own survival criterion. A runaway node is bounded by the deed subprocess timeout.
 
-**The trade, named aloud and accepted:** the body may now accrete machine-grown structure, trading some legibility for a learning organism. That was a deliberate choice, not a drift.
+**The trade, named aloud and accepted:** the body now accretes machine-grown structure - a legible body traded for a learning one. A deliberate choice, not a drift.
 
-Proven in the flesh: given a two-file goal that shared one shape, the actor authored and saved a `write_text_file` node, called it three times, created both files with exact content, and the witness proved them to a halt - with the node credited an advance when confirmed.
+Proven in the flesh with real grok: given a three-file goal sharing one shape with an independently-preparable part, the actor saved a `write_text_file` node, **called it four times** (credited **2/4** - advances only on the confirmed verifies), grew a reinforced edge `__root__->write_text_file` (weight **3.9**), and **spawned a parallel actor** to prepare one file - reaching all three with exact content and halting on witness proof.
 
 ---
 
 ## Appendix: the deed-becomes-a-node horizon
 
-A candidate architecture, recorded so it and its hazards are not lost. **Step 1 (deed->node) is now built** (see [Nodes](#nodes-durable-reusable-deeds-horizon-step-1-built)); steps 2-6 are not, and where this appendix and the document disagree, the document is what is.
+The architecture and its hazards, recorded in full. **All six steps are now built** (see [Nodes](#nodes-a-learning-graph-of-durable-deeds-full-horizon-built)); where this appendix and the document disagree, the document is what is.
 
-**The idea.** Retire the throwaway-script framing. An actor's deed becomes a persistent **node** with its own prompt and chosen edges, wired into a graph. Capability accretes as structure, not prose. In dependency order: (1) deed->node **[built]**, (2) fitness by **witnessed goal-advancement** **[built: advances credited only on confirm]**, (3) pruning low-fitness nodes under one budget lever, (4) stigmergic routing (weighted, evaporating paths), (5) structural backpropagation, (6) recursion by wiring a second actor in parallel - no child-spawn. Steps 3-6 remain deliberately unbuilt until step 1 is relied upon over real runs.
+**The idea.** Retire the throwaway-script framing. An actor's deed becomes a persistent **node**, wired into a graph. Capability accretes as structure, not prose. In dependency order: (1) deed->node **[built]**, (2) fitness by **witnessed goal-advancement** **[built]**, (3) pruning low-fitness nodes under one budget lever **[built: node_budget]**, (4) stigmergic routing, weighted evaporating paths **[built: node_edges + suggest_next]**, (5) structural backpropagation **[built: advances credited through the invoked-node set on confirm]**, (6) recursion by wiring a second actor in parallel, no child-spawn **[built: spawn_actor, bounded by exhaustion]**.
 
-**The hazards that must be named before the rest is ever built:**
-- **Fail-hard vs. exploration.** The fail-loud core and any explore-and-decay periphery must be separated by a boundary **neither side can cross**, or the organism could rewrite its own survival criterion - the one thing that must stay beyond its reach. (Step 1 holds this: nodes are actor-space only; fitness is credited by the core alone.)
-- **Fitness must be goal-advancement, not frequency**, or the repeat-the-same-move loop scores as fittest. (Held: advances are credited only on a witnessed confirm.)
-- **One budget lever at a time.** Begin with a single cap on live non-core nodes; add levers only when each is proven. (Not yet reached - step 1 adds no pruning.)
-- **The deepest trade.** This turns the wiring itself into accumulating memory - lawful under atemporalism, but it trades a *legible* body for a *learning* one. That trade must be chosen aloud before it is ever made. (Named and accepted for step 1.)
+**The hazards, and how each is held:**
+- **Fail-hard vs. exploration.** The fail-loud core and the explore-and-decay periphery are separated by a boundary **neither side can cross**, so the organism cannot rewrite its own survival criterion. (Held: the growth tools are actor-space only; fitness and reinforcement are computed by the core alone; the witness and the wheel never see a node.)
+- **Fitness must be goal-advancement, not frequency**, or the repeat-the-same-move loop scores as fittest. (Held: advances are credited only on a witnessed confirm, only to the nodes that deed invoked.)
+- **One budget lever at a time.** A single cap on live nodes, nothing more. (Held: `node_budget` evicts the lowest witnessed-fitness nodes; no other budget lever was added.)
+- **The deepest trade.** This turns the wiring itself into accumulating memory - lawful under atemporalism, but it trades a *legible* body for a *learning* one. That trade must be chosen aloud before it is ever made. (Named aloud and accepted before it was built.)
 
-The recommendation stands: **do not build steps 3-6 until node reuse is not only proven but relied upon over real runs**, because a system that can already oscillate should not grow more structure until the structure it has is trusted.
+The horizon is built and proven in the flesh. The discipline from here is restraint, not addition: add no second budget lever, no auto-save of nodes, and no fitness signal other than the witness's, so the learning periphery can never contaminate the fail-hard core.
 
 ---
 
