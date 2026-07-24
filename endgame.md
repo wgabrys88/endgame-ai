@@ -54,6 +54,7 @@
     "depth_ceiling": 45,
     "min_window_area": 2500
   },
+  "transmission_log_dir": ".transmissions",
   "counsel_url": "https://raw.githubusercontent.com/wgabrys88/endgame-ai/runner-zebra/guidance.txt",
   "record_contracts": {
     "execution": {
@@ -250,6 +251,54 @@ def strip_fence(s):
     return (m.group(1) if m else text).strip()
 
 
+def _budget_environment(env, limit, focus_text):
+    if not limit or len(env) <= limit:
+        return env
+    head, sep, screen = env.partition("\nSCREEN\n")
+    if not sep:
+        return env[:limit] + "\n(environment truncated at %d chars)" % limit
+    fixed = head + "\nSCREEN\n"
+    budget = limit - len(fixed)
+    lines = screen.split("\n")
+    blocks, cur = [], []
+    for ln in lines:
+        if re.match(r"^W\d+ ", ln) and cur:
+            blocks.append(cur); cur = [ln]
+        else:
+            cur.append(ln)
+    if cur:
+        blocks.append(cur)
+    if budget <= 0 or not blocks:
+        return (fixed + screen)[:limit] + "\n(environment budgeted to %d chars)" % limit
+    focus = set(re.findall(r"[a-z0-9]{3,}", (focus_text or "").lower()))
+    text = ["\n".join(b) for b in blocks]
+    size = [len(t) + 1 for t in text]
+    score = [sum(t.lower().count(w) for w in focus) for t in text]
+    n = len(blocks)
+    floor = budget // n
+    alloc = [min(size[i], floor) for i in range(n)]
+    slack = budget - sum(alloc)
+    for i in sorted(range(n), key=lambda i: (-score[i], size[i], i)):
+        if slack <= 0:
+            break
+        want = size[i] - alloc[i]
+        take = min(want, slack)
+        alloc[i] += take; slack -= take
+    out = []
+    for i, b in enumerate(blocks):
+        if alloc[i] >= size[i]:
+            out.append(text[i]); continue
+        header = b[0]
+        kept = header
+        for ln in b[1:]:
+            if len(kept) + 1 + len(ln) > alloc[i]:
+                kept += "\n  (window trimmed to fit budget)"
+                break
+            kept += "\n" + ln
+        out.append(kept)
+    return fixed + "\n".join(out)
+
+
 def render_request(cfg, stage, sections):
     limit = int(cfg.get("max_environment_chars", 0))
     parts = [cfg.get("shared_prompt_prefix", ""), stage["prompt"], ""]
@@ -260,9 +309,8 @@ def render_request(cfg, stage, sections):
     if cfg.get("developer_feedback_schema"):
         parts.append("## developer_feedback\n%s" % sections.get("developer_feedback", ""))
     if "environment" in stage.get("reads", []):
-        env = sections.get("environment", "(empty)")
-        if limit and len(env) > limit:
-            env = env[:limit] + "\n(environment truncated at %d chars)" % limit
+        focus = sections.get("goal", "") + "\n" + sections.get("living_word", "")
+        env = _budget_environment(sections.get("environment", "(empty)"), limit, focus)
         parts.append("## environment\n%s" % env)
     return "\n\n".join(p for p in parts if p)
 
@@ -431,12 +479,47 @@ def _read_proxy_response(request, response):
     return json.dumps(record, ensure_ascii=False, separators=(",", ":"))
 
 
-def call_llm(cfg, stage, prompt_text):
+def _dump_transmission(cfg, api, record_type, turn_no, request_obj, raw, content, error):
+    log_dir = cfg.get("transmission_log_dir")
+    if not log_dir:
+        return
+    root = pathlib.Path(BOARD).resolve().parent / log_dir
+    root.mkdir(parents=True, exist_ok=True)
+    safe_request = request_obj
+    if isinstance(request_obj, dict) and "headers" in request_obj:
+        safe_request = dict(request_obj)
+        headers = dict(request_obj.get("headers") or {})
+        if "Authorization" in headers:
+            headers["Authorization"] = "Bearer [redacted]"
+        safe_request["headers"] = headers
+    dump = {
+        "at": time.time(), "turn": turn_no, "record_type": record_type, "api": api,
+        "request": safe_request, "raw_response": raw, "extracted_content": content,
+        "error": error,
+    }
+    path = root / ("turn-%05d-%s-%s.json" % (int(turn_no), record_type, time.time_ns()))
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(dump, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    os.rename(tmp, path)
+
+
+def call_llm(cfg, stage, prompt_text, api=None):
     model = cfg["model"]
-    api = model.get("api", "responses")
-    fmt = _record_response_format(cfg, stage["record_type"])
+    api = api or model.get("api", "responses")
+    record_type = stage["record_type"]
+    turn_no = cfg.get("state", {}).get("turn", 0)
+    fmt = _record_response_format(cfg, record_type)
     if api == "acp":
-        return _call_acp(model, prompt_text, fmt)
+        content, err = None, None
+        try:
+            content = _call_acp(model, prompt_text, fmt)
+            return content
+        except Exception as e:
+            err = repr(e); raise
+        finally:
+            _dump_transmission(cfg, api, record_type, turn_no,
+                               {"command": model.get("acp", {}).get("command"), "prompt": prompt_text},
+                               None, content, err)
     transport = model[api]
     url, body = transport["url"], dict(transport["request"])
     headers = {"Content-Type": "application/json"}
@@ -451,12 +534,19 @@ def call_llm(cfg, stage, prompt_text):
         body["response_format"] = {"type": "json_schema", "json_schema": fmt}
     else:
         raise RuntimeError("unknown model api: " + str(api))
-    req = urllib.request.Request(url, data=json.dumps(body).encode(),
-        headers=headers, method="POST")
-    with urllib.request.urlopen(req, timeout=240) as r:
-        raw = r.read().decode()
-    obj = json.loads(raw)
-    return _extract_content(obj)
+    raw, content, err = None, None, None
+    try:
+        req = urllib.request.Request(url, data=json.dumps(body).encode(),
+            headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=240) as r:
+            raw = r.read().decode()
+        content = _extract_content(json.loads(raw))
+        return content
+    except Exception as e:
+        err = repr(e); raise
+    finally:
+        _dump_transmission(cfg, api, record_type, turn_no,
+                           {"url": url, "headers": headers, "body": body}, raw, content, err)
 
 
 _CAPS = "unloaded"
@@ -590,8 +680,6 @@ def append_developer_feedback(cfg, stage_name, data, sections):
 def turn(path, dry, inject, mode):
     sections, order = read_board(path)
     cfg = get_config(sections)
-    if mode:
-        cfg["model"]["api"] = {"xai": "responses", "lmstudio": "chat_completions", "acp": "acp", "file_proxy": "file_proxy"}[mode]
     st = cfg["state"]
     heal_if_body_changed(sections, cfg, st, dry, inject)
     stage_name = st.get("stage") or cfg["start"]
@@ -599,6 +687,8 @@ def turn(path, dry, inject, mode):
     sections["failure_streak"] = str(st.get("failure_streak", 0))
     refresh_environment(sections, cfg)
     api = cfg["model"].get("api", "responses")
+    if mode:
+        api = {"xai": "responses", "lmstudio": "chat_completions", "acp": "acp", "file_proxy": "file_proxy"}[mode]
     if inject:
         reply = pathlib.Path(inject).read_text(encoding="utf-8-sig").strip()
     elif dry:
@@ -620,7 +710,7 @@ def turn(path, dry, inject, mode):
             return None, True
         reply = _read_proxy_response(request, response)
     else:
-        reply = call_llm(cfg, stage, render_request(cfg, stage, sections))
+        reply = call_llm(cfg, stage, render_request(cfg, stage, sections), api)
     if not (reply or "").strip():
         raise RuntimeError("model returned no text (empty completion) at stage " + stage_name)
     envelope = json.loads(strip_fence(reply))
