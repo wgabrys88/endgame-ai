@@ -47,7 +47,7 @@
   "developer_feedback_schema": {
     "type": "string"
   },
-  "max_environment_chars": 8000,
+  "max_environment_chars": 16000,
   "counsel_url": "https://raw.githubusercontent.com/wgabrys88/endgame-ai/runner-zebra/guidance.txt",
   "record_contracts": {
     "execution": {
@@ -1372,7 +1372,7 @@ def _render(windows: list[dict[str, Any]], screen: dict[str, int]) -> dict[str, 
             "py": (window_rect["top"] + window_rect["bottom"]) // 2,
             "hwnd": win["hwnd"], "owner_hwnd": win["hwnd"], "visible": True,
         })
-        actionable = [e for e in elements if e.get("action") and not e.get("offscreen") and 0 <= e["px"] < screen["width"] and 0 <= e["py"] < screen["height"]]
+        actionable = [e for e in elements if e.get("action")]
         for e in actionable:
             anc = nearest_action_ancestor(e)
             if anc is not None:
