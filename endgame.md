@@ -47,7 +47,7 @@
   "developer_feedback_schema": {
     "type": "string"
   },
-  "max_environment_chars": 4000,
+  "max_environment_chars": 8000,
   "counsel_url": "https://raw.githubusercontent.com/wgabrys88/endgame-ai/runner-zebra/guidance.txt",
   "record_contracts": {
     "execution": {
