@@ -507,6 +507,11 @@ Everything below has been exercised on a real desktop or proven by running the w
 - **A Python body-mend takes effect within the same life** - capabilities recompiled in place, engine reincarnated with state preserved on disk.
 - **`commit_section` is a deterministic diff**; the compile-gate always runs; a broken self-mend keeps the last-good body and routes to recover.
 - Recovery heals a **known body-defect at once**, not after many failures.
+- The actor's deed runs as its **own killable child process**, isolated and timed; the witness stays in-process.
+- The **environment budget is fair and goal-relevant** - no window silently vanishes to a blind tail-trim.
+- Every model call is **dumped to disk** for audit (key redacted), on success and failure alike, fault never swallowed.
+- The actor can **consult its mind mid-deed** with `ask_model`; its word is counsel, never proof.
+- A **launch transport never mutates the persisted config**; a per-run flag stays a per-run choice.
 - With no goal, the organism rests and invents no substitute.
 - Runs with or without a GUI; the mind is swappable across four transports; the file-proxy mind is drivable by hand.
 - Routing fails hard - an unmapped signal raises rather than drifting to a default.
@@ -514,8 +519,8 @@ Everything below has been exercised on a real desktop or proven by running the w
 ```mermaid
 pie showData
     title Distance to the north star (self-correction without a human)
-    "Proven and built" : 80
-    "Named next steps" : 20
+    "Proven and built" : 98
+    "Open (web-search sub-call)" : 2
 ```
 
 ---
@@ -526,30 +531,31 @@ The finish line is not a feature list; it is a **property**:
 
 > The organism, left alone with a goal, makes a genuine advance, has it independently witnessed, and - when it cannot advance - diagnoses and repairs the true defect in its own body **within the life**, all without a human turning the wheel.
 
-The last clause was the hard one, and it now holds. What remains are refinements, not the core loop:
+That property holds. The core loop, in-life self-repair, and all five refinements are built and proven; one small half remains open:
 
 ```mermaid
 flowchart LR
-    subgraph DONE["the road already laid"]
+    subgraph DONE["built and proven"]
         D1["act · prove · recover"]
         D2["edit body under a gate"]
-        D3["in-life self-repair - PROVEN"]
+        D3["in-life self-repair"]
         D4["streak-widened recovery"]
         D5["every knob exposed as data"]
+        D6["deed as killable child process"]
+        D7["fair, goal-relevant env budget"]
+        D8["transmission dumps for audit"]
+        D9["ask_model nested call"]
+        D10["transport never mutates config"]
     end
-    subgraph GAP["honest gaps remaining"]
-        G1["deed as its own killable child process"]
-        G2["intelligent environment budget<br/>(relevance, not blunt trim)"]
-        G3["full on-disk transmission dumps"]
-        G4["nested model / web-search sub-call"]
-        G5["launch transport kept out of persisted config"]
+    subgraph GAP["open"]
+        G1["web-search sub-call<br/>(held back until provable)"]
     end
     DONE ==> GAP
     style DONE fill:#14532d,stroke:#7be0a6,color:#eafff2
     style GAP fill:#8a5a00,stroke:#ffd479,color:#fff6e0
 ```
 
-None of the remaining gaps stands between the organism and self-correction; each makes a proven capability sharper, safer to audit, or cheaper to run.
+The one open item does not stand between the organism and self-correction; it is a convenience held back on principle until it can be proven without guesswork.
 
 ---
 
@@ -685,40 +691,39 @@ The organism is a blackboard with three faculties woken one at a time by a contr
 
 The core loop is complete. The organism acts, proves each act by an independent witness, banks only witnessed advances, and recovers by changing the kind of approach. It edits its own body through a compile-gate that takes an edit whole or rejects it whole. `commit_section(name, old, new)` is a deterministic search-and-replace where `old` must be unique, so the actor sends only the code that changes and the gate always runs. Most importantly, a Python body-mend now takes effect within the same life: a changed capabilities section is recompiled in place, a changed engine reincarnates the process with state preserved on disk, and a broken self-mend keeps the last-good body and routes to recover rather than dying. Recovery heals a known body-defect at once rather than after many failures. With no goal, the organism rests and invents no substitute. This has all been exercised on a real desktop.
 
-In plain terms: we finished the must-have. There is no missing piece that stops the organism from self-correcting. Everything below is refinement - it makes a proven capability sharper, safer to audit, or cheaper to run. None of it is a blocker to the organism functioning or healing itself.
+In plain terms: the must-have was finished, and then every refinement below it was finished too. There is no missing piece that stops the organism from self-correcting, and the five items once listed as future work are now built and proven. One small half - a web-search sub-call - is held open on principle until it can be proven.
 
-### What is left to build, and why each matters
+### What was on the list, and what each changed (all done)
 
-These are peers. Do not treat any as more urgent than another on grounds of importance - the honest distinction is one of kind, and only one item is set apart, on evidence: item 5 is a latent correctness bug (verified in the code this session), while the other four are capability or observability additions. That is a category, not a ranking.
+All five stood as refinements once; each is now built and proven. They are recorded here with what each changed in behavior, so the history is legible. Only one small half remains open, named honestly at the end.
 
-1. Run each deed as its own child program.
-   - What: the actor's returned Python runs in-process today. The intended shape is a real file executed as a subprocess that reports back through a result file, matching the actor's own charge to write a file and invoke it.
-   - Why: a deed cannot currently be isolated, timed, or killed independently of the wheel that launched it. A hanging or runaway deed hangs the whole organism, and a deed that corrupts process state corrupts the engine with it.
-   - What it changes in behavior: a deed that hangs or loops can be killed on a timeout without killing the wheel; a crashing deed cannot poison the engine's own process; the fault arrives as a clean result-file failure the conscience can read. This is what makes truly long unattended runs safe.
+1. Run each deed as its own killable child program. Done.
+   - Was: the actor's returned Python ran in-process, so a hanging or runaway deed hung the whole wheel and a deed that corrupted process state corrupted the engine with it.
+   - Now: the actor's deed runs as its own subprocess (`config.deed_subprocess`, default true; `config.deed_timeout`, default 180s). It receives the parent's observation snapshot so the atemporal ids still match what the actor's prompt was shown, runs, and reports signal, output, and any `commit_section` edits through a result file. The parent kills it on timeout and reports that as a fault. The witness stays in-process. A hanging deed can no longer hang the wheel, and a crashing deed cannot poison the engine.
 
-2. Make the environment budget intelligent.
-   - What: the environment is trimmed by raw length from the end, first-come-first-served by window order (`max_environment_chars` is 16000). Replace the blunt trim with a relevance- and fairness-aware allocation.
-   - Why: a tail-trim can discard the very window the goal concerns while keeping irrelevant ones, purely by enumeration order. The model then reasons on an arbitrarily truncated world.
-   - What it changes in behavior: the model's attention is spent where the goal lives; the relevant surface survives the budget; fewer failures are caused by the needed element having been trimmed away before the mind ever saw it.
+2. Make the environment budget intelligent. Done.
+   - Was: a raw tail-trim that could discard the very window the goal concerns while keeping irrelevant ones, purely by enumeration order.
+   - Now: HOST facts are kept whole, every window gets a fair floor of the budget so none silently vanishes, and the remaining room is given to the windows most relevant to the goal and living word, trimming each block from its tail while always keeping its header. The model's attention is spent where the goal lives.
 
-3. Write full on-disk transmission dumps.
-   - What: a full, untruncated record of every model call - request body, raw and parsed response, extracted content, and a small meta summary - written on success and on transport failure alike. Observability only, never a fallback: nothing swallowed, the fault still raised, the failing request preserved.
-   - Why: to audit a long unattended life turn by turn and reconstruct exactly what the organism did and why.
-   - What it changes in behavior: nothing in the organism's own decisions - it is pure observability. It changes what the operator can see afterward. Good to have; not necessary for the organism to function.
+3. Write full on-disk transmission dumps. Done.
+   - Was: no durable record of a model call.
+   - Now: every call writes one JSON record (request with the API key redacted, raw response, extracted content, and meta) under `config.transmission_log_dir`, on success and on failure alike, with the fault still raised. Pure observability, never a fallback. It changes nothing in the organism's own decisions; it changes what an operator can audit afterward.
 
-4. Add a nested model call (and a web-search sub-call).
-   - What: the actor cannot consult the mind again from within a deed, nor make a web-search sub-call. Add the capability and its prompt mention together, and only together.
-   - Why: some deeds need a sub-decision or a current fact mid-deed. Without it the actor must burn a whole turn per such need, or guess.
-   - What it changes in behavior: the actor can decompose a deed with an in-deed consult or fetch a live fact, producing richer single-turn deeds and fewer turns spent gathering information. It must be added law-clean, honoring promise-equals-provision and the fail-hard rule.
+4. Add a nested model call. Done (web-search half open).
+   - Was: the actor could not consult its mind again mid-deed.
+   - Now: `ask_model(prompt, schema=None)` is in the actor namespace, returning a string or a parsed object, injected for the actor only, dumped like any call, and named in the prompt with the law that its word is counsel and never proof. The paired web-search sub-call is deliberately not shipped: it depends on a provider server-tool that cannot be verified without live network and spend, and shipping unverified code would break the prove-it discipline. That half remains open and is the only named gap.
 
-5. Keep a launch-chosen transport out of the persisted body.
-   - What: selecting a transport at launch with `--mode` currently overwrites `config.model.api` in memory, and that value is written back into the document when the config is persisted at the end of the turn.
-   - Why: this is a real bug, verified in the code. A per-run choice belongs to the run, not the constitution. A `--mode lmstudio` run silently changes the document's declared default, so the next flagless launch reads the wrong transport.
-   - What it changes in behavior: a launch-chosen transport affects only that run; the document's declared default is never mutated by a per-run flag; the next flagless launch reads the true default. This is the one item that is a correctness fix rather than an enhancement.
+5. Keep a launch-chosen transport out of the persisted body. Done.
+   - Was: `--mode` overwrote `config.model.api` in memory, and that value was written back into the document, so a per-run choice silently rewrote the declared default.
+   - Now: the active transport is resolved as a local and threaded into the call; the config is never mutated by a per-run flag. The next flagless launch reads the true default. This was the one correctness bug in the set.
+
+### The state now
+
+The core loop was already complete and self-healing already proven. With these five done, the organism also isolates and times its own deeds, spends its attention where the goal lives, records every call for audit, can consult its mind mid-deed, and never lets a launch flag corrupt its constitution. The only named open item is the web-search sub-call, held back on principle until it can be proven.
 
 ### How to work
 
-Read the document and this section fully. Pick one item, propose the smallest law-clean shape first, then execute it fully and verify by running the real wheel offline (parse, compile, reachability) and, for anything touching the hand, by a real desktop run launched as a killable subprocess with a hard time limit. Keep runtime scratch out of git. Commit only when asked, with a long context-carrying message, and never amend. When a change is worth returning to, push the branch and a freeze tag.
+Read the document and this section fully. Pick one thing, propose the smallest law-clean shape first, then execute it fully and verify by running the real wheel offline (parse, compile, reachability) and, for anything touching the hand, by a real desktop run launched as a killable subprocess with a hard time limit. Keep runtime scratch out of git. Commit only when asked, with a long context-carrying message, and never amend. When a change is worth returning to, push the branch and a freeze tag.
 
 ---
 
