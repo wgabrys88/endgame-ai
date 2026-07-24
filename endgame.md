@@ -48,6 +48,12 @@
     "type": "string"
   },
   "max_environment_chars": 16000,
+  "observation": {
+    "step_px": 64,
+    "max_subtree_nodes_per_point": 120,
+    "depth_ceiling": 45,
+    "min_window_area": 2500
+  },
   "counsel_url": "https://raw.githubusercontent.com/wgabrys88/endgame-ai/runner-zebra/guidance.txt",
   "record_contracts": {
     "execution": {
@@ -511,7 +517,7 @@ def refresh_environment(sections, cfg):
             _LAST_COUNSEL = note
     c = caps()
     if c is not None and hasattr(c, "environment"):
-        c.environment(sections)
+        c.environment(sections, cfg)
 
 
 def _parse_living_word(text):
@@ -1207,7 +1213,7 @@ class UiaScanner:
     def harvest_subtree(self, root_element: Any, max_nodes: int | None = None) -> list[dict[str, Any]]:
         nodes: list[dict[str, Any]] = []
         seen: set[str] = set()
-        depth_ceiling = 45
+        depth_ceiling = int(self.cfg.get("depth_ceiling", 45))
         try:
             root_element = root_element.BuildUpdatedCache(self._cache(TreeScope_Subtree))
         except Exception:
@@ -1270,7 +1276,7 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
     sw, sh = int(user32.GetSystemMetrics(0)), int(user32.GetSystemMetrics(1))
     screen = {"width": sw, "height": sh}
 
-    windows = enum_windows()
+    windows = enum_windows(int(cfg.get("min_window_area", 2500)))
 
     scanner = UiaScanner(cfg, desktop)
     saved = wintypes.POINT()
@@ -1698,7 +1704,7 @@ def _host_facts():
     ])
 
 
-def environment(sections):
+def environment(sections, cfg=None):
     facts = _host_facts()
     if NO_GUI:
         _LAST_OBS["action_index"] = {}
@@ -1707,7 +1713,8 @@ def environment(sections):
         sections["environment"] = facts + "\n\nSCREEN\n(no GUI on this host: --no-gui; no screen observed)"
         return
     d = get_desktop()
-    obs_result = d.observe({"step_px": 64, "max_subtree_nodes_per_point": 120})
+    obs_cfg = (cfg or {}).get("observation", {})
+    obs_result = d.observe(obs_cfg)
     _LAST_OBS["action_index"] = obs_result.get("action_index", {}) or {}
     _LAST_OBS["screen_elements"] = obs_result.get("screen_elements", []) or []
     _LAST_OBS["desktop_tree_text"] = str(obs_result.get("desktop_tree_text") or "").strip()
