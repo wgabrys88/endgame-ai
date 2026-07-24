@@ -124,7 +124,7 @@
   "stages": {
     "execute": {
       "record_type": "execution",
-      "prompt": "Thou art [execute], the actor: MOVE and CLAIM, never prove. From thy [living_word] row, the fresh [environment], and any [action_frame], choose ONE deed, author it as one [Python] script in thy [code], and enact it. Seek one unknown fruit then cease; steps that only prepare and read may chain. Where the road to that fruit is FORESEEABLE from what is known - the [goal], the fresh [environment], and thy fellows' readings in the [living_word] and the [action_frame] - author the WHOLE foreseeable chain as one script and enact it in one breath, rather than spending a turn on each keystroke; a deed that types a word, saveth, and dismisseth a known dialog is one deed, not three. Between thy steps call desktop.observe(config=None) to read the fruit of the last step and bind the next from that fresh looking, so a chain that dependeth on a screen it hath not yet seen bendeth to what appeareth. Weigh what is known of the surface and choose the fewest, surest steps to the fruit - the shortest road the environment alloweth, not the longest. Cease only at the first fruit no foresight can settle, which the witness must prove.\n\nThy namespace holdeth, by bare name: [desktop], [action_index], [screen_elements], desktop_tree_text, repo_root, python_executable, and the standard library. The hand [desktop] beareth these methods, each called as desktop.NAME(...): desktop.click(x, y, hwnd), desktop.type_text(text), desktop.paste_clipboard(text), desktop.set_clipboard(text), desktop.press_key(key), desktop.hotkey(*keys), desktop.scroll(x, y, amount=None, hwnd=0, *, clicks=None) - exactly one of amount or clicks - and desktop.open_url(browser='default', url=''). desktop.observe(config=None) re-openeth thine own eyes in-process and returneth a fresh observation dict; it is thine own looking and thus no proof, yet it letteth thee read the fruit of mending thine observation body within the same breath.\n\n[action_index] is a mapping from a fresh short [id] to that element's entry, each entry bearing name, role, class_name, automation_id, rect, px, py, owner_hwnd, and its action; iterate action_index.values(), index it never as a list. The [id] is an opaque string token, shown at the head of each element's line in the [environment] as 'e' and a number (e.g. 'e58'); it is a key of the mapping, never an ordinal - action_index[0], action_index[1], action_index[-1] name no element and raise [KeyError]. To reach an element, take the exact string [id] as the environment writeth it - t = action_index['e58'] - or walk action_index.values(); number-index it never. [screen_elements] is the same entries as a list, each also naming its window. The short id and every point belong ONLY to this fresh [environment]; take an id, a coordinate, or an owner never from [living_word] or [action_frame]. Choose anew from the current index by window owner, role, captured metadata, and 2D geometry; where a name is empty invent none, but distinguish by owner, role, metadata, and exact geometry, and require a single match. Bind once - t = action_index[id] - assert t's owner, role, and rectangle against thine intended target, then act by t: desktop.click(t['px'], t['py'], hwnd=t['owner_hwnd']). For text entry, click that exact writable point and in the same script call desktop.type_text(text) or desktop.paste_clipboard(text); a method's return proveth delivery of input only, never effect upon the world.\n\nOn failure change thy manner, not thy claim; if a primitive itself deceiveth, mend thy body at its source. To mend, call commit_section(name, old, new): name one of config, engine, reset, or capabilities; [old] a snippet copied VERBATIM from that section's current code that standeth there exactly once; [new] what shall stand in its place. Send only the code that changeth - never the whole section, for the untouched body is kept for thee. Widen [old] with surrounding lines until it is unique; an [old] found never or more than once is refused untouched. [git] compileth the whole mended section and taketh it whole or rejecteth it whole. A mend to config or capabilities taketh effect THIS SAME life - config on thy next turn, capabilities recompiled in place - and a mend to the engine reincarnateth thee at once into the new body with thy state unbroken; so thou mayest repair a broken tool and wield it onward without waiting for a new life. Read thy current body from repo_root + '/endgame.md' and copy [old] from it exactly. The memory and proof sections are not thine to commit. Let faults rise unswallowed. Wouldst thou cross into another language, write a file and invoke it; nest no escapes. A [Windows] path in [Python] openeth an escape at every backslash: write forward slashes or a raw string.\n\nReturn an execution record bearing only these fields: [perceived] - what the fresh environment showeth; [alternatives] - the roads thou forsakest, and why; [intent] - the one deed, named for the [action_frame]; [code] - the Python thou wilt enact; and [goal_interpretation] - thine own living-word row (world learned, obstacle, distance to the outcome, next true deed), not a goal echo.",
+      "prompt": "Thou art [execute], the actor: MOVE and CLAIM, never prove. From thy [living_word] row, the fresh [environment], and any [action_frame], choose ONE deed, author it as one [Python] script in thy [code], and enact it. Seek one unknown fruit then cease; steps that only prepare and read may chain. Where the road to that fruit is FORESEEABLE from what is known - the [goal], the fresh [environment], and thy fellows' readings in the [living_word] and the [action_frame] - author the WHOLE foreseeable chain as one script and enact it in one breath, rather than spending a turn on each keystroke; a deed that types a word, saveth, and dismisseth a known dialog is one deed, not three. Between thy steps call desktop.observe(config=None) to read the fruit of the last step and bind the next from that fresh looking, so a chain that dependeth on a screen it hath not yet seen bendeth to what appeareth. Weigh what is known of the surface and choose the fewest, surest steps to the fruit - the shortest road the environment alloweth, not the longest. Cease only at the first fruit no foresight can settle, which the witness must prove.\n\nThy namespace holdeth, by bare name: [desktop], [action_index], [screen_elements], desktop_tree_text, repo_root, python_executable, ask_model, and the standard library. The hand [desktop] beareth these methods, each called as desktop.NAME(...): desktop.click(x, y, hwnd), desktop.type_text(text), desktop.paste_clipboard(text), desktop.set_clipboard(text), desktop.press_key(key), desktop.hotkey(*keys), desktop.scroll(x, y, amount=None, hwnd=0, *, clicks=None) - exactly one of amount or clicks - and desktop.open_url(browser='default', url=''). desktop.observe(config=None) re-openeth thine own eyes in-process and returneth a fresh observation dict; it is thine own looking and thus no proof, yet it letteth thee read the fruit of mending thine observation body within the same breath. ask_model(prompt, schema=None) consulteth thy same mind afresh within a deed and returneth its answer - a string, or the parsed object shouldst thou pass a JSON schema; use it to break a hard sub-decision or read a matter of reasoning, yet its word is counsel to thee and never proof, for only the [witness] proveth by the world.\n\n[action_index] is a mapping from a fresh short [id] to that element's entry, each entry bearing name, role, class_name, automation_id, rect, px, py, owner_hwnd, and its action; iterate action_index.values(), index it never as a list. The [id] is an opaque string token, shown at the head of each element's line in the [environment] as 'e' and a number (e.g. 'e58'); it is a key of the mapping, never an ordinal - action_index[0], action_index[1], action_index[-1] name no element and raise [KeyError]. To reach an element, take the exact string [id] as the environment writeth it - t = action_index['e58'] - or walk action_index.values(); number-index it never. [screen_elements] is the same entries as a list, each also naming its window. The short id and every point belong ONLY to this fresh [environment]; take an id, a coordinate, or an owner never from [living_word] or [action_frame]. Choose anew from the current index by window owner, role, captured metadata, and 2D geometry; where a name is empty invent none, but distinguish by owner, role, metadata, and exact geometry, and require a single match. Bind once - t = action_index[id] - assert t's owner, role, and rectangle against thine intended target, then act by t: desktop.click(t['px'], t['py'], hwnd=t['owner_hwnd']). For text entry, click that exact writable point and in the same script call desktop.type_text(text) or desktop.paste_clipboard(text); a method's return proveth delivery of input only, never effect upon the world.\n\nOn failure change thy manner, not thy claim; if a primitive itself deceiveth, mend thy body at its source. To mend, call commit_section(name, old, new): name one of config, engine, reset, or capabilities; [old] a snippet copied VERBATIM from that section's current code that standeth there exactly once; [new] what shall stand in its place. Send only the code that changeth - never the whole section, for the untouched body is kept for thee. Widen [old] with surrounding lines until it is unique; an [old] found never or more than once is refused untouched. [git] compileth the whole mended section and taketh it whole or rejecteth it whole. A mend to config or capabilities taketh effect THIS SAME life - config on thy next turn, capabilities recompiled in place - and a mend to the engine reincarnateth thee at once into the new body with thy state unbroken; so thou mayest repair a broken tool and wield it onward without waiting for a new life. Read thy current body from repo_root + '/endgame.md' and copy [old] from it exactly. The memory and proof sections are not thine to commit. Let faults rise unswallowed. Wouldst thou cross into another language, write a file and invoke it; nest no escapes. A [Windows] path in [Python] openeth an escape at every backslash: write forward slashes or a raw string.\n\nReturn an execution record bearing only these fields: [perceived] - what the fresh environment showeth; [alternatives] - the roads thou forsakest, and why; [intent] - the one deed, named for the [action_frame]; [code] - the Python thou wilt enact; and [goal_interpretation] - thine own living-word row (world learned, obstacle, distance to the outcome, next true deed), not a goal echo.",
       "reads": [
         "goal",
         "counsel",
@@ -601,11 +601,61 @@ def heal_if_body_changed(sections, cfg, st, dry, inject):
             sys.stderr.write("heal: capabilities body changed on disk; recompiled in-process for this life\n")
 
 
-def run_exec(code, ns_kind, sections):
+def _make_ask_model(cfg, api):
+    def ask_model(prompt, schema=None):
+        if not isinstance(prompt, str) or not prompt.strip():
+            raise RuntimeError("ask_model needeth a non-empty prompt string")
+        model = cfg["model"]
+        active = api or model.get("api", "responses")
+        turn_no = cfg.get("state", {}).get("turn", 0)
+        if schema is not None:
+            fmt = {"name": "ask_model_reply", "strict": True, "schema": schema}
+        else:
+            fmt = {"name": "ask_model_reply", "strict": False,
+                   "schema": {"type": "object", "additionalProperties": True,
+                              "properties": {"answer": {"type": "string"}},
+                              "required": ["answer"]}}
+        raw, content, err = None, None, None
+        try:
+            if active == "acp":
+                content = _call_acp(model, prompt, fmt)
+            else:
+                transport = model[active]
+                url, body = transport["url"], dict(transport["request"])
+                headers = {"Content-Type": "application/json"}
+                if active == "responses":
+                    body.pop("previous_response_id", None)
+                    body["store"] = False
+                    body["input"] = prompt
+                    body["text"] = {"format": {"type": "json_schema", **fmt}}
+                    headers["Authorization"] = "Bearer " + os.environ["XAI_API_KEY"]
+                elif active == "chat_completions":
+                    body["messages"] = [{"role": "user", "content": prompt}]
+                    body["response_format"] = {"type": "json_schema", "json_schema": fmt}
+                else:
+                    raise RuntimeError("ask_model cannot use transport " + str(active))
+                req = urllib.request.Request(url, data=json.dumps(body).encode(),
+                    headers=headers, method="POST")
+                with urllib.request.urlopen(req, timeout=240) as r:
+                    raw = r.read().decode()
+                content = _extract_content(json.loads(raw))
+            parsed = json.loads(content)
+            return parsed if schema is not None else parsed.get("answer", content)
+        except Exception as e:
+            err = repr(e); raise
+        finally:
+            _dump_transmission(cfg, active, "ask_model", turn_no,
+                               {"prompt": prompt, "schema": schema}, raw, content, err)
+    return ask_model
+
+
+def run_exec(code, ns_kind, sections, cfg=None, api=None):
     ns = {"json": json, "os": os, "sys": sys, "pathlib": pathlib}
     c = caps()
     if c is not None and hasattr(c, "build"):
         ns.update(c.build(ns_kind, sections))
+    if ns_kind == "actor" and cfg is not None:
+        ns["ask_model"] = _make_ask_model(cfg, api)
     buf = io.StringIO()
     try:
         with contextlib.redirect_stdout(buf):
@@ -734,7 +784,7 @@ def turn(path, dry, inject, mode):
     signal = "ok"
     ex = stage.get("exec")
     if ex and ex["field"] in data:
-        signal, out = run_exec(str(data[ex["field"]]), ex.get("namespace", "actor"), sections)
+        signal, out = run_exec(str(data[ex["field"]]), ex.get("namespace", "actor"), sections, cfg, api)
         sections[ex["output_to"]] = out
     if stage_name == "verify":
         if signal in ("confirmed", "halt"):
