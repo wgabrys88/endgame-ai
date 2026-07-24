@@ -203,17 +203,17 @@ SEC = re.compile(r"^##\s+(\w+)\s*$", re.M)
 
 def read_board(path):
     text = pathlib.Path(path).read_text(encoding="utf-8")
-    out, order, cur, buf, fence = {}, [], None, [], False
+    out, order, cur, buf, fence, seen = {}, [], None, [], False, set()
     for ln in text.split("\n"):
         if ln.lstrip().startswith("```"):
             fence = not fence
         m = None if fence else SEC.match(ln)
-        if m:
+        if m and m.group(1) not in seen:
             if cur is not None:
                 out[cur] = "\n".join(buf).strip("\n")
             cur, buf = m.group(1), []
-            if cur not in order:
-                order.append(cur)
+            seen.add(cur)
+            order.append(cur)
         else:
             buf.append(ln)
     if cur is not None:
@@ -667,17 +667,17 @@ DEFAULTS = {
 
 def read_board(path):
     text = pathlib.Path(path).read_text(encoding="utf-8")
-    out, order, cur, buf, fence = {}, [], None, [], False
+    out, order, cur, buf, fence, seen = {}, [], None, [], False, set()
     for ln in text.split("\n"):
         if ln.lstrip().startswith(FENCE):
             fence = not fence
         m = None if fence else SEC.match(ln)
-        if m:
+        if m and m.group(1) not in seen:
             if cur is not None:
                 out[cur] = "\n".join(buf).strip("\n")
             cur, buf = m.group(1), []
-            if cur not in order:
-                order.append(cur)
+            seen.add(cur)
+            order.append(cur)
         else:
             buf.append(ln)
     if cur is not None:
@@ -1149,7 +1149,7 @@ class UiaScanner:
             for pid, label in ((PID_VALUE_PATTERN, "Value"), (PID_LEGACY_PATTERN, "LegacyIAccessible")):
                 pattern_values.update(self._pattern_text(_pattern(element, pid), label))
             name = name or pattern_values.get("legacy_name") or ""
-            if role in WRITE_ROLES and role != "Document" and not name and not (pattern_values.get("value") or pattern_values.get("legacy_value")):
+            if role in WRITE_ROLES and role != "Document" and not (pattern_values.get("value") or pattern_values.get("legacy_value")):
                 pattern_values.update(self._pattern_text(_pattern(element, PID_TEXT_PATTERN), "Text"))
             value = pattern_values.get("value") or pattern_values.get("legacy_value") or pattern_values.get("text") or ""
             text_full = value or name or pattern_values.get("legacy_description") or ""
@@ -1674,7 +1674,7 @@ def _host_facts():
         user = "(unknown)"
     tools = [t for t in ("git", "python", "powershell.exe", "pwsh", "cmd", "bash", "node", "curl", "pip") if shutil.which(t)]
     return "\n".join([
-        "## host",
+        "HOST",
         "platform: %s (%s)" % (platform.platform(), _s.platform),
         "machine: %s" % platform.node(),
         "user: %s" % user,
@@ -1691,7 +1691,7 @@ def environment(sections):
         _LAST_OBS["action_index"] = {}
         _LAST_OBS["screen_elements"] = []
         _LAST_OBS["desktop_tree_text"] = ""
-        sections["environment"] = facts + "\n\n## screen\n(no GUI on this host: --no-gui; no screen observed)"
+        sections["environment"] = facts + "\n\nSCREEN\n(no GUI on this host: --no-gui; no screen observed)"
         return
     d = get_desktop()
     obs_result = d.observe({"step_px": 64, "max_subtree_nodes_per_point": 120})
@@ -1699,7 +1699,7 @@ def environment(sections):
     _LAST_OBS["screen_elements"] = obs_result.get("screen_elements", []) or []
     _LAST_OBS["desktop_tree_text"] = str(obs_result.get("desktop_tree_text") or "").strip()
     tree = _LAST_OBS["desktop_tree_text"] or "(no interactable elements observed)"
-    sections["environment"] = facts + "\n\n## screen\n" + tree
+    sections["environment"] = facts + "\n\nSCREEN\n" + tree
 ```
 
 ## goal
