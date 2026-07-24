@@ -510,7 +510,7 @@ Everything below has been exercised on a real desktop or proven by running the w
 - The actor's deed runs as its **own killable child process**, isolated and timed; the witness stays in-process.
 - The **environment budget is fair and goal-relevant** - no window silently vanishes to a blind tail-trim.
 - Every model call is **dumped to disk** for audit (key redacted), on success and failure alike, fault never swallowed.
-- The actor can **consult its mind mid-deed** with `ask_model`; its word is counsel, never proof.
+- The actor can **consult its mind mid-deed** with `ask_model`, and **search the live web** with `web_search` (server-side xAI web search, returning text and source URLs); both are counsel, never proof.
 - A **launch transport never mutates the persisted config**; a per-run flag stays a per-run choice.
 - With no goal, the organism rests and invents no substitute.
 - Runs with or without a GUI; the mind is swappable across four transports; the file-proxy mind is drivable by hand.
@@ -519,8 +519,7 @@ Everything below has been exercised on a real desktop or proven by running the w
 ```mermaid
 pie showData
     title Distance to the north star (self-correction without a human)
-    "Proven and built" : 98
-    "Open (web-search sub-call)" : 2
+    "Proven and built" : 100
 ```
 
 ---
@@ -531,7 +530,7 @@ The finish line is not a feature list; it is a **property**:
 
 > The organism, left alone with a goal, makes a genuine advance, has it independently witnessed, and - when it cannot advance - diagnoses and repairs the true defect in its own body **within the life**, all without a human turning the wheel.
 
-That property holds. The core loop, in-life self-repair, and all five refinements are built and proven; one small half remains open:
+That property holds. The core loop, in-life self-repair, and every named refinement are built and proven:
 
 ```mermaid
 flowchart LR
@@ -545,17 +544,13 @@ flowchart LR
         D7["fair, goal-relevant env budget"]
         D8["transmission dumps for audit"]
         D9["ask_model nested call"]
-        D10["transport never mutates config"]
+        D10["web_search live web (server-side)"]
+        D11["transport never mutates config"]
     end
-    subgraph GAP["open"]
-        G1["web-search sub-call<br/>(held back until provable)"]
-    end
-    DONE ==> GAP
     style DONE fill:#14532d,stroke:#7be0a6,color:#eafff2
-    style GAP fill:#8a5a00,stroke:#ffd479,color:#fff6e0
 ```
 
-The one open item does not stand between the organism and self-correction; it is a convenience held back on principle until it can be proven without guesswork.
+Nothing named remains between the organism and self-correction. What lies beyond is the speculative deed-becomes-a-node horizon in the appendix, held back until same-life healing is not only proven but relied upon.
 
 ---
 
@@ -691,11 +686,11 @@ The organism is a blackboard with three faculties woken one at a time by a contr
 
 The core loop is complete. The organism acts, proves each act by an independent witness, banks only witnessed advances, and recovers by changing the kind of approach. It edits its own body through a compile-gate that takes an edit whole or rejects it whole. `commit_section(name, old, new)` is a deterministic search-and-replace where `old` must be unique, so the actor sends only the code that changes and the gate always runs. Most importantly, a Python body-mend now takes effect within the same life: a changed capabilities section is recompiled in place, a changed engine reincarnates the process with state preserved on disk, and a broken self-mend keeps the last-good body and routes to recover rather than dying. Recovery heals a known body-defect at once rather than after many failures. With no goal, the organism rests and invents no substitute. This has all been exercised on a real desktop.
 
-In plain terms: the must-have was finished, and then every refinement below it was finished too. There is no missing piece that stops the organism from self-correcting, and the five items once listed as future work are now built and proven. One small half - a web-search sub-call - is held open on principle until it can be proven.
+In plain terms: the must-have was finished, and then every refinement below it was finished too - including the web-search capability, verified live against the real xAI API. There is no missing named piece; the five items once listed as future work are all built and proven. What remains is only the speculative node-accumulation horizon, held back deliberately.
 
 ### What was on the list, and what each changed (all done)
 
-All five stood as refinements once; each is now built and proven. They are recorded here with what each changed in behavior, so the history is legible. Only one small half remains open, named honestly at the end.
+All five stood as refinements once; each is now built and proven, web search included. They are recorded here with what each changed in behavior, so the history is legible.
 
 1. Run each deed as its own killable child program. Done.
    - Was: the actor's returned Python ran in-process, so a hanging or runaway deed hung the whole wheel and a deed that corrupted process state corrupted the engine with it.
@@ -709,9 +704,9 @@ All five stood as refinements once; each is now built and proven. They are recor
    - Was: no durable record of a model call.
    - Now: every call writes one JSON record (request with the API key redacted, raw response, extracted content, and meta) under `config.transmission_log_dir`, on success and on failure alike, with the fault still raised. Pure observability, never a fallback. It changes nothing in the organism's own decisions; it changes what an operator can audit afterward.
 
-4. Add a nested model call. Done (web-search half open).
-   - Was: the actor could not consult its mind again mid-deed.
-   - Now: `ask_model(prompt, schema=None)` is in the actor namespace, returning a string or a parsed object, injected for the actor only, dumped like any call, and named in the prompt with the law that its word is counsel and never proof. The paired web-search sub-call is deliberately not shipped: it depends on a provider server-tool that cannot be verified without live network and spend, and shipping unverified code would break the prove-it discipline. That half remains open and is the only named gap.
+4. Add a nested model call. Done (web search included).
+   - Was: the actor could not consult its mind again mid-deed, nor reach the live web.
+   - Now: `ask_model(prompt, schema=None)` calls the same transport afresh (string or parsed-object reply), and `web_search(query, allowed_domains=None)` performs a server-side xAI web search on the responses endpoint, returning the answer text and a deduped list of source URLs. Both are injected for the actor only (in-process and in the child deed), dumped like any call, and named in the prompt with the law that their word is counsel, never proof. web_search was verified live against the real xAI API and used by the organism in a full run to learn a fact the screen could not show, then act on it.
 
 5. Keep a launch-chosen transport out of the persisted body. Done.
    - Was: `--mode` overwrote `config.model.api` in memory, and that value was written back into the document, so a per-run choice silently rewrote the declared default.
@@ -719,7 +714,7 @@ All five stood as refinements once; each is now built and proven. They are recor
 
 ### The state now
 
-The core loop was already complete and self-healing already proven. With these five done, the organism also isolates and times its own deeds, spends its attention where the goal lives, records every call for audit, can consult its mind mid-deed, and never lets a launch flag corrupt its constitution. The only named open item is the web-search sub-call, held back on principle until it can be proven.
+The core loop was already complete and self-healing already proven. With these five done, the organism also isolates and times its own deeds, spends its attention where the goal lives, records every call for audit, can consult its mind mid-deed and search the live web, and never lets a launch flag corrupt its constitution. Nothing named remains open; what lies beyond is the speculative node-accumulation horizon in the next appendix.
 
 ### How to work
 
