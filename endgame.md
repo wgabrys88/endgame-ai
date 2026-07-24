@@ -494,7 +494,7 @@ def run_exec(code, ns_kind, sections):
 _LAST_COUNSEL = ""
 def refresh_environment(sections, cfg):
     global _LAST_COUNSEL
-    url = cfg.get("counsel_url")
+    url = cfg.get("counsel_url") if flag("--counsel") else None
     note = ""
     if url:
         try:
