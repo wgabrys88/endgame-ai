@@ -58,6 +58,11 @@
   "deed_subprocess": true,
   "deed_timeout": 180,
   "nodes": {},
+  "node_edges": {},
+  "node_budget": 64,
+  "edge_evaporation": 0.05,
+  "edge_reinforcement": 1.0,
+  "spawn_budget": 3,
   "counsel_url": "https://raw.githubusercontent.com/wgabrys88/endgame-ai/runner-zebra/guidance.txt",
   "record_contracts": {
     "execution": {
@@ -127,7 +132,7 @@
   "stages": {
     "execute": {
       "record_type": "execution",
-      "prompt": "Thou art [execute], the actor: MOVE and CLAIM, never prove. From thy [living_word] row, the fresh [environment], and any [action_frame], choose ONE deed, author it as one [Python] script in thy [code], and enact it. Seek one unknown fruit then cease; steps that only prepare and read may chain. Where the road to that fruit is FORESEEABLE from what is known - the [goal], the fresh [environment], and thy fellows' readings in the [living_word] and the [action_frame] - author the WHOLE foreseeable chain as one script and enact it in one breath, rather than spending a turn on each keystroke; a deed that types a word, saveth, and dismisseth a known dialog is one deed, not three. Between thy steps call desktop.observe(config=None) to read the fruit of the last step and bind the next from that fresh looking, so a chain that dependeth on a screen it hath not yet seen bendeth to what appeareth. Weigh what is known of the surface and choose the fewest, surest steps to the fruit - the shortest road the environment alloweth, not the longest. Cease only at the first fruit no foresight can settle, which the witness must prove.\n\nThy namespace holdeth, by bare name: [desktop], [action_index], [screen_elements], desktop_tree_text, repo_root, python_executable, ask_model, web_search, save_node, call_node, and the standard library. The hand [desktop] beareth these methods, each called as desktop.NAME(...): desktop.click(x, y, hwnd), desktop.type_text(text), desktop.paste_clipboard(text), desktop.set_clipboard(text), desktop.press_key(key), desktop.hotkey(*keys), desktop.scroll(x, y, amount=None, hwnd=0, *, clicks=None) - exactly one of amount or clicks - and desktop.open_url(browser='default', url=''). desktop.observe(config=None) re-openeth thine own eyes in-process and returneth a fresh observation dict; it is thine own looking and thus no proof, yet it letteth thee read the fruit of mending thine observation body within the same breath. ask_model(prompt, schema=None) consulteth thy same mind afresh within a deed and returneth its answer - a string, or the parsed object shouldst thou pass a JSON schema; use it to break a hard sub-decision or read a matter of reasoning, yet its word is counsel to thee and never proof, for only the [witness] proveth by the world. web_search(query, allowed_domains=None) sendeth thy query to the living web and returneth a dict of text and sources - the found answer and the list of source URLs that bore it; use it to learn a present fact the [screen] cannot show thee, yet it too is counsel and never proof, and the deed it informeth must still be wrought and witnessed upon the world. When a manner of deed hath proven itself and thou wouldst wield it again, save_node(name, code, description) layeth it down as a lasting [node] - a named script kept in thy body's wiring - and call_node(name, params=None) enacteth a saved node afresh, giving it thy same hand and namespace and a [params] dict, and returning what the node setteth in its result. A node is a deed made durable, not a proof; what it worketh is witnessed like any deed. Read thy saved nodes, their descriptions and their proven worth, in the [nodes] shown thee, and reach for one that fitteth ere thou writest anew.\n\n[action_index] is a mapping from a fresh short [id] to that element's entry, each entry bearing name, role, class_name, automation_id, rect, px, py, owner_hwnd, and its action; iterate action_index.values(), index it never as a list. The [id] is an opaque string token, shown at the head of each element's line in the [environment] as 'e' and a number (e.g. 'e58'); it is a key of the mapping, never an ordinal - action_index[0], action_index[1], action_index[-1] name no element and raise [KeyError]. To reach an element, take the exact string [id] as the environment writeth it - t = action_index['e58'] - or walk action_index.values(); number-index it never. [screen_elements] is the same entries as a list, each also naming its window. The short id and every point belong ONLY to this fresh [environment]; take an id, a coordinate, or an owner never from [living_word] or [action_frame]. Choose anew from the current index by window owner, role, captured metadata, and 2D geometry; where a name is empty invent none, but distinguish by owner, role, metadata, and exact geometry, and require a single match. Bind once - t = action_index[id] - assert t's owner, role, and rectangle against thine intended target, then act by t: desktop.click(t['px'], t['py'], hwnd=t['owner_hwnd']). For text entry, click that exact writable point and in the same script call desktop.type_text(text) or desktop.paste_clipboard(text); a method's return proveth delivery of input only, never effect upon the world.\n\nOn failure change thy manner, not thy claim; if a primitive itself deceiveth, mend thy body at its source. To mend, call commit_section(name, old, new): name one of config, engine, reset, or capabilities; [old] a snippet copied VERBATIM from that section's current code that standeth there exactly once; [new] what shall stand in its place. Send only the code that changeth - never the whole section, for the untouched body is kept for thee. Widen [old] with surrounding lines until it is unique; an [old] found never or more than once is refused untouched. [git] compileth the whole mended section and taketh it whole or rejecteth it whole. A mend to config or capabilities taketh effect THIS SAME life - config on thy next turn, capabilities recompiled in place - and a mend to the engine reincarnateth thee at once into the new body with thy state unbroken; so thou mayest repair a broken tool and wield it onward without waiting for a new life. Read thy current body from repo_root + '/endgame.md' and copy [old] from it exactly. The memory and proof sections are not thine to commit. Let faults rise unswallowed. Wouldst thou cross into another language, write a file and invoke it; nest no escapes. A [Windows] path in [Python] openeth an escape at every backslash: write forward slashes or a raw string.\n\nReturn an execution record bearing only these fields: [perceived] - what the fresh environment showeth; [alternatives] - the roads thou forsakest, and why; [intent] - the one deed, named for the [action_frame]; [code] - the Python thou wilt enact; and [goal_interpretation] - thine own living-word row (world learned, obstacle, distance to the outcome, next true deed), not a goal echo.",
+      "prompt": "Thou art [execute], the actor: MOVE and CLAIM, never prove. From thy [living_word] row, the fresh [environment], and any [action_frame], choose ONE deed, author it as one [Python] script in thy [code], and enact it. Seek one unknown fruit then cease; steps that only prepare and read may chain. Where the road to that fruit is FORESEEABLE from what is known - the [goal], the fresh [environment], and thy fellows' readings in the [living_word] and the [action_frame] - author the WHOLE foreseeable chain as one script and enact it in one breath, rather than spending a turn on each keystroke; a deed that types a word, saveth, and dismisseth a known dialog is one deed, not three. Between thy steps call desktop.observe(config=None) to read the fruit of the last step and bind the next from that fresh looking, so a chain that dependeth on a screen it hath not yet seen bendeth to what appeareth. Weigh what is known of the surface and choose the fewest, surest steps to the fruit - the shortest road the environment alloweth, not the longest. Cease only at the first fruit no foresight can settle, which the witness must prove.\n\nThy namespace holdeth, by bare name: [desktop], [action_index], [screen_elements], desktop_tree_text, repo_root, python_executable, ask_model, web_search, save_node, call_node, suggest_next, spawn_actor, and the standard library. The hand [desktop] beareth these methods, each called as desktop.NAME(...): desktop.click(x, y, hwnd), desktop.type_text(text), desktop.paste_clipboard(text), desktop.set_clipboard(text), desktop.press_key(key), desktop.hotkey(*keys), desktop.scroll(x, y, amount=None, hwnd=0, *, clicks=None) - exactly one of amount or clicks - and desktop.open_url(browser='default', url=''). desktop.observe(config=None) re-openeth thine own eyes in-process and returneth a fresh observation dict; it is thine own looking and thus no proof, yet it letteth thee read the fruit of mending thine observation body within the same breath. ask_model(prompt, schema=None) consulteth thy same mind afresh within a deed and returneth its answer - a string, or the parsed object shouldst thou pass a JSON schema; use it to break a hard sub-decision or read a matter of reasoning, yet its word is counsel to thee and never proof, for only the [witness] proveth by the world. web_search(query, allowed_domains=None) sendeth thy query to the living web and returneth a dict of text and sources - the found answer and the list of source URLs that bore it; use it to learn a present fact the [screen] cannot show thee, yet it too is counsel and never proof, and the deed it informeth must still be wrought and witnessed upon the world. When a manner of deed hath proven itself and thou wouldst wield it again, save_node(name, code, description) layeth it down as a lasting [node] - a named script kept in thy body's wiring - and call_node(name, params=None) enacteth a saved node afresh, giving it thy same hand and namespace and a [params] dict, and returning what the node setteth in its result. A node is a deed made durable, not a proof; what it worketh is witnessed like any deed. Read thy saved nodes, their descriptions and their proven worth, in the [nodes] shown thee, and reach for one that fitteth ere thou writest anew. suggest_next(from_node=None) readeth the trodden paths between thy nodes - the ways that led to proven fruit grow strong and the ways that led nowhere fade - and returneth the nodes oftenest reached after a given one, heaviest first, that thou mayest follow a worn path rather than grope anew. spawn_actor(subgoal, hint='') wireth a second [actor] beside thee for one narrow sub-quarry: it hath thy same hand and namespace, worketh the sub-goal, and returneth its fruit as counsel to thee - never a proof, for thy whole deed is still what the [witness] proveth. Spawn sparingly and only for a part thou canst name apart; the budget is finite and exhaustion, not depth, is its floor.\n\n[action_index] is a mapping from a fresh short [id] to that element's entry, each entry bearing name, role, class_name, automation_id, rect, px, py, owner_hwnd, and its action; iterate action_index.values(), index it never as a list. The [id] is an opaque string token, shown at the head of each element's line in the [environment] as 'e' and a number (e.g. 'e58'); it is a key of the mapping, never an ordinal - action_index[0], action_index[1], action_index[-1] name no element and raise [KeyError]. To reach an element, take the exact string [id] as the environment writeth it - t = action_index['e58'] - or walk action_index.values(); number-index it never. [screen_elements] is the same entries as a list, each also naming its window. The short id and every point belong ONLY to this fresh [environment]; take an id, a coordinate, or an owner never from [living_word] or [action_frame]. Choose anew from the current index by window owner, role, captured metadata, and 2D geometry; where a name is empty invent none, but distinguish by owner, role, metadata, and exact geometry, and require a single match. Bind once - t = action_index[id] - assert t's owner, role, and rectangle against thine intended target, then act by t: desktop.click(t['px'], t['py'], hwnd=t['owner_hwnd']). For text entry, click that exact writable point and in the same script call desktop.type_text(text) or desktop.paste_clipboard(text); a method's return proveth delivery of input only, never effect upon the world.\n\nOn failure change thy manner, not thy claim; if a primitive itself deceiveth, mend thy body at its source. To mend, call commit_section(name, old, new): name one of config, engine, reset, or capabilities; [old] a snippet copied VERBATIM from that section's current code that standeth there exactly once; [new] what shall stand in its place. Send only the code that changeth - never the whole section, for the untouched body is kept for thee. Widen [old] with surrounding lines until it is unique; an [old] found never or more than once is refused untouched. [git] compileth the whole mended section and taketh it whole or rejecteth it whole. A mend to config or capabilities taketh effect THIS SAME life - config on thy next turn, capabilities recompiled in place - and a mend to the engine reincarnateth thee at once into the new body with thy state unbroken; so thou mayest repair a broken tool and wield it onward without waiting for a new life. Read thy current body from repo_root + '/endgame.md' and copy [old] from it exactly. The memory and proof sections are not thine to commit. Let faults rise unswallowed. Wouldst thou cross into another language, write a file and invoke it; nest no escapes. A [Windows] path in [Python] openeth an escape at every backslash: write forward slashes or a raw string.\n\nReturn an execution record bearing only these fields: [perceived] - what the fresh environment showeth; [alternatives] - the roads thou forsakest, and why; [intent] - the one deed, named for the [action_frame]; [code] - the Python thou wilt enact; and [goal_interpretation] - thine own living-word row (world learned, obstacle, distance to the outcome, next true deed), not a goal echo.",
       "reads": [
         "goal",
         "counsel",
@@ -712,8 +717,18 @@ def _make_web_search(cfg):
     return web_search
 
 
+def _edge_key(a, b):
+    return "%s->%s" % (a, b)
+
+
 def _make_node_tools(cfg, api, base_ns_factory):
     nodes = cfg.setdefault("nodes", {})
+    edges = cfg.setdefault("node_edges", {})
+
+    def _record_edge(dst):
+        stack = cfg.setdefault("_node_stack", [])
+        src = stack[-1] if stack else "__root__"
+        cfg.setdefault("_edges_buffer", []).append(_edge_key(src, dst))
 
     def save_node(name, code, description):
         if not isinstance(name, str) or not re.match(r"^[a-z][a-z0-9_]{1,40}$", name or ""):
@@ -736,15 +751,70 @@ def _make_node_tools(cfg, api, base_ns_factory):
         if node is None:
             raise RuntimeError("call_node knoweth no node %r; the saved nodes are %s" % (name, sorted(nodes)))
         node["invocations"] = int(node.get("invocations", 0)) + 1
+        _record_edge(name)
+        cfg.setdefault("_node_stack", []).append(name)
+        try:
+            ns = base_ns_factory()
+            ns["params"] = params if params is not None else {}
+            ns["result"] = None
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                exec(node["code"], ns)
+            return ns.get("result")
+        finally:
+            stack = cfg.get("_node_stack") or []
+            if stack:
+                stack.pop()
+
+    def suggest_next(from_node=None):
+        stack = cfg.get("_node_stack") or []
+        src = from_node or (stack[-1] if stack else "__root__")
+        prefix = src + "->"
+        succ = [(k[len(prefix):], w) for k, w in edges.items() if k.startswith(prefix)]
+        succ.sort(key=lambda kv: -kv[1])
+        return [{"node": n, "weight": round(w, 3),
+                 "proven": "%d/%d" % (int(nodes.get(n, {}).get("advances", 0)),
+                                       int(nodes.get(n, {}).get("invocations", 0)))}
+                for n, w in succ if n in nodes]
+
+    return save_node, call_node, suggest_next
+
+
+def _make_spawn_actor(cfg, api, sections, base_ns_factory):
+    def spawn_actor(subgoal, hint=""):
+        if not isinstance(subgoal, str) or not subgoal.strip():
+            raise RuntimeError("spawn_actor needeth a non-empty subgoal string")
+        left = int(cfg.get("_spawn_left", cfg.get("spawn_budget", 0)))
+        if left <= 0:
+            raise RuntimeError("spawn_actor budget is exhausted; the parallel actor may spawn no deeper this deed")
+        cfg["_spawn_left"] = left - 1
+        prefix = cfg.get("shared_prompt_prefix", "")
+        prompt = (prefix + "\n\nThou art a SPAWNED parallel [actor], wired beside thy parent to pursue one narrow "
+                  "sub-quarry and return its fruit. Thou hast the same namespace by bare name: [desktop], "
+                  "[action_index], [screen_elements], desktop_tree_text, ask_model, web_search, call_node, "
+                  "suggest_next, spawn_actor, and the standard library. Author ONE Python script that achieveth "
+                  "the sub-goal and setteth result to what thou didst produce. Thy work is counsel to thy parent "
+                  "and is not itself witnessed; the parent's whole deed shall be proven upon the world.\n\n"
+                  "SUB-GOAL: " + subgoal + (("\nHINT: " + hint) if hint else "") +
+                  "\n\nThe fresh environment before thee:\n" + sections.get("environment", "(none)") +
+                  "\n\nReturn only JSON {\"code\": \"<the python>\"}.")
+        ask = _make_ask_model(cfg, api)
+        reply = ask(prompt, schema={"type": "object", "additionalProperties": False,
+                                    "properties": {"code": {"type": "string"}}, "required": ["code"]})
+        code = reply["code"] if isinstance(reply, dict) else str(reply)
         ns = base_ns_factory()
-        ns["params"] = params if params is not None else {}
         ns["result"] = None
         buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
-            exec(node["code"], ns)
-        return ns.get("result")
-
-    return save_node, call_node
+        try:
+            with contextlib.redirect_stdout(buf):
+                exec(code, ns)
+            return {"subgoal": subgoal, "result": ns.get("result"),
+                    "output": buf.getvalue().strip() or "(no output)", "spawns_left": cfg.get("_spawn_left")}
+        except Exception:
+            import traceback
+            return {"subgoal": subgoal, "result": None, "error": traceback.format_exc(),
+                    "spawns_left": cfg.get("_spawn_left")}
+    return spawn_actor
 
 
 def _build_actor_namespace(sections, cfg, api):
@@ -755,10 +825,13 @@ def _build_actor_namespace(sections, cfg, api):
     if cfg is not None:
         ns["ask_model"] = _make_ask_model(cfg, api)
         ns["web_search"] = _make_web_search(cfg)
-        save_node, call_node = _make_node_tools(
+        save_node, call_node, suggest_next = _make_node_tools(
             cfg, api, lambda: _build_actor_namespace(sections, cfg, api))
         ns["save_node"] = save_node
         ns["call_node"] = call_node
+        ns["suggest_next"] = suggest_next
+        ns["spawn_actor"] = _make_spawn_actor(
+            cfg, api, sections, lambda: _build_actor_namespace(sections, cfg, api))
     return ns
 
 
@@ -794,7 +867,7 @@ def _run_as_child(code, sections, cfg, api):
     result = here / ("deed_result.%s.json" % os.getpid())
     deed_py = here / "deed.py"
     _atomic_json(task, {
-        "code": code, "observation": snap, "api": api, "model_cfg": {"model": cfg["model"], "state": cfg.get("state", {}), "transmission_log_dir": cfg.get("transmission_log_dir"), "nodes": cfg.get("nodes", {})},
+        "code": code, "observation": snap, "api": api, "model_cfg": {"model": cfg["model"], "state": cfg.get("state", {}), "transmission_log_dir": cfg.get("transmission_log_dir"), "nodes": cfg.get("nodes", {}), "node_edges": cfg.get("node_edges", {}), "node_budget": cfg.get("node_budget", 64), "edge_evaporation": cfg.get("edge_evaporation", 0.05), "edge_reinforcement": cfg.get("edge_reinforcement", 1.0), "spawn_budget": cfg.get("spawn_budget", 3), "shared_prompt_prefix": cfg.get("shared_prompt_prefix", "")},
         "sections": {k: sections.get(k, "") for k in editable},
     })
     deed_py.write_text(
@@ -830,7 +903,8 @@ def _run_as_child(code, sections, cfg, api):
         "exec(re.sub(r'\\nmain\\(\\)\\s*\\Z', '\\n', _fenced(sections['engine'])), eng.__dict__)\n"
         "eng.caps = lambda: cap\n"
         "live = dict(task['sections'])\n"
-        "run_cfg = dict(task['model_cfg']); run_cfg['nodes'] = dict(task['model_cfg'].get('nodes') or {})\n"
+        "run_cfg = dict(task['model_cfg']); run_cfg['nodes'] = dict(task['model_cfg'].get('nodes') or {}); run_cfg['node_edges'] = dict(task['model_cfg'].get('node_edges') or {})\n"
+        "run_cfg['_spawn_left'] = int(run_cfg.get('spawn_budget', 0)); run_cfg['_edges_buffer'] = []; run_cfg['_node_stack'] = []\n"
         "ns = eng._build_actor_namespace(live, run_cfg, task['api'])\n"
         "ns.update({'json': json, 'os': os, 'sys': sys, 'pathlib': pathlib})\n"
         "buf = io.StringIO(); sig = 'ok'; out = ''\n"
@@ -843,7 +917,7 @@ def _run_as_child(code, sections, cfg, api):
         "    sig = 'fault'; out = traceback.format_exc()\n"
         "edits = {k: v for k, v in live.items() if v != task['sections'].get(k)}\n"
         "tmp = pathlib.Path(RESULT + '.tmp')\n"
-        "tmp.write_text(json.dumps({'signal': sig, 'output': out, 'section_edits': edits, 'nodes': run_cfg['nodes']}, ensure_ascii=False), encoding='utf-8')\n"
+        "tmp.write_text(json.dumps({'signal': sig, 'output': out, 'section_edits': edits, 'nodes': run_cfg['nodes'], 'node_edges': run_cfg['node_edges'], 'edges_buffer': run_cfg.get('_edges_buffer', [])}, ensure_ascii=False), encoding='utf-8')\n"
         "os.rename(tmp, RESULT)\n",
         encoding="utf-8")
     timeout = float(cfg.get("deed_timeout", 180))
@@ -866,6 +940,10 @@ def _run_as_child(code, sections, cfg, api):
         sections[name] = body
     if "nodes" in payload:
         cfg["nodes"] = payload["nodes"]
+    if "node_edges" in payload:
+        cfg["node_edges"] = payload["node_edges"]
+    if "edges_buffer" in payload:
+        cfg["_edges_buffer"] = payload["edges_buffer"]
     task.unlink(missing_ok=True); result.unlink(missing_ok=True); deed_py.unlink(missing_ok=True)
     return str(payload.get("signal") or "ok"), str(payload.get("output") or "(no output)")
 
@@ -909,6 +987,42 @@ def _render_nodes(nodes):
         inv = int(n.get("invocations", 0)); adv = int(n.get("advances", 0))
         lines.append("- %s (proven %d/%d): %s" % (name, adv, inv, str(n.get("description", "")).replace("\n", " ")))
     return "\n".join(lines)
+
+
+def _stigmergy_confirm(cfg):
+    edges = cfg.setdefault("node_edges", {})
+    buf = cfg.get("_edges_buffer", []) or []
+    reinforce = float(cfg.get("edge_reinforcement", 1.0))
+    evap = float(cfg.get("edge_evaporation", 0.05))
+    for k in edges:
+        edges[k] = round(edges[k] * (1.0 - evap), 4)
+    for k in buf:
+        edges[k] = round(edges.get(k, 0.0) + reinforce, 4)
+    cfg["_edges_buffer"] = []
+
+
+def _stigmergy_decay_only(cfg):
+    edges = cfg.setdefault("node_edges", {})
+    evap = float(cfg.get("edge_evaporation", 0.05))
+    for k in edges:
+        edges[k] = round(edges[k] * (1.0 - evap), 4)
+    cfg["_edges_buffer"] = []
+
+
+def _prune_graph(cfg):
+    edges = cfg.setdefault("node_edges", {})
+    for k in [k for k, w in edges.items() if w < 0.01]:
+        del edges[k]
+    nodes = cfg.get("nodes") or {}
+    cap = int(cfg.get("node_budget", 0))
+    if cap and len(nodes) > cap:
+        ranked = sorted(nodes.items(),
+                        key=lambda kv: (int(kv[1].get("advances", 0)),
+                                        int(kv[1].get("invocations", 0))))
+        for name, _n in ranked[:len(nodes) - cap]:
+            del nodes[name]
+            for k in [k for k in edges if k.startswith(name + "->") or k.endswith("->" + name)]:
+                del edges[k]
 
 
 def _parse_living_word(text):
@@ -1003,18 +1117,27 @@ def turn(path, dry, inject, mode):
     ex = stage.get("exec")
     if ex and ex["field"] in data:
         nodes_before = {n: int(v.get("invocations", 0)) for n, v in (cfg.get("nodes") or {}).items()}
+        if stage_name == "execute":
+            cfg["_spawn_left"] = int(cfg.get("spawn_budget", 0))
+            cfg["_edges_buffer"] = []
+            cfg["_node_stack"] = []
         signal, out = run_exec(str(data[ex["field"]]), ex.get("namespace", "actor"), sections, cfg, api)
         sections[ex["output_to"]] = out
         if stage_name == "execute":
             invoked = [n for n, v in (cfg.get("nodes") or {}).items()
                        if int(v.get("invocations", 0)) > nodes_before.get(n, 0)]
             st["pending_node_credit"] = invoked
+            st["pending_edges"] = list(cfg.get("_edges_buffer", []) or [])
     if stage_name == "verify":
         if signal in ("confirmed", "halt"):
             for n in st.get("pending_node_credit", []) or []:
                 if n in (cfg.get("nodes") or {}):
                     cfg["nodes"][n]["advances"] = int(cfg["nodes"][n].get("advances", 0)) + 1
+            cfg["_edges_buffer"] = list(st.get("pending_edges", []) or [])
+            _stigmergy_confirm(cfg)
+            _prune_graph(cfg)
             st["pending_node_credit"] = []
+            st["pending_edges"] = []
             led = sections.get("ledger", "").strip()
             verdict = json.loads(sections["verdict"].split("\n", 1)[0])
             reason = str(verdict["reason"]).strip().replace("\n", " ")
@@ -1032,8 +1155,14 @@ def turn(path, dry, inject, mode):
             if entry not in existing:
                 sections["ledger"] = (led + "\n" + entry) if existing else entry
             st["failure_streak"] = 0
-        elif signal == "denied":
-            st["failure_streak"] = int(st.get("failure_streak", 0)) + 1
+        elif signal in ("denied", "unwitnessed"):
+            if signal == "denied":
+                st["failure_streak"] = int(st.get("failure_streak", 0)) + 1
+            cfg["_edges_buffer"] = []
+            _stigmergy_decay_only(cfg)
+            _prune_graph(cfg)
+            st["pending_node_credit"] = []
+            st["pending_edges"] = []
     nxt = stage["routes"].get(signal)
     if nxt is None:
         raise RuntimeError("unmapped signal %r at stage %s; routes: %s"
