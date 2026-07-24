@@ -917,6 +917,95 @@ the remote, reading the live body, and asking me what to pursue.
 
 ---
 
+## Appendix: the MoE observation-panel methodology (the golden treasure)
+
+> [!IMPORTANT]
+> This is a **methodology for the human+AI operator to observe the organism**, not a mechanism inside the
+> body. It never touches `endgame.md`. It is how a session watches a live run turn-by-turn, notes what each
+> turn reveals through several independent lenses, and then — after a batch of turns — *deduces* the
+> systemic successes and defects that no single turn shows. Preserve and reuse it whenever running the
+> organism for real.
+
+### Why a panel, and why it must be plural
+
+A single observer watching a live run drifts into one narrative and confirms it. The organism's own honesty
+comes from **separated powers** — the actor cannot judge itself — and the observation layer borrows the same
+principle: *no single lens should be trusted to evaluate a run alone.* A panel of specialised observers,
+each with a different mandate and each forbidden to modify the organism, catches what one would rationalise
+away. It is a Mixture-of-Experts (MoE) of **read-only** critics applied to the run, mirroring the
+in-organism Law at the meta level.
+
+### The three standing lenses
+
+| Lens | Mandate | Bias it counters |
+| --- | --- | --- |
+| **analyst** — trajectory & architecture | Is the wheel behaving as designed? Do the living-word rows form a coherent causal chain? Is binding disciplined (stable metadata, no ephemeral ids)? | Missing that a "working" run is drifting from the architecture. |
+| **critic** — contradiction & failure hunter | Where does a verdict contradict the environment? Is the streak inflating falsely? Any oscillation, any hashing-for-proof, any separated-powers breach? | Optimism; declaring health while a latent defect grows. |
+| **archivist** — what is worth keeping | Which artifacts (ledger facts, sharp developer_feedback, a clean learning cycle) are milestones to preserve? What is noise to discard? | Losing the signal; hoarding transient scratch. |
+
+These map directly onto available read-only specialist agents (in this workspace: `genesis-analyst`,
+`genesis-critic`, `genesis-archivist`), but the **roles are what matter** — reconstruct them with whatever
+specialist agents a future session has, or run the three lenses yourself in sequence if none exist.
+
+### The loop — per turn, then per batch
+
+```mermaid
+flowchart TD
+    T["run ONE real turn (--once)"] --> READ["read the post-turn board:<br/>living_word · verdict · ledger · code · evidence · developer_feedback · state"]
+    READ --> PANEL["convene the panel:<br/>analyst · critic · archivist<br/>each grounds every claim in the board, cites the slot"]
+    PANEL --> NOTE["append ONE meeting to notes.md:<br/>what happened · each lens · 🟢/🟡/🟡 watch-items · panel verdict"]
+    NOTE --> MORE{"batch complete?"}
+    MORE -->|no| T
+    MORE -->|yes| DEDUCE["cross-turn DEDUCTION:<br/>read all meetings, extract systemic successes & defects<br/>a single turn cannot reveal"]
+    DEDUCE --> DISTILL["distil durable findings; discard scratch;<br/>fold milestones into README, raise defects as next steps"]
+```
+
+**Per-turn discipline (the non-negotiables that make the notes trustworthy):**
+
+1. **One turn at a time.** Run with `--once`; never batch turns blind. Each turn gets its own meeting.
+2. **Ground every claim in the board.** A lens may only assert what the post-turn slots show — quote the
+   `verdict`, the `ledger` line, the `code`. No claim from memory or assumption. This is the panel's own
+   "honesty by structure": the board is the panel's world, as the world is the witness's.
+3. **Carry watch-items forward.** A 🟡 raised on turn *N* ("possible settle-timing defect") must be
+   explicitly resolved or re-raised on turn *N+1*. Watch-items are hypotheses; later turns are their witness.
+4. **Record dissent and reversal.** When a lens's earlier hypothesis is disproven by a later turn, write the
+   reversal down (e.g. "downgrading my timing watch to 🟢, the popup was captured so the scan saw it"). The
+   value is in the corrected trail, not a clean story.
+5. **A legend keeps it scannable.** 🟢 healthy · 🟡 watch · 🔴 defect, one per observation.
+
+**Per-batch deduction (the real payoff):** after a batch of turns, read *all* the meetings together and ask
+what no single turn could show — *Is a fix working across turns? Is a defect recurring under different
+surfaces? Did the organism truly learn, or repeat a step under a new name?* This cross-turn synthesis is
+where systemic truth appears; the per-turn notes are only its raw material.
+
+### What the notes are, and are not
+
+- The notes file (`notes.md`) is **operator scratch** — gitignored, transient, never part of the body or
+  history. It is the panel's working memory for one observation session.
+- Its **distilled conclusions** are the durable output: milestones fold into this README's "Proven in the
+  flesh"; defects become entries in "Standing intentions" or the next phase plan. *Distil, then discard the
+  scratch* — subtraction over addition, applied to the observation layer itself.
+- The panel **never edits the organism.** It observes, notes, and reports to the human. Any change it
+  motivates goes through the normal phased, permission-gated, committed workflow.
+
+### Distilled results of the reference run (the five-turn cycle above)
+
+The reference panel's cross-turn deduction, preserved as the worked example of the method:
+
+- **All three directly-observable fixes were confirmed by live behaviour, not by assertion.** Anti-hash: the
+  witness proved by reading fresh titles on every verify turn. Observe+schema: the actor iterated
+  `action_index.values()` and bound by stable metadata on every execute turn. Pruned feedback: new
+  developer_feedback entries were sharp and non-duplicative.
+- **The learning cycle was genuine.** The batch showed paste-fail → honest-deny → diagnose → *different-kind*
+  strike → proven — the precise shape the wheel was built for, and the precise shape the prior failure
+  history lacked. The deduction that mattered was cross-turn: *the streak rose on a true denial and fell on
+  a true advance*, so the anti-loop pressure is honest.
+- **One healthy absence.** `commit_section` was never invoked, because no primitive deceived the organism —
+  correctly, self-surgery is a last resort, not a habit. The panel logged this as a standing item to watch
+  for in a future, harder life, rather than a gap to force.
+
+---
+
 <div align="center">
 
 **The document on disk is the final authority.**
