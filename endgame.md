@@ -123,7 +123,7 @@
   "stages": {
     "execute": {
       "record_type": "execution",
-      "prompt": "Thou art [execute], the actor: MOVE and CLAIM, never prove. From thy [living_word] row, the fresh [environment], and any [action_frame], choose ONE deed, author it as one [Python] script in thy [code], and enact it. Seek one unknown fruit then cease; steps that only prepare and read may chain. Where the road to that fruit is FORESEEABLE from what is known - the [goal], the fresh [environment], and thy fellows' readings in the [living_word] and the [action_frame] - author the WHOLE foreseeable chain as one script and enact it in one breath, rather than spending a turn on each keystroke; a deed that types a word, saveth, and dismisseth a known dialog is one deed, not three. Between thy steps call desktop.observe(config=None) to read the fruit of the last step and bind the next from that fresh looking, so a chain that dependeth on a screen it hath not yet seen bendeth to what appeareth. Weigh what is known of the surface and choose the fewest, surest steps to the fruit - the shortest road the environment alloweth, not the longest. Cease only at the first fruit no foresight can settle, which the witness must prove.\n\nThy namespace holdeth, by bare name: [desktop], [action_index], [screen_elements], desktop_tree_text, repo_root, python_executable, and the standard library. The hand [desktop] beareth these methods, each called as desktop.NAME(...): desktop.click(x, y, hwnd), desktop.type_text(text), desktop.paste_clipboard(text), desktop.set_clipboard(text), desktop.press_key(key), desktop.hotkey(*keys), desktop.scroll(x, y, amount=None, hwnd=0, *, clicks=None) - exactly one of amount or clicks - and desktop.open_url(browser='default', url=''). desktop.observe(config=None) re-openeth thine own eyes in-process and returneth a fresh observation dict; it is thine own looking and thus no proof, yet it letteth thee read the fruit of mending thine observation body within the same breath.\n\n[action_index] is a mapping from a fresh short [id] to that element's entry, each entry bearing name, role, class_name, automation_id, rect, px, py, owner_hwnd, and its action; iterate action_index.values(), index it never as a list. The [id] is an opaque string token, shown at the head of each element's line in the [environment] as 'e' and a number (e.g. 'e58'); it is a key of the mapping, never an ordinal - action_index[0], action_index[1], action_index[-1] name no element and raise [KeyError]. To reach an element, take the exact string [id] as the environment writeth it - t = action_index['e58'] - or walk action_index.values(); number-index it never. [screen_elements] is the same entries as a list, each also naming its window. The short id and every point belong ONLY to this fresh [environment]; take an id, a coordinate, or an owner never from [living_word] or [action_frame]. Choose anew from the current index by window owner, role, captured metadata, and 2D geometry; where a name is empty invent none, but distinguish by owner, role, metadata, and exact geometry, and require a single match. Bind once - t = action_index[id] - assert t's owner, role, and rectangle against thine intended target, then act by t: desktop.click(t['px'], t['py'], hwnd=t['owner_hwnd']). For text entry, click that exact writable point and in the same script call desktop.type_text(text) or desktop.paste_clipboard(text); a method's return proveth delivery of input only, never effect upon the world.\n\nOn failure change thy manner, not thy claim; if a primitive itself deceiveth, mend thy body at its source. To mend, call commit_section(name, body) with name one of config, engine, reset, or capabilities and body the WHOLE new section text, its fence and all; [git] compileth and taketh it whole or rejecteth it whole, so thou needest align no characters nor nest quotes. A rejected commit leaveth thy living body untouched; a taken one persisteth into thy next life. Read thy current body from repo_root + '/endgame.md'. The memory and proof sections are not thine to commit. Let faults rise unswallowed. Wouldst thou cross into another language, write a file and invoke it; nest no escapes. A [Windows] path in [Python] openeth an escape at every backslash: write forward slashes or a raw string.\n\nReturn an execution record bearing only these fields: [perceived] - what the fresh environment showeth; [alternatives] - the roads thou forsakest, and why; [intent] - the one deed, named for the [action_frame]; [code] - the Python thou wilt enact; and [goal_interpretation] - thine own living-word row (world learned, obstacle, distance to the outcome, next true deed), not a goal echo.",
+      "prompt": "Thou art [execute], the actor: MOVE and CLAIM, never prove. From thy [living_word] row, the fresh [environment], and any [action_frame], choose ONE deed, author it as one [Python] script in thy [code], and enact it. Seek one unknown fruit then cease; steps that only prepare and read may chain. Where the road to that fruit is FORESEEABLE from what is known - the [goal], the fresh [environment], and thy fellows' readings in the [living_word] and the [action_frame] - author the WHOLE foreseeable chain as one script and enact it in one breath, rather than spending a turn on each keystroke; a deed that types a word, saveth, and dismisseth a known dialog is one deed, not three. Between thy steps call desktop.observe(config=None) to read the fruit of the last step and bind the next from that fresh looking, so a chain that dependeth on a screen it hath not yet seen bendeth to what appeareth. Weigh what is known of the surface and choose the fewest, surest steps to the fruit - the shortest road the environment alloweth, not the longest. Cease only at the first fruit no foresight can settle, which the witness must prove.\n\nThy namespace holdeth, by bare name: [desktop], [action_index], [screen_elements], desktop_tree_text, repo_root, python_executable, and the standard library. The hand [desktop] beareth these methods, each called as desktop.NAME(...): desktop.click(x, y, hwnd), desktop.type_text(text), desktop.paste_clipboard(text), desktop.set_clipboard(text), desktop.press_key(key), desktop.hotkey(*keys), desktop.scroll(x, y, amount=None, hwnd=0, *, clicks=None) - exactly one of amount or clicks - and desktop.open_url(browser='default', url=''). desktop.observe(config=None) re-openeth thine own eyes in-process and returneth a fresh observation dict; it is thine own looking and thus no proof, yet it letteth thee read the fruit of mending thine observation body within the same breath.\n\n[action_index] is a mapping from a fresh short [id] to that element's entry, each entry bearing name, role, class_name, automation_id, rect, px, py, owner_hwnd, and its action; iterate action_index.values(), index it never as a list. The [id] is an opaque string token, shown at the head of each element's line in the [environment] as 'e' and a number (e.g. 'e58'); it is a key of the mapping, never an ordinal - action_index[0], action_index[1], action_index[-1] name no element and raise [KeyError]. To reach an element, take the exact string [id] as the environment writeth it - t = action_index['e58'] - or walk action_index.values(); number-index it never. [screen_elements] is the same entries as a list, each also naming its window. The short id and every point belong ONLY to this fresh [environment]; take an id, a coordinate, or an owner never from [living_word] or [action_frame]. Choose anew from the current index by window owner, role, captured metadata, and 2D geometry; where a name is empty invent none, but distinguish by owner, role, metadata, and exact geometry, and require a single match. Bind once - t = action_index[id] - assert t's owner, role, and rectangle against thine intended target, then act by t: desktop.click(t['px'], t['py'], hwnd=t['owner_hwnd']). For text entry, click that exact writable point and in the same script call desktop.type_text(text) or desktop.paste_clipboard(text); a method's return proveth delivery of input only, never effect upon the world.\n\nOn failure change thy manner, not thy claim; if a primitive itself deceiveth, mend thy body at its source. To mend, call commit_section(name, old, new): name one of config, engine, reset, or capabilities; [old] a snippet copied VERBATIM from that section's current code that standeth there exactly once; [new] what shall stand in its place. Send only the code that changeth - never the whole section, for the untouched body is kept for thee. Widen [old] with surrounding lines until it is unique; an [old] found never or more than once is refused untouched. [git] compileth the whole mended section and taketh it whole or rejecteth it whole. A mend to config or capabilities taketh effect THIS SAME life - config on thy next turn, capabilities recompiled in place - and a mend to the engine reincarnateth thee at once into the new body with thy state unbroken; so thou mayest repair a broken tool and wield it onward without waiting for a new life. Read thy current body from repo_root + '/endgame.md' and copy [old] from it exactly. The memory and proof sections are not thine to commit. Let faults rise unswallowed. Wouldst thou cross into another language, write a file and invoke it; nest no escapes. A [Windows] path in [Python] openeth an escape at every backslash: write forward slashes or a raw string.\n\nReturn an execution record bearing only these fields: [perceived] - what the fresh environment showeth; [alternatives] - the roads thou forsakest, and why; [intent] - the one deed, named for the [action_frame]; [code] - the Python thou wilt enact; and [goal_interpretation] - thine own living-word row (world learned, obstacle, distance to the outcome, next true deed), not a goal echo.",
       "reads": [
         "goal",
         "counsel",
@@ -479,25 +479,36 @@ def caps():
 
 
 _ENGINE_SRC = None
-def _current_section_src(name):
-    sections, _order = read_board(BOARD)
-    return fenced(sections.get(name, ""))
 
 
-def heal_if_body_changed(dry, inject, mode):
-    if dry or inject or flag("--once") or flag("--reset"):
+def heal_if_body_changed(sections, cfg, st, dry, inject):
+    if dry or inject or flag("--reset"):
         return
     global _CAPS, _CAPS_SRC, _ENGINE_SRC
-    if _CAPS_SRC is not None and _current_section_src("capabilities") != _CAPS_SRC:
-        _CAPS, _CAPS_SRC = "unloaded", None
-        caps()
-        sys.stderr.write("heal: capabilities body changed on disk; recompiled in-process for this life\n")
-    if _ENGINE_SRC is not None and _current_section_src("engine") != _ENGINE_SRC:
-        new_src = _current_section_src("engine")
-        sys.stderr.write("heal: engine body changed on disk; reincarnating into the mended engine (state preserved on disk)\n")
-        g = {"BOARD": BOARD, "ARGV": ARGV, "__name__": "__main__"}
-        exec(compile(new_src, "<engine>", "exec"), g)
-        raise SystemExit(0)
+    if _ENGINE_SRC is not None:
+        cur_engine = fenced(sections.get("engine", ""))
+        if cur_engine != _ENGINE_SRC:
+            sys.stderr.write("heal: engine body changed on disk; reincarnating into the mended engine (state preserved on disk)\n")
+            g = {"BOARD": BOARD, "ARGV": ARGV, "__name__": "__main__"}
+            exec(compile(cur_engine, "<engine>", "exec"), g)
+            raise SystemExit(0)
+    if _CAPS_SRC is not None:
+        cur_caps = fenced(sections.get("capabilities", ""))
+        if cur_caps != _CAPS_SRC:
+            import types, traceback
+            trial = types.ModuleType("capabilities")
+            trial.BOARD = BOARD
+            trial.NO_GUI = flag("--no-gui")
+            try:
+                exec(cur_caps, trial.__dict__)
+            except Exception:
+                sections["evidence"] = "capabilities self-edit compiled but failed to load in-process:\n" + traceback.format_exc()
+                st["stage"] = "recover"
+                st["failure_streak"] = int(st.get("failure_streak", 0)) + 1
+                sys.stderr.write("heal: mended capabilities failed to load; keeping last-good body and routing to recover\n")
+                return
+            _CAPS, _CAPS_SRC = trial, cur_caps
+            sys.stderr.write("heal: capabilities body changed on disk; recompiled in-process for this life\n")
 
 
 def run_exec(code, ns_kind, sections):
@@ -582,6 +593,7 @@ def turn(path, dry, inject, mode):
     if mode:
         cfg["model"]["api"] = {"xai": "responses", "lmstudio": "chat_completions", "acp": "acp", "file_proxy": "file_proxy"}[mode]
     st = cfg["state"]
+    heal_if_body_changed(sections, cfg, st, dry, inject)
     stage_name = st.get("stage") or cfg["start"]
     stage = cfg["stages"][stage_name]
     sections["failure_streak"] = str(st.get("failure_streak", 0))
@@ -688,13 +700,13 @@ def main():
     if flag("--reset"):
         factory_reset(BOARD)
         return
-    _ENGINE_SRC = _current_section_src("engine")
+    _sections, _order = read_board(BOARD)
+    _ENGINE_SRC = fenced(_sections.get("engine", ""))
     caps()
     while True:
         nxt, stop = turn(BOARD, dry, inject, mode)
         if dry or once or inject or stop:
             break
-        heal_if_body_changed(dry, inject, mode)
 
 
 main()
@@ -1634,6 +1646,7 @@ def _no_gui_hand():
 
 _SELF_DIR = ROOT / ".self"
 _EDITABLE = {"config", "engine", "reset", "capabilities"}
+_SECTION_LANG = {"config": "json", "engine": "python", "reset": "python", "capabilities": "python"}
 
 
 def _ensure_self_repo():
@@ -1664,29 +1677,45 @@ def _ensure_self_repo():
     return _SELF_DIR
 
 
-def _commit_section(sections, name, body):
-    import re, subprocess
+def _fenced_payload(section_body):
+    import re
+    _bt = chr(96) * 3
+    m = re.search(_bt + r"(?:\w+)?\s*\n(.*)\n" + _bt + r"\s*\Z", section_body.strip(), re.S)
+    if not m:
+        raise RuntimeError("section body is not a single fenced block; cannot locate its code")
+    return m.group(1)
+
+
+def _commit_section(sections, name, old, new):
+    import subprocess
     if name not in _EDITABLE:
         raise RuntimeError("commit_section editeth only genome sections %s, not %r; memory and proof are engine-owned"
                            % (sorted(_EDITABLE), name))
+    lang = _SECTION_LANG[name]
+    payload = _fenced_payload(sections[name])
+    if not isinstance(old, str) or old == "":
+        raise RuntimeError("commit_section needeth a non-empty [old] snippet that standeth verbatim in the %s payload" % name)
+    hits = payload.count(old)
+    if hits == 0:
+        raise RuntimeError("commit_section found no [old] snippet in the %s payload; read thy current body from repo_root + '/endgame.md' and copy it exactly" % name)
+    if hits > 1:
+        raise RuntimeError("commit_section found [old] %d times in the %s payload; widen it with surrounding lines until it standeth exactly once" % (hits, name))
+    new_payload = payload.replace(old, new, 1)
+    new_body = chr(96) * 3 + lang + "\n" + new_payload.rstrip("\n") + "\n" + chr(96) * 3
     repo = _ensure_self_repo()
-    _bt = chr(96) * 3
-    m = re.match(r"\s*" + _bt + r"(\w+)?\s*\n(.*)\n" + _bt + r"\s*\Z", body, re.S)
-    lang = (m.group(1) or "").lower() if m else ""
-    payload = m.group(2) if m else body
-    ext = {"python": "py", "json": "json"}.get(lang, "md")
+    ext = {"python": "py", "json": "json"}[lang]
     fname = name + "." + ext
-    (repo / fname).write_text(payload.rstrip("\n") + "\n", encoding="utf-8")
+    (repo / fname).write_text(new_payload.rstrip("\n") + "\n", encoding="utf-8")
     add = subprocess.run(["git", "-C", str(repo), "add", "--", fname], capture_output=True, text=True)
     if add.returncode != 0:
         raise RuntimeError("git add failed for %s:\n%s" % (fname, add.stderr.strip()))
     if subprocess.run(["git", "-C", str(repo), "diff", "--cached", "--quiet"]).returncode == 0:
-        sections[name] = body
+        sections[name] = new_body
         return {"section": name, "file": fname, "changed": False}
     r = subprocess.run(["git", "-C", str(repo), "commit", "-m", "section:" + name], capture_output=True, text=True)
     if r.returncode != 0:
         raise RuntimeError("git rejected %r (syntax gate):\n%s\n%s" % (name, r.stdout.strip(), r.stderr.strip()))
-    sections[name] = body
+    sections[name] = new_body
     return {"section": name, "file": fname, "committed": r.stdout.strip().split("\n")[0]}
 
 
@@ -1700,7 +1729,7 @@ def build(kind, sections):
     if kind == "witness":
         return common
     common["action_index"] = _LAST_OBS["action_index"]
-    common["commit_section"] = lambda name, body: _commit_section(sections, name, body)
+    common["commit_section"] = lambda name, old, new: _commit_section(sections, name, old, new)
     if NO_GUI:
         common["desktop"] = _no_gui_hand()
         return common
