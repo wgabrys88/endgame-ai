@@ -1383,18 +1383,11 @@ def _render(windows: list[dict[str, Any]], screen: dict[str, int]) -> dict[str, 
         lines.append(f"{wid} Window {window_title} rect=({window_rect['left']},{window_rect['top']},{window_rect['right']},{window_rect['bottom']})")
         def emit(e: dict[str, Any], indent: int) -> None:
             counter["n"] += 1
-            sid = f"{observation_id}-e{counter['n']}"
+            sid = f"e{counter['n']}"
             e["short_id"] = sid
             action = str(e.get("action", "")) if e.get("enabled") is not False else ""
-            metadata = [
-                f"automation_id={clean(e.get('automation_id'))!r}" if e.get("automation_id") else "",
-                f"class={clean(e.get('class_name'))!r}" if e.get("class_name") else "",
-                f"description={clean((e.get('pattern_values') or {}).get('legacy_description'))!r}" if (e.get("pattern_values") or {}).get("legacy_description") else "",
-                f"value={clean(e.get('value'))!r}" if e.get("value") else "",
-            ]
             parts = [p for p in (
                 sid, str(e.get("role", "")), clean(e.get("name", "") or ""),
-                *metadata,
                 f"[{action}]" if action else "",
             ) if p]
             lines.append("  " * indent + " ".join(parts))
