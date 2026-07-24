@@ -1658,7 +1658,6 @@ def _commit_section(sections, name, body):
 
 def build(kind, sections):
     common = {
-        "action_index": _LAST_OBS["action_index"],
         "screen_elements": _LAST_OBS["screen_elements"],
         "desktop_tree_text": _LAST_OBS["desktop_tree_text"],
         "repo_root": str(ROOT),
@@ -1666,6 +1665,7 @@ def build(kind, sections):
     }
     if kind == "witness":
         return common
+    common["action_index"] = _LAST_OBS["action_index"]
     common["commit_section"] = lambda name, body: _commit_section(sections, name, body)
     if NO_GUI:
         common["desktop"] = _no_gui_hand()
