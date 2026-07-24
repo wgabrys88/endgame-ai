@@ -1666,19 +1666,40 @@ def build(kind, sections):
     return common
 
 
+def _host_facts():
+    import getpass, platform, shutil, sys as _s
+    try:
+        user = getpass.getuser()
+    except Exception:
+        user = "(unknown)"
+    tools = [t for t in ("git", "python", "powershell.exe", "pwsh", "cmd", "bash", "node", "curl", "pip") if shutil.which(t)]
+    return "\n".join([
+        "## host",
+        "platform: %s (%s)" % (platform.platform(), _s.platform),
+        "machine: %s" % platform.node(),
+        "user: %s" % user,
+        "cwd: %s" % os.getcwd(),
+        "repo_root: %s" % ROOT,
+        "python: %s" % _s.executable,
+        "shell_tools: %s" % (", ".join(tools) or "(none found)"),
+    ])
+
+
 def environment(sections):
+    facts = _host_facts()
     if NO_GUI:
         _LAST_OBS["action_index"] = {}
         _LAST_OBS["screen_elements"] = []
         _LAST_OBS["desktop_tree_text"] = ""
-        sections["environment"] = "(no GUI on this host: --no-gui; no screen observed)"
+        sections["environment"] = facts + "\n\n## screen\n(no GUI on this host: --no-gui; no screen observed)"
         return
     d = get_desktop()
     obs_result = d.observe({"step_px": 64, "max_subtree_nodes_per_point": 120})
     _LAST_OBS["action_index"] = obs_result.get("action_index", {}) or {}
     _LAST_OBS["screen_elements"] = obs_result.get("screen_elements", []) or []
     _LAST_OBS["desktop_tree_text"] = str(obs_result.get("desktop_tree_text") or "").strip()
-    sections["environment"] = _LAST_OBS["desktop_tree_text"] or "(no interactable elements observed)"
+    tree = _LAST_OBS["desktop_tree_text"] or "(no interactable elements observed)"
+    sections["environment"] = facts + "\n\n## screen\n" + tree
 ```
 
 ## goal
