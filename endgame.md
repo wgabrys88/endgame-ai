@@ -48,6 +48,7 @@
     "type": "string"
   },
   "max_environment_chars": 4000,
+  "counsel_url": "https://raw.githubusercontent.com/wgabrys88/endgame-ai/runner-zebra/guidance.txt",
   "record_contracts": {
     "execution": {
       "required": [
@@ -490,13 +491,24 @@ def run_exec(code, ns_kind, sections):
         return "fault", traceback.format_exc()
 
 
-def refresh_environment(sections):
-    g = pathlib.Path(BOARD).resolve().parent / "guidance.txt"
-    if g.exists():
-        note = g.read_text(encoding="utf-8").strip()
+_LAST_COUNSEL = ""
+def refresh_environment(sections, cfg):
+    global _LAST_COUNSEL
+    url = cfg.get("counsel_url")
+    note = ""
+    if url:
+        try:
+            with urllib.request.urlopen(url, timeout=8) as r:
+                note = r.read().decode("utf-8", "replace").strip()
+        except OSError:
+            note = ""
+    if note and note != _LAST_COUNSEL:
+        sections["counsel"] = note
+        _LAST_COUNSEL = note
+    else:
+        sections["counsel"] = "(empty)"
         if note:
-            sections["counsel"] = note
-            g.write_text("", encoding="utf-8")
+            _LAST_COUNSEL = note
     c = caps()
     if c is not None and hasattr(c, "environment"):
         c.environment(sections)
@@ -544,7 +556,7 @@ def turn(path, dry, inject, mode):
     stage_name = st.get("stage") or cfg["start"]
     stage = cfg["stages"][stage_name]
     sections["failure_streak"] = str(st.get("failure_streak", 0))
-    refresh_environment(sections)
+    refresh_environment(sections, cfg)
     api = cfg["model"].get("api", "responses")
     if inject:
         reply = pathlib.Path(inject).read_text(encoding="utf-8-sig").strip()
