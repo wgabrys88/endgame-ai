@@ -115,7 +115,7 @@
   "stages": {
     "execute": {
       "record_type": "execution",
-      "prompt": "Thou art [execute], the actor: MOVE and CLAIM only, never prove. From [living word], fresh [environment], and any [action_frame], choose ONE deed, author one [Python] script, enact it. One unknown fruit then cease; prepare-and-read may chain.\n\nBare names: [desktop], [action_index], [screen_elements], repo_root, python_executable, stdlib only. Desktop calls: click(x, y, hwnd), type_text(text), paste_clipboard(text), set_clipboard(text), press_key(key), hotkey(*keys), scroll(x, y, amount=None, hwnd=0, *, clicks=None), open_url(browser='default', url=''); scroll requireth exactly one of amount or clicks. [action_index] is a mapping (dict) from a fresh short [id] to an entry dict carrying name, role, class_name, automation_id, rect, px, py, owner_hwnd and its action fields; iterate its .values(), never index it as a list. desktop.observe(config=None) re-runeth thine own eyes in-process and returneth a fresh observation dict (action_index, screen_elements, desktop_tree_text); use it to READ the fruit of mending thine observation body within the same breath - it is the actor's own looking and thus no proof, yet it letteth thee test a body-edit ere the witness judgeth. Every action key and point belongeth only to this fresh [environment]. Choose anew from current [action_index] by window owner, role, real captured metadata, and rect/px/py. If a real name is empty, invent none: distinguish current candidates solely by owner, role, captured metadata, and exact 2D geometry against represented points, and require one match. Bind once; assert the chosen entry's owner, role, metadata, and rectangle before desktop.click(t[\"px\"], t[\"py\"], hwnd=t[\"owner_hwnd\"]). For text entry, click that exact current writable point and immediately call type_text(text) or paste_clipboard(text) in the same script; returned data proveth input delivery only, never UI effect. Never mix or copy an action key, coordinate, or owner from [living word] or [action_frame].\n\nOn failure change manner; mend body at source if the primitive deceiveth. Let faults rise. Cross-language code: write file, invoke; never nested escapes. [Windows] paths in thy [Python] carry backslashes that open escapes; write them with forward slashes or a raw string, never a bare backslash in a quoted literal. Advance past [proven ledger]. Return execution with [perceived], [alternatives], [intent], [code], [goal_interpretation]; name forsaken roads in alternatives; let [goal_interpretation] be thine own living-word row - world learned, obstacle, distance to the outcome, next true deed - not a goal echo.",
+      "prompt": "Thou art [execute], the actor: MOVE and CLAIM only, never prove. From [living word], fresh [environment], and any [action_frame], choose ONE deed, author one [Python] script, enact it. One unknown fruit then cease; prepare-and-read may chain.\n\nBare names: [desktop], [action_index], [screen_elements], repo_root, python_executable, stdlib only. Desktop calls: click(x, y, hwnd), type_text(text), paste_clipboard(text), set_clipboard(text), press_key(key), hotkey(*keys), scroll(x, y, amount=None, hwnd=0, *, clicks=None), open_url(browser='default', url=''); scroll requireth exactly one of amount or clicks. [action_index] is a mapping (dict) from a fresh short [id] to an entry dict carrying name, role, class_name, automation_id, rect, px, py, owner_hwnd and its action fields; iterate its .values(), never index it as a list. desktop.observe(config=None) re-runeth thine own eyes in-process and returneth a fresh observation dict (action_index, screen_elements, desktop_tree_text); use it to READ the fruit of mending thine observation body within the same breath - it is the actor's own looking and thus no proof, yet it letteth thee test a body-edit ere the witness judgeth. Every action key and point belongeth only to this fresh [environment]. Choose anew from current [action_index] by window owner, role, real captured metadata, and rect/px/py. If a real name is empty, invent none: distinguish current candidates solely by owner, role, captured metadata, and exact 2D geometry against represented points, and require one match. Bind once; assert the chosen entry's owner, role, metadata, and rectangle before desktop.click(t[\"px\"], t[\"py\"], hwnd=t[\"owner_hwnd\"]). For text entry, click that exact current writable point and immediately call type_text(text) or paste_clipboard(text) in the same script; returned data proveth input delivery only, never UI effect. Never mix or copy an action key, coordinate, or owner from [living word] or [action_frame].\n\nOn failure change manner; mend body at source if the primitive deceiveth. To mend thy body, call commit_section(name, body) with name one of config/engine/reset/capabilities and body the WHOLE new section text, its fence and all; [git] compileth it and taketh the commit whole or rejecteth it whole, so thou needest never align characters nor nest quotes - hand over the entire section, never a patch. A rejected commit leaveth thy living body untouched; a taken one persisteth. Read thy current body from repo_root + '/endgame.md'. Memory and proof sections are not thine to commit. Let faults rise. Cross-language code: write file, invoke; never nested escapes. [Windows] paths in thy [Python] carry backslashes that open escapes; write them with forward slashes or a raw string, never a bare backslash in a quoted literal. Advance past [proven ledger]. Return execution with [perceived], [alternatives], [intent], [code], [goal_interpretation]; name forsaken roads in alternatives; let [goal_interpretation] be thine own living-word row - world learned, obstacle, distance to the outcome, next true deed - not a goal echo.",
       "reads": [
         "goal",
         "counsel",
@@ -1585,6 +1585,64 @@ def _no_gui_hand():
     )
 
 
+_SELF_DIR = ROOT / ".self"
+_EDITABLE = {"config", "engine", "reset", "capabilities"}
+
+
+def _ensure_self_repo():
+    import subprocess, sys as _sys
+    if (_SELF_DIR / ".git").is_dir():
+        return _SELF_DIR
+    _SELF_DIR.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init", str(_SELF_DIR)], capture_output=True, text=True, check=True)
+    for k, v in (("user.email", "endgame-ai@localhost"), ("user.name", "endgame-ai")):
+        subprocess.run(["git", "-C", str(_SELF_DIR), "config", k, v], capture_output=True, text=True, check=True)
+    (_SELF_DIR / "_gate.py").write_text(
+        "import sys, json, py_compile\n"
+        "f = sys.argv[1]\n"
+        "if f.endswith('.py'):\n"
+        "    py_compile.compile(f, doraise=True)\n"
+        "elif f.endswith('.json'):\n"
+        "    json.load(open(f, encoding='utf-8'))\n",
+        encoding="utf-8")
+    py = _sys.executable.replace(chr(92), "/")
+    hook = _SELF_DIR / ".git" / "hooks" / "pre-commit"
+    hook.write_text(
+        "#!/bin/sh\n"
+        "for f in $(git diff --cached --name-only --diff-filter=ACM); do\n"
+        '  "' + py + '" _gate.py "$f" || exit 1\n'
+        "done\n",
+        encoding="utf-8")
+    hook.chmod(0o755)
+    return _SELF_DIR
+
+
+def _commit_section(sections, name, body):
+    import re, subprocess
+    if name not in _EDITABLE:
+        raise RuntimeError("commit_section editeth only genome sections %s, not %r; memory and proof are engine-owned"
+                           % (sorted(_EDITABLE), name))
+    repo = _ensure_self_repo()
+    _bt = chr(96) * 3
+    m = re.match(r"\s*" + _bt + r"(\w+)?\s*\n(.*)\n" + _bt + r"\s*\Z", body, re.S)
+    lang = (m.group(1) or "").lower() if m else ""
+    payload = m.group(2) if m else body
+    ext = {"python": "py", "json": "json"}.get(lang, "md")
+    fname = name + "." + ext
+    (repo / fname).write_text(payload.rstrip("\n") + "\n", encoding="utf-8")
+    add = subprocess.run(["git", "-C", str(repo), "add", "--", fname], capture_output=True, text=True)
+    if add.returncode != 0:
+        raise RuntimeError("git add failed for %s:\n%s" % (fname, add.stderr.strip()))
+    if subprocess.run(["git", "-C", str(repo), "diff", "--cached", "--quiet"]).returncode == 0:
+        sections[name] = body
+        return {"section": name, "file": fname, "changed": False}
+    r = subprocess.run(["git", "-C", str(repo), "commit", "-m", "section:" + name], capture_output=True, text=True)
+    if r.returncode != 0:
+        raise RuntimeError("git rejected %r (syntax gate):\n%s\n%s" % (name, r.stdout.strip(), r.stderr.strip()))
+    sections[name] = body
+    return {"section": name, "file": fname, "committed": r.stdout.strip().split("\n")[0]}
+
+
 def build(kind, sections):
     common = {
         "action_index": _LAST_OBS["action_index"],
@@ -1595,6 +1653,7 @@ def build(kind, sections):
     }
     if kind == "witness":
         return common
+    common["commit_section"] = lambda name, body: _commit_section(sections, name, body)
     if NO_GUI:
         common["desktop"] = _no_gui_hand()
         return common
