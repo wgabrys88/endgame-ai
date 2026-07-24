@@ -236,7 +236,7 @@ def write_board(path, sections, order):
 
 
 def fenced(text):
-    m = re.search(r"```(?:\w+)?\s*(.*?)```", text, re.S)
+    m = re.search(r"```(?:\w+)?\s*(.*)```", text, re.S)
     return m.group(1).strip() if m else ""
 
 
@@ -460,21 +460,44 @@ def call_llm(cfg, stage, prompt_text):
 
 
 _CAPS = "unloaded"
+_CAPS_SRC = None
 def caps():
-    global _CAPS
+    global _CAPS, _CAPS_SRC
     if _CAPS == "unloaded":
         sections, _order = read_board(BOARD)
         src = fenced(sections.get("capabilities", ""))
         if not src:
-            _CAPS = None
+            _CAPS, _CAPS_SRC = None, None
         else:
             import types
             mod = types.ModuleType("capabilities")
             mod.BOARD = BOARD
             mod.NO_GUI = flag("--no-gui")
             exec(src, mod.__dict__)
-            _CAPS = mod
+            _CAPS, _CAPS_SRC = mod, src
     return _CAPS
+
+
+_ENGINE_SRC = None
+def _current_section_src(name):
+    sections, _order = read_board(BOARD)
+    return fenced(sections.get(name, ""))
+
+
+def heal_if_body_changed(dry, inject, mode):
+    if dry or inject or flag("--once") or flag("--reset"):
+        return
+    global _CAPS, _CAPS_SRC, _ENGINE_SRC
+    if _CAPS_SRC is not None and _current_section_src("capabilities") != _CAPS_SRC:
+        _CAPS, _CAPS_SRC = "unloaded", None
+        caps()
+        sys.stderr.write("heal: capabilities body changed on disk; recompiled in-process for this life\n")
+    if _ENGINE_SRC is not None and _current_section_src("engine") != _ENGINE_SRC:
+        new_src = _current_section_src("engine")
+        sys.stderr.write("heal: engine body changed on disk; reincarnating into the mended engine (state preserved on disk)\n")
+        g = {"BOARD": BOARD, "ARGV": ARGV, "__name__": "__main__"}
+        exec(compile(new_src, "<engine>", "exec"), g)
+        raise SystemExit(0)
 
 
 def run_exec(code, ns_kind, sections):
@@ -657,6 +680,7 @@ def factory_reset(path):
 
 
 def main():
+    global _ENGINE_SRC
     dry = flag("--dry")
     once = flag("--once")
     inject = opt("--inject")
@@ -664,10 +688,13 @@ def main():
     if flag("--reset"):
         factory_reset(BOARD)
         return
+    _ENGINE_SRC = _current_section_src("engine")
+    caps()
     while True:
         nxt, stop = turn(BOARD, dry, inject, mode)
         if dry or once or inject or stop:
             break
+        heal_if_body_changed(dry, inject, mode)
 
 
 main()
