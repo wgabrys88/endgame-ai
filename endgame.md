@@ -663,14 +663,15 @@ BOARD = sys.argv[1]
 FENCE = chr(96) * 3
 SEC = re.compile(r"^##\s+(\w+)\s*$", re.M)
 
-PRESERVE = {"config", "engine", "capabilities", "reset", "goal", "developer_feedback"}
+PRESERVE = {"config", "engine", "capabilities", "reset"}
 DEFAULTS = {
+    "goal": "(no goal set)",
     "living_word": "[execute] (not yet interpreted)\n[verify] (not yet interpreted)\n[recover] (not yet interpreted)",
     "ledger": "none yet", "action_frame": "(empty)",
     "perceived": "(empty)", "alternatives": "(empty)", "code": "(empty)",
     "evidence": "(empty)", "verdict": "(empty)",
     "counsel": "(empty)", "environment": "(fresh screen scan lands here each turn)",
-    "failure_streak": "0",
+    "failure_streak": "0", "developer_feedback": "",
 }
 
 
@@ -705,7 +706,7 @@ for k, v in DEFAULTS.items():
 keys = order + [k for k in sections if k not in order]
 body = "\n\n".join("## %s\n%s" % (k, sections[k].strip()) for k in keys if k in sections)
 pathlib.Path(BOARD).write_text(body.rstrip() + "\n", encoding="utf-8")
-sys.stderr.write("factory reset: working memory + state cleared; goal and body preserved\n")
+sys.stderr.write("factory reset: memory, state, goal, and developer_feedback cleared; body (config/engine/capabilities/reset) preserved\n")
 ```
 
 ## capabilities
