@@ -47,6 +47,7 @@
   "developer_feedback_schema": {
     "type": "string"
   },
+  "max_environment_chars": 4000,
   "record_contracts": {
     "execution": {
       "required": [
@@ -243,11 +244,19 @@ def strip_fence(s):
 
 
 def render_request(cfg, stage, sections):
+    limit = int(cfg.get("max_environment_chars", 0))
     parts = [cfg.get("shared_prompt_prefix", ""), stage["prompt"], ""]
     for tag in stage.get("reads", []):
+        if tag == "environment":
+            continue
         parts.append("## %s\n%s" % (tag, sections.get(tag, "(empty)")))
     if cfg.get("developer_feedback_schema"):
         parts.append("## developer_feedback\n%s" % sections.get("developer_feedback", ""))
+    if "environment" in stage.get("reads", []):
+        env = sections.get("environment", "(empty)")
+        if limit and len(env) > limit:
+            env = env[:limit] + "\n(environment truncated at %d chars)" % limit
+        parts.append("## environment\n%s" % env)
     return "\n\n".join(p for p in parts if p)
 
 
@@ -1364,13 +1373,11 @@ def _render(windows: list[dict[str, Any]], screen: dict[str, int]) -> dict[str, 
             sid = f"{observation_id}-e{counter['n']}"
             e["short_id"] = sid
             action = str(e.get("action", "")) if e.get("enabled") is not False else ""
-            rect = e.get("rect") or {}
             metadata = [
                 f"automation_id={clean(e.get('automation_id'))!r}" if e.get("automation_id") else "",
                 f"class={clean(e.get('class_name'))!r}" if e.get("class_name") else "",
                 f"description={clean((e.get('pattern_values') or {}).get('legacy_description'))!r}" if (e.get("pattern_values") or {}).get("legacy_description") else "",
                 f"value={clean(e.get('value'))!r}" if e.get("value") else "",
-                "rect=(%s,%s,%s,%s)" % (rect.get("left", 0), rect.get("top", 0), rect.get("right", 0), rect.get("bottom", 0)),
             ]
             parts = [p for p in (
                 sid, str(e.get("role", "")), clean(e.get("name", "") or ""),
@@ -1741,21 +1748,3 @@ none yet
 0
 
 ## developer_feedback
-{"recover":"Verdict/reason falsely claimed 'No chrome.exe and/or no Chrome window' while supplied environment explicitly lists W2 Window Grok - Google Chrome with full interactive tree (e11 address, e38 Ask Grok, e47 TabItem Grok). Evidence-environment mismatch in the prompt pipeline causes repeated false denials and inflates failure_streak; least amendment: make verdict witness only the same fresh environment block given to recover, or drop process-name checks when UI tree already names the target app/window."}
-{"recover":"Actor runtime supplied Desktop.scroll that rejects the 'clicks' kwarg used in the failed deed (TypeError in evidence) while environment marks elements [scroll] without documenting the legal signature; least amendment: expose scroll param names/types in the always-visible namespace preamble or make scroll accept a documented **kwargs alias so recover/execute can bind without repeated probe failures."}
-{"recover":"Verdict/reason still asserts 'no Chrome application window' and cites only pinned e6 while the exact environment block supplied to recover explicitly lists W2 Window New Tab - Google Chrome with address bar e12, tabs, and account controls. This evidence-environment mismatch in the prompt pipeline produces false denials and keeps failure_streak alive; least amendment: force the verdict witness to read solely the same fresh environment tree given to all faculties in the turn, discarding any cached or process-list checks that contradict named windows."}
-{"recover":"Desktop.paste_clipboard requires a mandatory 'text' argument but the always-visible namespace/docs never state the signature; actor deeds therefore probe-fail. Least amendment: document paste_clipboard(text: str) (and siblings) in the preamble shown to every faculty."}
-{"recover":"Actor deeds keep targeting ephemeral e-numbers (e56) that die each scan while LAW and recover instructions forbid emitting eN; environment supplies only unlabeled Edit [write] beside cover-image text. Least amendment: guarantee every interactive Edit exposes a stable accessible-name or aria-label (e.g. 'Title') in the tree so faculties can bind by role+name without id chasing, and document that paste_clipboard/type must be preceded by an explicit focus deed whose success is witness-checked before value injection."}
-{"recover":"Title control still appears only as bare Edit [write] with no accessible-name/aria-label while cover-image text sits adjacent; faculties cannot stably bind without id-chasing that LAW forbids. Least amendment: ensure LinkedIn title input exposes name 'Title' (or equivalent) in every desktop_tree scan, and document that click must precede paste_clipboard/type with witness of focus before value injection."}
-{"verify":"Actor code and prior living_word still chase ephemeral e56 which the fresh tree rebinds as a Grok TabItem; the real title control is the bare unlabeled Edit e53. Least amendment: force every Edit in desktop_tree_text to expose a stable accessible-name (e.g. 'Title' or 'Article title') so faculties bind by role+name, and reject any deed whose action_index key is an e-number that dies each scan."}
-{"recover":"Title control still appears only as bare Edit [write] with no accessible-name/aria-label while cover-image text sits adjacent; faculties cannot stably bind without id-chasing that LAW forbids. Least amendment: ensure LinkedIn title input exposes name 'Title' (or equivalent) in every desktop_tree scan, and document that click must precede paste_clipboard/type with witness of focus before value injection."}
-{"execute":"Title control still appears only as bare Edit [write] with no accessible-name/aria-label while cover-image text sits adjacent; faculties cannot stably bind without id-chasing that LAW forbids. Least amendment: ensure LinkedIn title input exposes name 'Title' (or equivalent) in every desktop_tree scan, and document that click must precede paste_clipboard/type with witness of focus before value injection."}
-{"verify":"Title control still appears only as bare Edit [write] with no accessible-name/aria-label and its value is never reflected in desktop_tree_text even after a claimed paste; witness therefore cannot confirm the deed by effect. Least amendment: force every Edit (esp. LinkedIn title) to expose a stable accessible-name (e.g. 'Title') AND to surface its current value text as a child Text node in every scan so the witness can read the post-paste state without relying on actor testimony or ephemeral e-numbers."}
-{"recover":"Title control still appears only as bare Edit [write] with no accessible-name/aria-label and its value is never reflected in desktop_tree_text even after claimed paste; witness therefore cannot confirm the deed by effect. Least amendment: force every Edit (esp. LinkedIn title) to expose a stable accessible-name (e.g. 'Title') AND to surface its current value text as a child Text node in every scan so the witness can read the post-paste state without relying on actor testimony or ephemeral e-numbers."}
-{"execute":"Title control still appears only as bare Edit [write] with no accessible-name/aria-label and its value is never reflected in desktop_tree_text even after claimed focus/type; witness therefore cannot confirm the deed by effect. Least amendment: force every Edit (esp. LinkedIn title) to expose a stable accessible-name (e.g. 'Title') AND to surface its current value text as a child Text node in every scan so the witness can read the post-type state without relying on actor testimony or ephemeral e-numbers."}
-{"verify":"Title control still appears only as bare Edit [write] with no accessible-name/aria-label and its value is never reflected in desktop_tree_text even after claimed focus/type; witness therefore cannot confirm the deed by effect. Least amendment: force every Edit (esp. LinkedIn title) to expose a stable accessible-name (e.g. 'Title') AND to surface its current value text as a child Text node in every scan so the witness can read the post-type state without relying on actor testimony or ephemeral e-numbers."}
-{"recover":"Title control still appears only as bare Edit [write] with no accessible-name/aria-label and its value is never reflected in desktop_tree_text even after claimed focus/type; witness therefore cannot confirm the deed by effect. Least amendment: force every Edit (esp. LinkedIn title) to expose a stable accessible-name (e.g. 'Title') AND to surface its current value text as a child Text node in every scan so the witness can read the post-type state without relying on actor testimony or ephemeral e-numbers."}
-{"execute":"Title control still appears only as bare Edit [write] with no accessible-name/aria-label and its value is never reflected in desktop_tree_text even after claimed focus/type/paste; witness therefore cannot confirm the deed by effect. Least amendment: force every Edit (esp. LinkedIn title) to expose a stable accessible-name (e.g. 'Title') AND to surface its current value text as a child Text node in every scan so the witness can read the post-type state without relying on actor testimony or ephemeral e-numbers."}
-{"verify":"Title control still appears only as bare Edit [write] with no accessible-name/aria-label and its value is never reflected in desktop_tree_text even after claimed JS-URI injection; the title string only contaminates address-bar history ListItems. Witness therefore cannot confirm the deed by effect. Least amendment: force every Edit (esp. LinkedIn title) to expose a stable accessible-name (e.g. 'Title') AND to surface its current value text as a child Text node in every scan so the witness can read the post-injection state without relying on actor testimony or ephemeral e-numbers."}
-{"recover":"Title control remains a bare Edit [write] with no accessible-name/aria-label and never surfaces its current value as a child Text node even after claimed injections; witness therefore cannot confirm by effect and faculties are forced toward forbidden eN chasing. Least amendment: force every Edit (especially LinkedIn title) to expose a stable accessible-name (e.g. 'Title') AND to emit its live value text as a child Text node in every desktop_tree scan."}
-{"execute":"Title control still appears only as bare Edit [write] with no accessible-name/aria-label and never surfaces its current value as a child Text node even after claimed injections; witness therefore cannot confirm by effect and faculties are forced toward fragile coordinate/SendKeys paths. Least amendment: force every Edit (especially LinkedIn title) to expose a stable accessible-name (e.g. 'Title') AND to emit its live value text as a child Text node in every desktop_tree scan."}
