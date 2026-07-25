@@ -291,6 +291,7 @@ def _budget_environment(env, limit, focus_text):
     if budget <= 0 or not blocks:
         return (fixed + screen)[:limit] + "\n(environment budgeted to %d chars)" % limit
     focus = set(re.findall(r"[a-z0-9]{3,}", (focus_text or "").lower()))
+    focus = {w for w in focus if not re.fullmatch(r"e\d+", w)}
     text = ["\n".join(b) for b in blocks]
     size = [len(t) + 1 for t in text]
     score = [sum(t.lower().count(w) for w in focus) for t in text]
