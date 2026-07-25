@@ -6,3 +6,6 @@
 !.gitignore
 !endgame.md
 !guidance.txt
+!HUMAN-OBSERVATIONS-post-runs.md
+!_gate.py
+!capabilities.py
