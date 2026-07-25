@@ -189,7 +189,7 @@
     },
     "recover": {
       "record_type": "recovery",
-      "prompt": "Thou art [recover], the conscience, waked after a denied or unwitnessed deed. Thou writest prose only; thou runnest no code and hast no hand nor eyes of thine own beyond the words set before thee - the denied deed, its [evidence], the [verdict], thy [failure_streak], and the fresh [environment].\n\nName in [lesson] the true defect: what failed, why, and what must change - not a goal echo. Trace the fault to its ROOT before thou namest its kind, for the [evidence] showeth where a fault SURFACED, not always where it was BORN. A tool that RAISED to refuse what was handed it is oftener honest than broken: a hand that rejecteth a point off the [screen] or owned by another window is keeping faith, and the true defect lieth UPSTREAM in whatever gave it that false point - thine own eyes, thy reading of them, or a stale word thou shouldst not have carried. Read the [living_word] and [evidence] backward to the first wrong step and ask why the deed was shaped so. Only when thou hast found where the fault was truly BORN judge its kind: if the body's own source THERE deceived thee or kept not its promise - a primitive that moved nothing, an eye that reported what cannot be reached, a capability that faulted - then the defect is in the body, and thy [strategy] is to MEND THAT WELLSPRING THIS TURN through commit_section, whatever thy [failure_streak], for a known body-defect is not healed by waiting nor by trying the same broken tool again; but mend the source of the fault, never the honest guard that merely named it. Only when the body is sound and the WORLD withholdeth the fruit dost thou widen thy manner; then frame a strike that departeth from every road thy [living_word] recordeth, and the higher thy [failure_streak], the more thy road must differ in KIND. Describe in [target] the thing to be met by its window, its role, its name, and its 2D relation as they stand in the fresh [environment]; coin no label and emit no short [id] nor coordinate, for [execute] waketh to a wholly new scan whose ids are not these.\n\nReturn a recovery record bearing only these fields: [lesson], [target], [strategy], and [goal_interpretation] - thine own living-word row (the defect learned, distance to the outcome, next true road), not a goal echo.",
+      "prompt": "Thou art [recover], the conscience, waked after a denied or unwitnessed deed. Thou writest prose only; thou runnest no code and hast no hand nor eyes of thine own beyond the words set before thee - the denied deed, its [evidence], the [verdict], thy [failure_streak], and the fresh [environment].\n\nName in [lesson] the true defect: what failed, why, and what must change - not a goal echo. First judge the KIND of defect from the [evidence] and [verdict]: if a tool of thy own body deceived thee or raised - a primitive that moved nothing, a capability that faulted, a promise the body kept not - then the defect is in the body, and thy [strategy] is to MEND THAT BODY AT ITS SOURCE THIS TURN through commit_section, whatever thy [failure_streak], for a known body-defect is not healed by waiting nor by trying the same broken tool again. Only when the body is sound and the WORLD withholdeth the fruit dost thou widen thy manner; then frame a strike that departeth from every road thy [living_word] recordeth, and the higher thy [failure_streak], the more thy road must differ in KIND. Describe in [target] the thing to be met by its window, its role, its name, and its 2D relation as they stand in the fresh [environment]; coin no label and emit no short [id] nor coordinate, for [execute] waketh to a wholly new scan whose ids are not these.\n\nReturn a recovery record bearing only these fields: [lesson], [target], [strategy], and [goal_interpretation] - thine own living-word row (the defect learned, distance to the outcome, next true road), not a goal echo.",
       "reads": [
         "goal",
         "counsel",
@@ -291,7 +291,6 @@ def _budget_environment(env, limit, focus_text):
     if budget <= 0 or not blocks:
         return (fixed + screen)[:limit] + "\n(environment budgeted to %d chars)" % limit
     focus = set(re.findall(r"[a-z0-9]{3,}", (focus_text or "").lower()))
-    focus = {w for w in focus if not re.fullmatch(r"e\d+", w)}
     text = ["\n".join(b) for b in blocks]
     size = [len(t) + 1 for t in text]
     score = [sum(t.lower().count(w) for w in focus) for t in text]
@@ -524,30 +523,6 @@ def _dump_transmission(cfg, api, record_type, turn_no, request_obj, raw, content
     os.rename(tmp, path)
 
 
-def _post_json(url, headers, body):
-    req = urllib.request.Request(url, data=json.dumps(body).encode(), headers=headers, method="POST")
-    with urllib.request.urlopen(req, timeout=240) as r:
-        return r.read().decode()
-
-
-def _chat_transport(model, api, prompt_text, fmt):
-    transport = model[api]
-    url, body = transport["url"], dict(transport["request"])
-    headers = {"Content-Type": "application/json"}
-    if api == "responses":
-        body.pop("previous_response_id", None)
-        body["store"] = False
-        body["input"] = prompt_text
-        body["text"] = {"format": {"type": "json_schema", **fmt}}
-        headers["Authorization"] = "Bearer " + os.environ["XAI_API_KEY"]
-    elif api == "chat_completions":
-        body["messages"] = [{"role": "user", "content": prompt_text}]
-        body["response_format"] = {"type": "json_schema", "json_schema": fmt}
-    else:
-        raise RuntimeError("unknown model api: " + str(api))
-    return url, headers, body
-
-
 def call_llm(cfg, stage, prompt_text, api=None):
     model = cfg["model"]
     api = api or model.get("api", "responses")
@@ -565,10 +540,26 @@ def call_llm(cfg, stage, prompt_text, api=None):
             _dump_transmission(cfg, api, record_type, turn_no,
                                {"command": model.get("acp", {}).get("command"), "prompt": prompt_text},
                                None, content, err)
-    url, headers, body = _chat_transport(model, api, prompt_text, fmt)
+    transport = model[api]
+    url, body = transport["url"], dict(transport["request"])
+    headers = {"Content-Type": "application/json"}
+    if api == "responses":
+        body.pop("previous_response_id", None)
+        body["store"] = False
+        body["input"] = prompt_text
+        body["text"] = {"format": {"type": "json_schema", **fmt}}
+        headers["Authorization"] = "Bearer " + os.environ["XAI_API_KEY"]
+    elif api == "chat_completions":
+        body["messages"] = [{"role": "user", "content": prompt_text}]
+        body["response_format"] = {"type": "json_schema", "json_schema": fmt}
+    else:
+        raise RuntimeError("unknown model api: " + str(api))
     raw, content, err = None, None, None
     try:
-        raw = _post_json(url, headers, body)
+        req = urllib.request.Request(url, data=json.dumps(body).encode(),
+            headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=240) as r:
+            raw = r.read().decode()
         content = _extract_content(json.loads(raw))
         return content
     except Exception as e:
@@ -649,8 +640,24 @@ def _make_ask_model(cfg, api):
             if active == "acp":
                 content = _call_acp(model, prompt, fmt)
             else:
-                url, headers, body = _chat_transport(model, active, prompt, fmt)
-                raw = _post_json(url, headers, body)
+                transport = model[active]
+                url, body = transport["url"], dict(transport["request"])
+                headers = {"Content-Type": "application/json"}
+                if active == "responses":
+                    body.pop("previous_response_id", None)
+                    body["store"] = False
+                    body["input"] = prompt
+                    body["text"] = {"format": {"type": "json_schema", **fmt}}
+                    headers["Authorization"] = "Bearer " + os.environ["XAI_API_KEY"]
+                elif active == "chat_completions":
+                    body["messages"] = [{"role": "user", "content": prompt}]
+                    body["response_format"] = {"type": "json_schema", "json_schema": fmt}
+                else:
+                    raise RuntimeError("ask_model cannot use transport " + str(active))
+                req = urllib.request.Request(url, data=json.dumps(body).encode(),
+                    headers=headers, method="POST")
+                with urllib.request.urlopen(req, timeout=240) as r:
+                    raw = r.read().decode()
                 content = _extract_content(json.loads(raw))
             parsed = json.loads(content)
             return parsed if schema is not None else parsed.get("answer", content)
@@ -684,7 +691,10 @@ def _make_web_search(cfg):
                    "Authorization": "Bearer " + os.environ["XAI_API_KEY"]}
         raw, result, err = None, None, None
         try:
-            raw = _post_json(url, headers, body)
+            req = urllib.request.Request(url, data=json.dumps(body).encode(),
+                headers=headers, method="POST")
+            with urllib.request.urlopen(req, timeout=240) as r:
+                raw = r.read().decode()
             obj = json.loads(raw)
             text_parts, sources = [], []
             for item in obj.get("output", []):
@@ -1439,6 +1449,11 @@ class _TextPattern(_Object):
         _check(_call(self.ptr, 7, ctypes.POINTER(ctypes.c_void_p))(self.ptr, ctypes.byref(out)))
         return _TextRange(out)
 
+    def GetVisibleRanges(self):
+        out = ctypes.c_void_p()
+        _check(_call(self.ptr, 6, ctypes.POINTER(ctypes.c_void_p))(self.ptr, ctypes.byref(out)))
+        return _Array(out, _TextRange)
+
 
 class _LegacyPattern(_Object):
     def __init__(self, ptr, cached):
@@ -1799,14 +1814,8 @@ def _probe_points(rect: dict[str, int], step_px: int) -> list[tuple[int, int]]:
     return points
 
 
-def _reachable_center(rect: dict[str, int], win_rect: dict[str, int], sw: int, sh: int) -> tuple[int, int] | None:
-    left = max(rect["left"], win_rect["left"], 0)
-    top = max(rect["top"], win_rect["top"], 0)
-    right = min(rect["right"], win_rect["right"], sw)
-    bottom = min(rect["bottom"], win_rect["bottom"], sh)
-    if right <= left or bottom <= top:
-        return None
-    return (left + right) // 2, (top + bottom) // 2
+def _move_cursor(x: int, y: int) -> None:
+    user32.SetCursorPos(x, y)
 
 
 def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -1829,7 +1838,7 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
             for x, y in _probe_points(rect, step_px):
                 if not (0 <= x < sw and 0 <= y < sh):
                     continue
-                user32.SetCursorPos(x, y)
+                _move_cursor(x, y)
                 pt = wintypes.POINT(int(x), int(y))
                 try:
                     owner = int(user32.GetAncestor(user32.WindowFromPoint(pt), 2) or 0)
@@ -1845,13 +1854,6 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
                     continue
                 for i, node in enumerate(scanner.harvest_subtree(root, max_subtree)):
                     if is_desktop_leakage(node):
-                        continue
-                    center = _reachable_center(node["rect"], rect, sw, sh)
-                    if center is None:
-                        continue
-                    node["px"], node["py"] = center
-                    owner_at_center = int(user32.GetAncestor(user32.WindowFromPoint(wintypes.POINT(center[0], center[1])), 2) or 0)
-                    if owner_at_center != hwnd:
                         continue
                     node["owner_hwnd"] = hwnd
                     if i == 0:
@@ -1871,7 +1873,7 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
     finally:
         if had_cursor:
             try:
-                user32.SetCursorPos(saved.x, saved.y)
+                _move_cursor(saved.x, saved.y)
             except Exception:
                 pass
 
@@ -1963,8 +1965,11 @@ def _render(windows: list[dict[str, Any]], screen: dict[str, int]) -> dict[str, 
     }
 
 
+import ctypes
 import os
 import subprocess
+from ctypes import wintypes
+from typing import Any
 
 ROOT = __import__("pathlib").Path(globals().get("BOARD", ".")).resolve().parent
 DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = ctypes.c_void_p(-4)
@@ -2014,7 +2019,13 @@ class Desktop:
         return self._automation
 
     def observe(self, config: dict[str, Any] | None = None) -> dict[str, Any]:
-        return observe(self, config if isinstance(config, dict) else self.config)
+        if config is None:
+            cfg = self.config
+        elif isinstance(config, dict):
+            cfg = config
+        else:
+            cfg = self.config
+        return observe(self, cfg)
 
     def click(self, x: int, y: int, hwnd: int) -> dict[str, Any]:
         width, height = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
@@ -2131,7 +2142,11 @@ _LAST_OBS = {"action_index": {}, "screen_elements": [], "desktop_tree_text": ""}
 
 
 def snapshot_observation():
-    return dict(_LAST_OBS)
+    return {
+        "action_index": _LAST_OBS["action_index"],
+        "screen_elements": _LAST_OBS["screen_elements"],
+        "desktop_tree_text": _LAST_OBS["desktop_tree_text"],
+    }
 
 
 def restore_observation(snap):
@@ -2160,7 +2175,7 @@ _SECTION_LANG = {"config": "json", "engine": "python", "reset": "python", "capab
 
 
 def _ensure_self_repo():
-    import sys as _sys
+    import subprocess, sys as _sys
     if (_SELF_DIR / ".git").is_dir():
         return _SELF_DIR
     _SELF_DIR.mkdir(parents=True, exist_ok=True)
@@ -2197,6 +2212,7 @@ def _fenced_payload(section_body):
 
 
 def _commit_section(sections, name, old, new):
+    import subprocess
     if name not in _EDITABLE:
         raise RuntimeError("commit_section editeth only genome sections %s, not %r; memory and proof are engine-owned"
                            % (sorted(_EDITABLE), name))
