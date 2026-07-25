@@ -1818,6 +1818,16 @@ def _move_cursor(x: int, y: int) -> None:
     user32.SetCursorPos(x, y)
 
 
+def _reachable_center(rect: dict[str, int], win_rect: dict[str, int], sw: int, sh: int) -> tuple[int, int] | None:
+    left = max(rect["left"], win_rect["left"], 0)
+    top = max(rect["top"], win_rect["top"], 0)
+    right = min(rect["right"], win_rect["right"], sw)
+    bottom = min(rect["bottom"], win_rect["bottom"], sh)
+    if right <= left or bottom <= top:
+        return None
+    return (left + right) // 2, (top + bottom) // 2
+
+
 def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any]:
     cfg = dict(config) if isinstance(config, dict) else {}
     step_px = int(cfg.get("step_px", 64))
@@ -1854,6 +1864,13 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
                     continue
                 for i, node in enumerate(scanner.harvest_subtree(root, max_subtree)):
                     if is_desktop_leakage(node):
+                        continue
+                    center = _reachable_center(node["rect"], rect, sw, sh)
+                    if center is None:
+                        continue
+                    node["px"], node["py"] = center
+                    owner_at_center = int(user32.GetAncestor(user32.WindowFromPoint(wintypes.POINT(center[0], center[1])), 2) or 0)
+                    if owner_at_center != hwnd:
                         continue
                     node["owner_hwnd"] = hwnd
                     if i == 0:
