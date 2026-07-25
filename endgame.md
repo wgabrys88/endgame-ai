@@ -499,11 +499,28 @@ def _read_proxy_response(request, response):
     return json.dumps(record, ensure_ascii=False, separators=(",", ":"))
 
 
+_RUN_STAMP = None
+
+
+def _transmission_root(cfg):
+    base = cfg.get("transmission_log_dir")
+    if not base:
+        return None
+    override = os.environ.get("EGAI_RUN_DIR")
+    if override:
+        return pathlib.Path(override)
+    global _RUN_STAMP
+    if _RUN_STAMP is None:
+        _RUN_STAMP = time.strftime("%Y-%m-%d-%H-%M-%S")
+    root = pathlib.Path(BOARD).resolve().parent / base / _RUN_STAMP
+    os.environ["EGAI_RUN_DIR"] = str(root)
+    return root
+
+
 def _dump_transmission(cfg, api, record_type, turn_no, request_obj, raw, content, error):
-    log_dir = cfg.get("transmission_log_dir")
-    if not log_dir:
+    root = _transmission_root(cfg)
+    if root is None:
         return
-    root = pathlib.Path(BOARD).resolve().parent / log_dir
     root.mkdir(parents=True, exist_ok=True)
     safe_request = request_obj
     if isinstance(request_obj, dict) and "headers" in request_obj:
@@ -698,19 +715,21 @@ def _make_web_search(cfg):
             obj = json.loads(raw)
             text_parts, sources = [], []
             for item in obj.get("output", []):
-                if not isinstance(item, dict) or item.get("type") != "message":
+                if not isinstance(item, dict) or item.get("type") == "reasoning":
                     continue
-                for c in item.get("content", []):
+                for c in item.get("content", []) or []:
                     if not isinstance(c, dict):
                         continue
                     if c.get("text"):
                         text_parts.append(str(c["text"]))
                     for ann in c.get("annotations", []) or []:
-                        if isinstance(ann, dict) and ann.get("url"):
+                        if isinstance(ann, dict) and (ann.get("url") or ann.get("type") == "url_citation") and ann.get("url"):
                             sources.append(ann["url"])
             for u in obj.get("citations", []) or []:
                 if isinstance(u, str):
                     sources.append(u)
+                elif isinstance(u, dict) and u.get("url"):
+                    sources.append(u["url"])
             seen, uniq = set(), []
             for u in sources:
                 if u not in seen:
