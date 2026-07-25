@@ -1439,11 +1439,6 @@ class _TextPattern(_Object):
         _check(_call(self.ptr, 7, ctypes.POINTER(ctypes.c_void_p))(self.ptr, ctypes.byref(out)))
         return _TextRange(out)
 
-    def GetVisibleRanges(self):
-        out = ctypes.c_void_p()
-        _check(_call(self.ptr, 6, ctypes.POINTER(ctypes.c_void_p))(self.ptr, ctypes.byref(out)))
-        return _Array(out, _TextRange)
-
 
 class _LegacyPattern(_Object):
     def __init__(self, ptr, cached):
@@ -1804,10 +1799,6 @@ def _probe_points(rect: dict[str, int], step_px: int) -> list[tuple[int, int]]:
     return points
 
 
-def _move_cursor(x: int, y: int) -> None:
-    user32.SetCursorPos(x, y)
-
-
 def _reachable_center(rect: dict[str, int], win_rect: dict[str, int], sw: int, sh: int) -> tuple[int, int] | None:
     left = max(rect["left"], win_rect["left"], 0)
     top = max(rect["top"], win_rect["top"], 0)
@@ -1838,7 +1829,7 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
             for x, y in _probe_points(rect, step_px):
                 if not (0 <= x < sw and 0 <= y < sh):
                     continue
-                _move_cursor(x, y)
+                user32.SetCursorPos(x, y)
                 pt = wintypes.POINT(int(x), int(y))
                 try:
                     owner = int(user32.GetAncestor(user32.WindowFromPoint(pt), 2) or 0)
@@ -1880,7 +1871,7 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
     finally:
         if had_cursor:
             try:
-                _move_cursor(saved.x, saved.y)
+                user32.SetCursorPos(saved.x, saved.y)
             except Exception:
                 pass
 
@@ -1972,11 +1963,8 @@ def _render(windows: list[dict[str, Any]], screen: dict[str, int]) -> dict[str, 
     }
 
 
-import ctypes
 import os
 import subprocess
-from ctypes import wintypes
-from typing import Any
 
 ROOT = __import__("pathlib").Path(globals().get("BOARD", ".")).resolve().parent
 DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = ctypes.c_void_p(-4)
@@ -2026,13 +2014,7 @@ class Desktop:
         return self._automation
 
     def observe(self, config: dict[str, Any] | None = None) -> dict[str, Any]:
-        if config is None:
-            cfg = self.config
-        elif isinstance(config, dict):
-            cfg = config
-        else:
-            cfg = self.config
-        return observe(self, cfg)
+        return observe(self, config if isinstance(config, dict) else self.config)
 
     def click(self, x: int, y: int, hwnd: int) -> dict[str, Any]:
         width, height = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
@@ -2149,11 +2131,7 @@ _LAST_OBS = {"action_index": {}, "screen_elements": [], "desktop_tree_text": ""}
 
 
 def snapshot_observation():
-    return {
-        "action_index": _LAST_OBS["action_index"],
-        "screen_elements": _LAST_OBS["screen_elements"],
-        "desktop_tree_text": _LAST_OBS["desktop_tree_text"],
-    }
+    return dict(_LAST_OBS)
 
 
 def restore_observation(snap):
@@ -2182,7 +2160,7 @@ _SECTION_LANG = {"config": "json", "engine": "python", "reset": "python", "capab
 
 
 def _ensure_self_repo():
-    import subprocess, sys as _sys
+    import sys as _sys
     if (_SELF_DIR / ".git").is_dir():
         return _SELF_DIR
     _SELF_DIR.mkdir(parents=True, exist_ok=True)
@@ -2219,7 +2197,6 @@ def _fenced_payload(section_body):
 
 
 def _commit_section(sections, name, old, new):
-    import subprocess
     if name not in _EDITABLE:
         raise RuntimeError("commit_section editeth only genome sections %s, not %r; memory and proof are engine-owned"
                            % (sorted(_EDITABLE), name))
