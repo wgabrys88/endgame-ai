@@ -523,6 +523,30 @@ def _dump_transmission(cfg, api, record_type, turn_no, request_obj, raw, content
     os.rename(tmp, path)
 
 
+def _post_json(url, headers, body):
+    req = urllib.request.Request(url, data=json.dumps(body).encode(), headers=headers, method="POST")
+    with urllib.request.urlopen(req, timeout=240) as r:
+        return r.read().decode()
+
+
+def _chat_transport(model, api, prompt_text, fmt):
+    transport = model[api]
+    url, body = transport["url"], dict(transport["request"])
+    headers = {"Content-Type": "application/json"}
+    if api == "responses":
+        body.pop("previous_response_id", None)
+        body["store"] = False
+        body["input"] = prompt_text
+        body["text"] = {"format": {"type": "json_schema", **fmt}}
+        headers["Authorization"] = "Bearer " + os.environ["XAI_API_KEY"]
+    elif api == "chat_completions":
+        body["messages"] = [{"role": "user", "content": prompt_text}]
+        body["response_format"] = {"type": "json_schema", "json_schema": fmt}
+    else:
+        raise RuntimeError("unknown model api: " + str(api))
+    return url, headers, body
+
+
 def call_llm(cfg, stage, prompt_text, api=None):
     model = cfg["model"]
     api = api or model.get("api", "responses")
@@ -540,26 +564,10 @@ def call_llm(cfg, stage, prompt_text, api=None):
             _dump_transmission(cfg, api, record_type, turn_no,
                                {"command": model.get("acp", {}).get("command"), "prompt": prompt_text},
                                None, content, err)
-    transport = model[api]
-    url, body = transport["url"], dict(transport["request"])
-    headers = {"Content-Type": "application/json"}
-    if api == "responses":
-        body.pop("previous_response_id", None)
-        body["store"] = False
-        body["input"] = prompt_text
-        body["text"] = {"format": {"type": "json_schema", **fmt}}
-        headers["Authorization"] = "Bearer " + os.environ["XAI_API_KEY"]
-    elif api == "chat_completions":
-        body["messages"] = [{"role": "user", "content": prompt_text}]
-        body["response_format"] = {"type": "json_schema", "json_schema": fmt}
-    else:
-        raise RuntimeError("unknown model api: " + str(api))
+    url, headers, body = _chat_transport(model, api, prompt_text, fmt)
     raw, content, err = None, None, None
     try:
-        req = urllib.request.Request(url, data=json.dumps(body).encode(),
-            headers=headers, method="POST")
-        with urllib.request.urlopen(req, timeout=240) as r:
-            raw = r.read().decode()
+        raw = _post_json(url, headers, body)
         content = _extract_content(json.loads(raw))
         return content
     except Exception as e:
@@ -640,24 +648,8 @@ def _make_ask_model(cfg, api):
             if active == "acp":
                 content = _call_acp(model, prompt, fmt)
             else:
-                transport = model[active]
-                url, body = transport["url"], dict(transport["request"])
-                headers = {"Content-Type": "application/json"}
-                if active == "responses":
-                    body.pop("previous_response_id", None)
-                    body["store"] = False
-                    body["input"] = prompt
-                    body["text"] = {"format": {"type": "json_schema", **fmt}}
-                    headers["Authorization"] = "Bearer " + os.environ["XAI_API_KEY"]
-                elif active == "chat_completions":
-                    body["messages"] = [{"role": "user", "content": prompt}]
-                    body["response_format"] = {"type": "json_schema", "json_schema": fmt}
-                else:
-                    raise RuntimeError("ask_model cannot use transport " + str(active))
-                req = urllib.request.Request(url, data=json.dumps(body).encode(),
-                    headers=headers, method="POST")
-                with urllib.request.urlopen(req, timeout=240) as r:
-                    raw = r.read().decode()
+                url, headers, body = _chat_transport(model, active, prompt, fmt)
+                raw = _post_json(url, headers, body)
                 content = _extract_content(json.loads(raw))
             parsed = json.loads(content)
             return parsed if schema is not None else parsed.get("answer", content)
@@ -691,10 +683,7 @@ def _make_web_search(cfg):
                    "Authorization": "Bearer " + os.environ["XAI_API_KEY"]}
         raw, result, err = None, None, None
         try:
-            req = urllib.request.Request(url, data=json.dumps(body).encode(),
-                headers=headers, method="POST")
-            with urllib.request.urlopen(req, timeout=240) as r:
-                raw = r.read().decode()
+            raw = _post_json(url, headers, body)
             obj = json.loads(raw)
             text_parts, sources = [], []
             for item in obj.get("output", []):
