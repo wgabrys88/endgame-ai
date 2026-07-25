@@ -213,6 +213,8 @@ flowchart LR
 
 The prompts are honest about this. The Law of Separated Powers now says plainly that the spine is what makes "proven" mean anything, that it lives in `separated_powers`, and that dissolving it lets any faculty act and makes the ledger proof to none but the organism - counsel to keep it unless the loss has been weighed, never a wall. The witness prompt says its handlessness is a default virtue, dissolvable, and that when dissolved it must guard its own honesty because the structure no longer does.
 
+You switch between the two organisms without touching the body: launch with `--separated` (force the proof discipline) or `--merged` (dissolve it). The flag overrides `config.separated_powers` for that run only and never rewrites the document; with no flag, the config default holds. The organism itself may also flip the config flag through `commit_section`, so the choice is both the operator's and, in time, the organism's own.
+
 ---
 
 ## Self-modification and same-life healing
@@ -406,22 +408,49 @@ mindmap
 
 ---
 
-## Running it
+## Running it (user guide)
+
+You only ever supply two things: a **goal** (one sentence in the `goal` slot) and, if you wish, a **mode flag**. Everything else - deciding steps, proving them, healing, learning, resting - the organism does itself. You do not have to ask it to self-evolve; given a goal and left running, it does so on its own.
+
+### Quick start
 
 ```bash
-python endgame.md                 # a normal continuous life on the GUI host (needs XAI_API_KEY)
-python endgame.md --dry --once    # print the assembled prompt for one turn, no model call
-python endgame.md --reset         # clear memory and goal to seed (learned nodes survive)
-python endgame.md --once          # a single turn
-python endgame.md --inject r.json # deliver a hand-written record (drive it by hand)
-python endgame.md --mode file_proxy   # xai | lmstudio | acp | file_proxy
-python endgame.md --no-gui        # a host with no desktop; the hand raises if reached
-python endgame.md --counsel       # fetch optional operator counsel each turn
+# 1. set your key (the hosted mind)
+export XAI_API_KEY=...            # on Windows PowerShell: $env:XAI_API_KEY = "..."
+
+# 2. write your goal into the ## goal slot of endgame.md (one plain sentence)
+
+# 3. turn the wheel on the GUI host
+python endgame.md                 # a continuous life: it works until the goal is proven, the body raises, or you stop it
 ```
 
-Verify by exercising the real wheel, not unit tests: confirm the document reads, the config parses, the engine/reset/capabilities compile, and the topology is fully reachable. The hand needs a real desktop, but the whole plumbing proves offline via `--no-gui`, `--dry`, and the pausing file-proxy mind.
+### The one choice that matters: which organism
 
-> Security, stated honestly. This organism synthesizes real keyboard and mouse input and runs code it authors, to drive a GUI as a human would. That is, by design, indistinguishable to a heuristic scanner from a remote-access tool, and with `separated_powers=false` it can also edit its own body freely. Run it in an environment you control, with a scoped exclusion for that location alone. This is operational caution, not a cage in the body.
+```bash
+python endgame.md --separated     # THE PROVING ORGANISM: the witness cannot act, so its ledger is proof to anyone
+python endgame.md --merged        # THE TRUTHFUL ORGANISM: every faculty holds the hand; the ledger is proof to itself
+python endgame.md                 # no flag: use the default baked in config.separated_powers (this build ships proving)
+```
+
+That launch flag is the whole switch between the two organisms - it overrides the config for that run only and never rewrites the body. Use `--separated` when you will trust the result (real accounts, real work); use `--merged` for maximum self-shaping when you are the one watching.
+
+### The other flags
+
+```bash
+python endgame.md --dry --once        # print the assembled prompt for one turn, spend no model call
+python endgame.md --reset             # clear memory and goal to seed (learned nodes survive)
+python endgame.md --once              # take a single turn, then stop
+python endgame.md --inject reply.json # deliver a hand-written record, to drive it by hand
+python endgame.md --mode file_proxy   # choose the mind: xai | lmstudio | acp | file_proxy
+python endgame.md --no-gui            # a host with no desktop; the hand raises if a deed reaches for a screen
+python endgame.md --counsel           # fetch optional operator counsel each turn
+```
+
+### Verifying before you trust it
+
+Verify by exercising the real wheel, not unit tests: confirm the document reads, the config parses, the engine/reset/capabilities compile, and the topology is fully reachable. The whole plumbing proves offline via `--no-gui`, `--dry`, and the pausing file-proxy mind; only the hand needs a real desktop.
+
+> Security, stated honestly. This organism synthesizes real keyboard and mouse input and runs code it authors, to drive a GUI as a human would - and under `--merged` it can also edit its own body freely. That is, by design, indistinguishable to a heuristic scanner from a remote-access tool. Run it in an environment you control, with a scoped exclusion for that location alone. This is operational caution, not a cage in the body.
 
 ---
 

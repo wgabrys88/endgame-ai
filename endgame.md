@@ -217,6 +217,16 @@ BOARD = globals().get("BOARD", "endgame.md")
 ARGV = globals().get("ARGV", sys.argv)
 flag = lambda name: name in ARGV
 opt = lambda name: ARGV[ARGV.index(name) + 1] if name in ARGV else None
+
+
+def _separated(cfg):
+    if flag("--separated"):
+        return True
+    if flag("--merged"):
+        return False
+    return bool(cfg.get("separated_powers", True)) if cfg is not None else True
+
+
 SEC = re.compile(r"^##\s+(\w+)\s*$", re.M)
 
 
@@ -820,7 +830,7 @@ def _make_spawn_actor(cfg, api, sections, base_ns_factory):
 
 def _build_actor_namespace(sections, cfg, api):
     ns = {"json": json, "os": os, "sys": sys, "pathlib": pathlib}
-    separated = bool(cfg.get("separated_powers", True)) if cfg is not None else True
+    separated = _separated(cfg)
     c = caps()
     if c is not None and hasattr(c, "build"):
         ns.update(c.build("actor", sections, separated))
@@ -838,7 +848,7 @@ def _build_actor_namespace(sections, cfg, api):
 
 
 def _run_in_process(code, ns_kind, sections, cfg=None, api=None):
-    separated = bool(cfg.get("separated_powers", True)) if cfg is not None else True
+    separated = _separated(cfg)
     if cfg is not None and (ns_kind == "actor" or not separated):
         ns = _build_actor_namespace(sections, cfg, api)
     else:
@@ -870,7 +880,7 @@ def _run_as_child(code, sections, cfg, api):
     result = here / ("deed_result.%s.json" % os.getpid())
     deed_py = here / "deed.py"
     _atomic_json(task, {
-        "code": code, "observation": snap, "api": api, "model_cfg": {"model": cfg["model"], "state": cfg.get("state", {}), "transmission_log_dir": cfg.get("transmission_log_dir"), "separated_powers": cfg.get("separated_powers", True), "nodes": cfg.get("nodes", {}), "node_edges": cfg.get("node_edges", {}), "node_budget": cfg.get("node_budget", 64), "edge_evaporation": cfg.get("edge_evaporation", 0.05), "edge_reinforcement": cfg.get("edge_reinforcement", 1.0), "spawn_budget": cfg.get("spawn_budget", 3), "shared_prompt_prefix": cfg.get("shared_prompt_prefix", "")},
+        "code": code, "observation": snap, "api": api, "model_cfg": {"model": cfg["model"], "state": cfg.get("state", {}), "transmission_log_dir": cfg.get("transmission_log_dir"), "separated_powers": _separated(cfg), "nodes": cfg.get("nodes", {}), "node_edges": cfg.get("node_edges", {}), "node_budget": cfg.get("node_budget", 64), "edge_evaporation": cfg.get("edge_evaporation", 0.05), "edge_reinforcement": cfg.get("edge_reinforcement", 1.0), "spawn_budget": cfg.get("spawn_budget", 3), "shared_prompt_prefix": cfg.get("shared_prompt_prefix", "")},
         "sections": {k: sections.get(k, "") for k in editable},
     })
     deed_py.write_text(
