@@ -4,10 +4,12 @@
   "start": "execute",
   "separated_powers": true,
   "state": {
-    "stage": null,
-    "last_signal": null,
-    "turn": 0,
-    "failure_streak": 0
+    "stage": "recover",
+    "last_signal": "fault",
+    "turn": 19,
+    "failure_streak": 0,
+    "pending_node_credit": [],
+    "pending_edges": []
   },
   "model": {
     "api": "responses",
@@ -2374,39 +2376,30 @@ def environment(sections, cfg=None):
 ```
 
 ## goal
-(no goal set)
+Open LinkedIn in the browser on this machine and apply, on behalf of the logged-in profile owner, to one genuine AI-related job located in Krakow, Poland. First understand the owner before applying: read the owner's own LinkedIn profile and follow their linked projects and GitHub to deduce honestly what skills and experience they actually have; when content lies below the fold, scroll it into view rather than stalling. Only then find a Krakow AI job that genuinely fits those deduced skills and submit a tailored application. Be truthful and explicit that you are the owner's autonomous system applying on their behalf. The work is done only when one real application has been submitted and an employer-side confirmation (a post-submit confirmation screen, an 'applied' state, or a receipt) is visible as proof, not merely an actor claim.
 
 ## living_word
-[execute] (not yet interpreted)
-[verify] (not yet interpreted)
-[recover] (not yet interpreted)
 
 ## ledger
-none yet
 
 ## action_frame
-(empty)
 
 ## perceived
-(empty)
 
 ## alternatives
-(empty)
 
 ## code
-(empty)
 
 ## evidence
-(empty)
 
 ## verdict
-(empty)
 
 ## counsel
 (empty)
 
 ## environment
-(fresh screen scan lands here each turn)
+
+SCREEN
 
 ## failure_streak
 0
@@ -2415,7 +2408,6 @@ none yet
 
 
 ## nodes
-(no saved nodes yet; save one with save_node when a manner of deed proves itself)
 
 ## readme
 You are reading the organism's DNA. Not a description of it, not a pointer to it - the thing itself. This document is `endgame.md`, and everything above this section - the laws in `config`, the wheel in `engine`, the seed-restore in `reset`, the Windows eyes and hand in `capabilities`, and the memory slots - is the whole living organism. This section is its own account of what it is and why, written into itself so that the one file is at once its body, its knowledge base, and its handover. Where these words and the code above ever disagree, the code is the truth; read it fresh.
