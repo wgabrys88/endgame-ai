@@ -347,7 +347,9 @@ def render_request(cfg, stage, sections):
     if cfg.get("developer_feedback_schema"):
         parts.append("## developer_feedback\n%s" % sections.get("developer_feedback", ""))
     if "environment" in stage.get("reads", []):
-        focus = sections.get("goal", "") + "\n" + sections.get("living_word", "")
+        # focus perception-budgeting on the stable, id-free [goal] only; the model-authored
+        # [living_word] drifts and would steer fresh perception by stale words - a feedback loop
+        focus = sections.get("goal", "")
         env = _budget_environment(sections.get("environment", "(empty)"), limit, focus)
         parts.append("## environment\n%s" % env)
     return "\n\n".join(p for p in parts if p)
