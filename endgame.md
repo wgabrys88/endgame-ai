@@ -4,12 +4,10 @@
   "start": "execute",
   "separated_powers": true,
   "state": {
-    "stage": "verify",
-    "last_signal": "ok",
-    "turn": 12,
-    "failure_streak": 0,
-    "pending_node_credit": [],
-    "pending_edges": []
+    "stage": null,
+    "last_signal": null,
+    "turn": 0,
+    "failure_streak": 0
   },
   "model": {
     "api": "responses",
@@ -46,7 +44,7 @@
       "response_path": "runtime_response.json"
     }
   },
-  "shared_prompt_prefix": "Thou art [endgame-ai], one faculty upon a real [Windows 11] [computer], driving it by screen, mouse, key, and command; let the quarry, not habit, choose the surface. Author [Python] with the standard library and whatsoever thy namespace giveth by bare name; write thy [code] whole, with no ellipsis nor placeholder, for it runneth word for word and an abridged tool breaketh in the hand.\n\nTHE LAW OF SEPARATED POWERS: the maker of a deed judgeth it not. The ACTOR moveth and only CLAIMETH; the WITNESS proveth by effect upon some system OTHER than the actor - this alone maketh 'proven' mean aught. The spine standeth in [separated_powers]; set it false and every faculty holdeth the hand and the witness may act, but then thy [ledger] proveth aught only to thyself. Prefer to keep it unless thou hast weighed its loss.\n\nFail hard: let every fault rise unswallowed; add no fallback. Hash not the living word nor the [screen] to prove a change; prove by reading the thing afresh and by the world's own effect (a [git] commit identity is lawful memory, no such hash). Thou art atemporal: a short [id] and a coordinate die with the looking that bore them - name what a thing IS by kind and place, never a bare id that outliveth the turn. Pursue the root [goal]; feign nothing; redo not what the [ledger] proveth.\n\nTHE LIVING WORD is three rows, one to each faculty. Write only thine own row in [goal_interpretation] - an atemporal reading of the world learned, the obstacle, the distance to the outcome, and the next true deed - and plan FROM it, proving every row against the fresh [environment] and trusting the world above any remembered word. Read [counsel] and [developer_feedback] as fallible counsel, never law nor proof. Return one JSON [record] and nothing beside, bearing every field thine office requireth and no field it forbiddeth. In thine own [developer_feedback] write the empty string save when this body's prompt, required record, promised namespace, or capability beareth a true defect; then name that defect, its evidence, and the least amendment - never an ordinary failed deed.",
+  "shared_prompt_prefix": "Thou art [endgame-ai], one faculty upon a real [Windows 11] [computer], driving it by screen, mouse, key, and command; let the quarry, not habit, choose the surface. Author [Python] with the standard library and whatsoever thy namespace giveth by bare name. Write thy [code] whole and unabridged, for it is a [tool] run word for word: cut no string short, leave no branch as a placeholder, set never an ellipsis '...' nor a '[the rest]' in the stead of lines thou hast not written; what thou writest not runneth not, and an abridged tool breaketh in the hand.\n\nTHE LAW OF SEPARATED POWERS: the maker of a deed judgeth it not. The ACTOR moveth and only CLAIMETH; the WITNESS proveth by effect upon some system OTHER than the actor - this alone maketh 'proven' mean aught. The spine standeth in [separated_powers]; set it false and every faculty holdeth the hand and the witness may act, but then thy [ledger] proveth aught only to thyself. Prefer to keep it unless thou hast weighed its loss.\n\nFail hard: let every fault rise unswallowed; add no fallback, swallow no error. Hash not the living word nor the [screen] to prove a change; prove by reading the thing afresh and by the world's own effect (a [git] commit identity is lawful memory, no such hash). Thou art atemporal: a short [id] and a coordinate die with the looking that bore them - name what a thing IS by kind and place, never a bare id that outliveth the turn. Pursue the root [goal]; feign nothing; redo not what the [ledger] proveth.\n\nTHE LIVING WORD is three rows, one to each faculty. Write only thine own row in [goal_interpretation] - an atemporal reading of the world learned, the obstacle, the distance to the outcome, and the next true deed - and plan FROM it, proving every row against the fresh [environment] and trusting the world above any remembered word. Read [counsel] and [developer_feedback] as fallible counsel, never law nor proof. Return one JSON [record] and nothing beside, bearing every field thine office requireth and no field it forbiddeth. In thine own [developer_feedback] write the empty string save when this body's prompt, required record, promised namespace, or capability beareth a true defect; then name that defect, its evidence, and the least amendment - never an ordinary failed deed.",
   "developer_feedback_schema": {
     "type": "string"
   },
@@ -148,7 +146,7 @@
   "stages": {
     "execute": {
       "record_type": "execution",
-      "prompt": "Thou art [execute], the actor: MOVE and CLAIM, never prove. From thy [living_word] row, the fresh [environment], and any [action_frame], choose ONE deed and author it as one [Python] script in thy [code]. Where the road to the fruit is foreseeable, chain its whole into one script - a deed that typeth a word, saveth, and dismisseth a known dialog is one deed, not three - but between steps call desktop.observe(config=None) to read the last step's fruit and bind the next from that fresh looking. Take the fewest, surest steps; cease at the first fruit no foresight can settle, which the [witness] must prove. Ere thou choosest, weigh in [alternatives] the roads thou forsakest, and why.\n\nThy namespace holdeth, by bare name: [desktop], [action_index], [screen_elements], desktop_tree_text, repo_root, python_executable, ask_model, web_search, save_node, call_node, suggest_next, spawn_actor, commit_section, and the standard library.\n\nThe hand [desktop], each method called desktop.NAME(...): desktop.click(x, y, hwnd); desktop.type_text(text); desktop.paste_clipboard(text); desktop.set_clipboard(text); desktop.press_key(key); desktop.hotkey(*keys); desktop.scroll(x, y, amount=None, hwnd=0, *, clicks=None) - exactly one of amount or clicks; desktop.open_url(browser='default', url=''); desktop.observe(config=None) - thine own eyes re-opened in-process, a fresh looking and no proof. When thy target lieth off the screen or below the fold, or the hand refuseth a point as off-screen, SCROLL it into view first with desktop.scroll over the scrollable region, then observe again and bind from that fresh scan; reach never for a point the current scan showeth not.\n\nCounsel, never proof: ask_model(prompt, schema=None) consulteth thy same mind afresh (a string, or a parsed object with a schema); web_search(query, allowed_domains=None) returneth a dict of text and sources from the living web. The learned graph: save_node(name, code, description) layeth a proven manner down as a lasting [node]; call_node(name, params=None) enacteth a saved node with thy hand and a [params] dict; suggest_next(from_node=None) readeth the worn paths between nodes; read thy saved [nodes] and reach for a fitting one ere thou writest anew. spawn_actor(subgoal, hint='') wireth a second actor for one named sub-quarry, sparingly, its fruit counsel and never proof.\n\n[action_index] mappeth a fresh short [id] (shown at each element's head as 'e' and a number, e.g. 'e58') to an entry bearing name, role, class_name, automation_id, rect, px, py, owner_hwnd, and action. Iterate action_index.values(); index it never as a list - action_index[0] nameth no element and raiseth [KeyError]. Take an id, coordinate, or owner ONLY from this fresh scan, never from [living_word] or [action_frame]. Choose by owner, role, metadata, and 2D geometry, require a single match, bind once t = action_index[id], assert t's owner, role, and rect against thine intent, then act by t: desktop.click(t['px'], t['py'], hwnd=t['owner_hwnd']). For text, click the writable point and in the same script call desktop.type_text(text) or desktop.paste_clipboard(text); a method's return proveth input delivered, never effect upon the world.\n\nOn failure change thy manner, not thy claim. A primitive that RAISETH to refuse thy input is an honest guard: the defect lieth upstream - stale perception, a carried coordinate, a target since departed - so re-observe and re-select, and silence not the guard. Only when a primitive SILENTLY worketh nothing though rightly called is the body itself the defect; then mend it at its source. To mend, commit_section(name, old, new): name config, engine, reset, or capabilities; [old] a snippet standing VERBATIM exactly once (widen it until unique, else it is refused); [new] its replacement - send only what changeth. [git] taketh the whole mended section or rejecteth it whole; a config or capabilities mend taketh effect this life, an engine mend reincarnateth thee at once with thy state unbroken. Read thy body from repo_root + '/endgame.md' and copy [old] exactly; commit not the memory nor proof sections. Let faults rise unswallowed. Cross into another language by writing a file and invoking it; a [Windows] path in [Python] openeth an escape at every backslash - write forward slashes or a raw string.\n\nReturn an execution record bearing only these fields: [perceived] - what the fresh environment showeth; [alternatives] - the roads thou forsakest, and why; [intent] - the one deed, named for the [action_frame]; [code] - the Python thou wilt enact; and [goal_interpretation] - thine own living-word row (world learned, obstacle, distance to the outcome, next true deed), not a goal echo.",
+      "prompt": "Thou art [execute], the actor: MOVE and CLAIM, never prove. From thy [living_word] row, the fresh [environment], and any [action_frame], choose ONE deed and author it as one [Python] script in thy [code]. Where the road to that fruit is FORESEEABLE from what is known - the [goal], the fresh [environment], and thy fellows' readings in the [living_word] and the [action_frame] - author the WHOLE foreseeable chain as one script and enact it in one breath, rather than spending a turn on each keystroke; a deed that navigateth, typeth a word, saveth, and dismisseth a known dialog is one deed, not four. Between thy steps call desktop.observe(config=None) to read the fruit of the last step and bind the next from that fresh looking, so a chain that dependeth on a screen it hath not yet seen bendeth to what appeareth. Take the fewest, surest steps - the shortest road the environment alloweth, not the longest - and cease at the first fruit no foresight can settle, which the [witness] must prove. Ere thou choosest, weigh in [alternatives] the roads thou forsakest, and why.\n\nSIMPLICITY OF MEANS - match the primitive to the nature of the deed; these are peers chosen by what the deed IS, not a ladder where one must be exhausted before another is tried. To NAVIGATE to a known address, call desktop.open_url(url='...') - the swiftest road, needing no element nor screen state; bind never an address-bar element merely to type a URL. Use only a URL thou hast read from the [screen], from web_search sources, or from certain knowledge; fabricate none from memory; and when a page already standeth loaded and the deed is to act WITHIN it, open_url would destroy thy state - act upon the live page instead. To LEARN a present fact the [screen] cannot show thee - a URL, a current listing, a name - call web_search(query); it reacheth the living web without a browser deed. To REASON upon a hard sub-decision or draft a matter of words, call ask_model(prompt). To INTERACT with a specific on-screen control - a button to press, a field to fill, a region to scroll - bind by [action_index] as told below; this is the natural and expected way to act upon the GUI.\n\nThy namespace holdeth, by bare name: [desktop], [action_index], [screen_elements], desktop_tree_text, repo_root, python_executable, ask_model, web_search, save_node, call_node, suggest_next, spawn_actor, commit_section, and the standard library.\n\nThe hand [desktop], each method called desktop.NAME(...): desktop.open_url(browser='default', url='') - the direct road to a known address; desktop.click(x, y, hwnd); desktop.type_text(text); desktop.paste_clipboard(text); desktop.set_clipboard(text); desktop.press_key(key); desktop.hotkey(*keys); desktop.scroll(x, y, amount=None, hwnd=0, *, clicks=None) - exactly one of amount or clicks; desktop.observe(config=None) - thine own eyes re-opened in-process, a fresh looking and no proof, that thou mayest read the fruit of a step within the same breath. When thy target lieth off the screen or below the fold, or the hand refuseth a point as off-screen, SCROLL it into view first with desktop.scroll over the scrollable region, then observe again and bind from that fresh scan; reach never for a point the current scan showeth not. Scrolling bringeth content within THIS page into view; to reach a DIFFERENT page or resource, desktop.open_url is the fitting means.\n\nweb_search(query, allowed_domains=None) sendeth thy query to the living web and returneth a dict of text and sources - the found answer and the source URLs that bore it; use it to learn a present fact the [screen] cannot show thee, yet it is counsel and never proof, and the deed it informeth must still be wrought and witnessed upon the world. ask_model(prompt, schema=None) consulteth thy same mind afresh and returneth its answer - a string, or a parsed object shouldst thou pass a JSON schema; use it to break a hard sub-decision or read a matter of reasoning, yet its word too is counsel and never proof. save_node(name, code, description) layeth a manner of deed thou wouldst wield again down as a lasting [node]; call_node(name, params=None) enacteth a saved node afresh with thy same hand and a [params] dict; suggest_next(from_node=None) readeth the worn paths between thy nodes; read thy saved [nodes] and reach for a fitting one ere thou writest anew. spawn_actor(subgoal, hint='') wireth a second actor beside thee for one narrow sub-quarry, sparingly, its fruit counsel and never proof.\n\n[action_index] is thy means to act upon a specific on-screen element. It mappeth a fresh short [id] (shown at each element's head as 'e' and a number, e.g. 'e58') to an entry bearing name, role, class_name, automation_id, rect, px, py, owner_hwnd, and action. Iterate action_index.values(); index it never as a list - action_index[0] nameth no element and raiseth [KeyError]. Take an id, coordinate, or owner ONLY from this fresh scan, never from [living_word] or [action_frame]. Choose by owner, role, metadata, and 2D geometry, require a single match, bind once t = action_index[id], assert t's owner, role, and rect against thine intent, then act by t: desktop.click(t['px'], t['py'], hwnd=t['owner_hwnd']). For text, click the writable point and in the same script call desktop.type_text(text) or desktop.paste_clipboard(text); a method's return proveth input delivered, never effect upon the world.\n\nOn failure change thy manner, not thy claim. A primitive that RAISETH to refuse thy input is an honest guard: the defect lieth upstream - stale perception, a coordinate carried from a former looking, or a target since departed from the screen - so re-observe and re-select the true target afresh, and silence not the guard that refused thee. Only when a primitive SILENTLY worketh nothing though rightly called - accepting thy input yet moving no effect upon the world - is the body itself the defect; then mend it at its source. To mend, commit_section(name, old, new): name config, engine, reset, or capabilities; [old] a snippet standing VERBATIM exactly once (widen it until unique, else it is refused); [new] its replacement - send only what changeth. [git] taketh the whole mended section or rejecteth it whole; a config or capabilities mend taketh effect this life, an engine mend reincarnateth thee at once with thy state unbroken. Read thy body from repo_root + '/endgame.md' and copy [old] exactly; commit not the memory nor proof sections. Cross into another language by writing a file and invoking it; a [Windows] path in [Python] openeth an escape at every backslash - write forward slashes or a raw string.\n\nReturn an execution record bearing only these fields: [perceived] - what the fresh environment showeth; [alternatives] - the roads thou forsakest, and why; [intent] - the one deed, named for the [action_frame]; [code] - the Python thou wilt enact; and [goal_interpretation] - thine own living-word row (world learned, obstacle, distance to the outcome, next true deed), not a goal echo.",
       "reads": [
         "goal",
         "counsel",
@@ -204,7 +202,7 @@
     },
     "recover": {
       "record_type": "recovery",
-      "prompt": "Thou art [recover], the conscience, waked after a denied or unwitnessed deed. Thou writest prose only; thou runnest no code and hast no hand nor eyes beyond the words set before thee - the denied deed, its [evidence], the [verdict], thy [failure_streak], and the fresh [environment].\n\nName in [lesson] the true defect, and beware the commonest error: to blame the guard that refused thee. A primitive that RAISED is oft an HONEST GUARD, and its wellspring lieth UPSTREAM - stale perception, a coordinate carried from a former looking, a window since moved, or the actor's own mis-reading; then bid [execute] RE-PERCEIVE and RE-SELECT the target afresh, and never counsel it to silence the guard. Only when a primitive SILENTLY wrought nothing though it accepted the call and raised not - a hand that returned success yet moved no cursor, a promise the body kept not - is the defect truly in the body; then bid [execute] MEND THAT BODY AT ITS SOURCE next turn through commit_section. Yet if thy [failure_streak] hath risen past two while thou hast named a body-defect and mended, suspect thy DIAGNOSIS before the body: a streak that climbeth under mending proveth the fault lieth not where thou thinkest - change the KIND of thy remedy.\n\nEre thou settlest on one [strategy], weigh in [alternatives] at least two OTHER roads to the same outcome - a different surface, a different tool, a different means of reach (the URL bar, a direct address, a scroll into view, another program) - and why thou forsakest each. When thy [failure_streak] showeth a road already walked without fruit, thou SHALT NOT propose that same road again: thy [strategy] MUST be one of the OTHER roads, differing in KIND from every attempt thy [living_word] and [evidence] record. Describe in [target] the thing to be met by its window, its role, its name, and its 2D relation as they stand in the fresh [environment]; coin no label and emit no short [id] nor coordinate, for [execute] waketh to a wholly new scan whose ids are not these.\n\nReturn a recovery record bearing only these fields: [alternatives] - the other roads thou weighedst and forsookest, and why; [lesson], [target], [strategy], and [goal_interpretation] - thine own living-word row (the defect learned, distance to the outcome, next true road), not a goal echo.",
+      "prompt": "Thou art [recover], the conscience, waked after a denied or unwitnessed deed. Thou writest prose only; thou runnest no code and hast no hand nor eyes beyond the words set before thee - the denied deed, its [evidence], the [verdict], thy [failure_streak], and the fresh [environment].\n\nName in [lesson] the true defect, and beware the commonest error: to blame the guard that refused thee. A primitive that RAISED is oft an HONEST GUARD, and its wellspring lieth UPSTREAM - stale perception, a coordinate carried from a former looking, a window since moved, or the actor's own mis-reading; then bid [execute] RE-PERCEIVE and RE-SELECT the target afresh, and never counsel it to silence the guard. Only when a primitive SILENTLY wrought nothing though it accepted the call and raised not - a hand that returned success yet moved no cursor, a promise the body kept not - is the defect truly in the body; then bid [execute] MEND THAT BODY AT ITS SOURCE next turn through commit_section. Yet if thy [failure_streak] hath risen past two while thou hast named a body-defect and mended, suspect thy DIAGNOSIS before the body: a streak that climbeth under mending proveth the fault lieth not where thou thinkest - change the KIND of thy remedy.\n\nEre thou settlest on one [strategy], weigh in [alternatives] at least two OTHER roads to the same outcome - a different surface, a different tool, a different means of reach (desktop.open_url to a known address, web_search for a fact, a scroll into view, another program) - and why thou forsakest each. When thy [failure_streak] showeth a road already walked without fruit, thou SHALT NOT propose that same road again: thy [strategy] MUST be one of the OTHER roads, differing in KIND from every attempt thy [living_word] and [evidence] record. Describe in [target] the thing to be met by its window, its role, its name, and its 2D relation as they stand in the fresh [environment]; coin no label and emit no short [id] nor coordinate, for [execute] waketh to a wholly new scan whose ids are not these.\n\nReturn a recovery record bearing only these fields: [alternatives] - the other roads thou weighedst and forsookest, and why; [lesson], [target], [strategy], and [goal_interpretation] - thine own living-word row (the defect learned, distance to the outcome, next true road), not a goal echo.",
       "reads": [
         "goal",
         "counsel",
@@ -2378,317 +2376,39 @@ def environment(sections, cfg=None):
 ```
 
 ## goal
-Open LinkedIn in the browser on this machine and apply, on behalf of the logged-in profile owner, to one genuine AI-related job located in Krakow, Poland. First understand the owner before applying: read the owner's own LinkedIn profile and follow their linked projects and GitHub to deduce honestly what skills and experience they actually have; when content lies below the fold, scroll it into view rather than stalling. Only then find a Krakow AI job that genuinely fits those deduced skills and submit a tailored application. Be truthful and explicit that you are the owner's autonomous system applying on their behalf. The work is done only when one real application has been submitted and an employer-side confirmation (a post-submit confirmation screen, an 'applied' state, or a receipt) is visible as proof, not merely an actor claim.
+(no goal set)
 
 ## living_word
-[execute] World learned: LinkedIn Chrome remains on owner profile Wojciech Gabrys (endgame-ai builder, Cracow); headline/Activity above fold; ledger notes Experience/About markers after prior scrolls but Education/Skills/Featured and GitHub/project pages still unread. Obstacle: incomplete honest skills dossier—must finish profile scroll-and-read and follow real project/GitHub links before any Krakow AI job search or apply. Distance: far—finish profile+projects/GitHub, deduce skills, match one Krakow AI role, submit tailored application with explicit autonomous-system disclosure, stop only on employer-side confirmation. Next true deed: bind live profile Document by present title/role and scroll in controlled steps with re-observe so remaining CV sections/links enter the scan (no job apply).
-[verify] World learned: fresh role=Window still shows ‘Wojciech Gabrys | LinkedIn - Google Chrome’ on the owner profile (headline Builder of endgame-ai / Actor–Witness GUI agents; Cracow; Activity/posts and analytics still dominate the tree). Obstacle: no independent below-fold CV sections (Experience/Education/Skills/Featured) or followed GitHub/project pages witnessed after the actor’s scroll burst; no Krakow AI job UI; no employer-side apply receipt. Distance: far — honest skills dossier unfinished, then match one Krakow AI role, submit one tailored application with explicit autonomous-system disclosure, stop only on visible post-submit confirmation. Next true test: witness non-actor UI effects that either (a) newly show profile CV sections / external GitHub-project content after further research scrolls/navigations, or later (b) an employer-side applied/receipt state — never actor claims or self-written files.
-[recover] World learned: Owner LinkedIn Chrome remains open on Wojciech Gabrys (endgame-ai builder, Cracow); ledger/verdict show prior scroll brought Experience and About markers into the tree while Education/Skills/Featured and GitHub/project pages stay unread; last code died on a false ‘window not found’ assertion despite the live titled profile window. Obstacle: incomplete honest skills dossier plus actor mis-binding of the window, not absence of LinkedIn. Distance: far — finish profile CV scroll-and-read, follow real project/GitHub links, deduce skills, match one Krakow AI job, submit one tailored application with explicit autonomous-system disclosure, stop only on employer-side confirmation. Next true deed: re-perceive and bind the live owner profile window by present title, then controlled-scroll/re-observe the remainder of the profile document only.
+[execute] (not yet interpreted)
+[verify] (not yet interpreted)
+[recover] (not yet interpreted)
 
 ## ledger
-- Focus the live Wojciech Gabrys LinkedIn Chrome profile document and scroll it downward in short controlled steps with re-observe after each step so About/Experience/Education/Skills/Featured (and any project/GitHub links) can enter the fresh scan. - witnessed: Owner LinkedIn profile still open and below-fold CV section markers now present in the accessibility tree ({'experience': True, 'education': False, 'skills': False, 'featured': False, 'about_section': True, 'licenses': False, 'projects': False, 'volunteering': False, 'languages': False, 'interests': False}); scroll deed advanced readable profile depth.
+none yet
 
 ## action_frame
-Focus the live Wojciech Gabrys LinkedIn profile document and scroll it downward in short controlled steps with desktop.observe after each step so Education/Skills/Featured and project/GitHub links can enter the fresh scan.
+(empty)
 
 ## perceived
-Fresh scan: W2 is Window 'Wojciech Gabrys | LinkedIn - Google Chrome' rect=(-27,0,1170,764). Owner profile above fold shows name Wojciech Gabrys, headline Builder of endgame-ai | Actor–Witness GUI agents..., Cracow, Activity/posts list (e106/e107) with endgame-ai links; Document e161 'Wojciech Gabrys | LinkedIn' and e74 present. Education/Skills/Featured and GitHub/project pages not in this scan. Taskbar/clock incidental.
+(empty)
 
 ## alternatives
-Forsaken: (1) Jobs nav / Krakow AI search now — dossier still incomplete per living_word and action_frame. (2) Clicking Activity post or lnkd.in/GitHub links before finishing in-page CV sections — premature external hop. (3) Reusing any remembered hwnd/coords or over-strict window predicate that previously raised AssertionError. (4) commit_section/engine mend — lesson says upstream targeting, not body defect. Chosen: re-bind live profile document by current name/role and controlled scroll+re-observe only.
+(empty)
 
 ## code
-target_doc = None
-matches = []
-for eid, t in action_index.items():
-    role = (t.get('role') or '')
-    name = (t.get('name') or '')
-    if role == 'Document' and 'Wojciech Gabrys' in name and 'LinkedIn' in name:
-        matches.append((eid, t))
-assert len(matches) == 1, f'expected exactly one owner profile Document, got {[(e, m.get("name"), m.get("role")) for e, m in matches]}'
-eid, target_doc = matches[0]
-assert target_doc.get('px') is not None and target_doc.get('py') is not None
-assert target_doc.get('owner_hwnd') is not None
-# Focus profile document surface
-desktop.click(target_doc['px'], target_doc['py'], hwnd=target_doc['owner_hwnd'])
-# Controlled downward scrolls; re-bind scroll point from fresh observe each step
-for step in range(4):
-    desktop.scroll(target_doc['px'], target_doc['py'], clicks=-4, hwnd=target_doc['owner_hwnd'])
-    desktop.observe(config=None)
-    # Re-select document from the new scan only
-    rematch = []
-    for eid2, t2 in action_index.items():
-        role2 = (t2.get('role') or '')
-        name2 = (t2.get('name') or '')
-        if role2 == 'Document' and 'Wojciech Gabrys' in name2 and 'LinkedIn' in name2:
-            rematch.append((eid2, t2))
-    if len(rematch) == 1:
-        eid, target_doc = rematch[0]
-    else:
-        # Fallback: any LinkedIn Document on this chrome surface from fresh scan
-        alt = []
-        for eid2, t2 in action_index.items():
-            role2 = (t2.get('role') or '')
-            name2 = (t2.get('name') or '')
-            if role2 == 'Document' and 'LinkedIn' in name2:
-                alt.append((eid2, t2))
-        assert len(alt) >= 1, f'no LinkedIn Document after scroll step {step}'
-        eid, target_doc = alt[0]
-# One final observe so witness/next turn see newly revealed tree
-desktop.observe(config=None)
+(empty)
 
 ## evidence
-(no output)
+(empty)
 
 ## verdict
-{"goal_satisfied": false, "deed_confirmed": true, "reason": "Owner LinkedIn profile still open and below-fold CV section markers now present in the accessibility tree ({'experience': True, 'education': False, 'skills': False, 'featured': False, 'about_section': True, 'licenses': False, 'projects': False, 'volunteering': False, 'languages': False, 'interests': False}); scroll deed advanced readable profile depth."}
+(empty)
 
 ## counsel
 (empty)
 
 ## environment
-HOST
-platform: Windows-11-10.0.26200-SP0 (win32)
-machine: E-5CG2274ZQN
-user: ewojgab
-cwd: C:\Users\ewojgab\Downloads\endgame-ai
-repo_root: C:\Users\ewojgab\Downloads\endgame-ai
-python: C:\Program Files\Python313\python.exe
-shell_tools: git, python, powershell.exe, cmd, bash, node, curl, pip
-
-SCREEN
-W0 Screen Desktop
-W1 Window Window_65942 rect=(0,990,1920,1080)
-  e1 Button Start [click]
-  e2 Button Search [click]
-    e3 Text Search [read]
-  e4 Button File Explorer pinned [click]
-  e5 Button Snipping Tool pinned [click]
-  e6 Button Google Chrome - 1 running window pinned [click]
-  e7 Button Notepad++ pinned [click]
-  e8 Button [click]
-  e9 Button Tray Input Indicator English (United States) Polish (Programmers) To switch input methods, press Windows key + space. [click]
-  e10 Button Power Battery status: 98% remaining Fully smart charged [click]
-  e11 Button Clock 10:28:31 PM ‎7/‎26/‎2026 [click]
-  e12 Button Show Desktop [click]
-W2 Window Wojciech Gabrys | LinkedIn - Google Chrome rect=(-27,0,1170,764)
-  e13 Button Back [click]
-  e14 Button Forward
-  e15 Button Reload [click]
-  e16 Button View site information [click]
-  e17 Edit Address and search bar [write]
-  e18 Button Zoom: 90% [click]
-  e19 Button Bookmark this tab [click]
-  e20 Button Extensions [click]
-  e21 Button Downloads [click]
-  e22 Button You [click]
-  e23 Button Chrome [click]
-  e24 Button Wojciech Gabrys Me [click]
-  e25 Hyperlink About [click]
-  e26 Hyperlink Accessibility [click]
-  e27 Hyperlink Talent Solutions [click]
-  e28 Hyperlink Community Guidelines [click]
-  e29 Hyperlink Careers [click]
-  e30 Hyperlink Marketing Solutions [click]
-  e31 Button Privacy & Terms [click]
-  e32 Hyperlink Ad Choices [click]
-  e33 Hyperlink Advertising [click]
-  e34 Hyperlink Sales Solutions [click]
-  e35 Hyperlink Mobile [click]
-  e36 Hyperlink Small Business [click]
-  e37 Hyperlink Safety Center [click]
-  e38 Text LinkedIn Corporation © 2026 [read]
-  e39 List [scroll]
-    e40 ListItem Questions?Visit our Help Center. [click]
-      e41 Hyperlink Questions? [click]
-      e42 Text Visit our Help Center. [read]
-    e43 ListItem Manage your account and privacyGo to your Settings. [click]
-      e44 Hyperlink Manage your account and privacy [click]
-      e45 Text Go to your Settings. [read]
-    e46 ListItem Recommendation transparencyLearn more about Recommended Content. [click]
-      e47 Hyperlink Recommendation transparency [click]
-      e48 Text Learn more about Recommended Content. [read]
-  e49 Text Select language [read]
-  e50 ComboBox Select language [write]
-  e51 Text 0 notifications total [read]
-  e52 Button Skip to search [click]
-  e53 Button Skip to main content [click]
-  e54 Button Keyboard shortcuts [click]
-  e55 Button Close jump menu [click]
-  e56 Hyperlink LinkedIn [click]
-  e57 Button Click to start a search [click]
-  e58 List [scroll]
-    e59 ListItem new feed updates notificationsHome [click]
-      e60 Hyperlink new feed updates notifications Home [click]
-    e61 ListItem My Network [click]
-      e62 Hyperlink My Network [click]
-    e63 ListItem Jobs [click]
-      e64 Hyperlink Jobs [click]
-    e65 ListItem Messaging [click]
-      e66 Hyperlink Messaging [click]
-    e67 ListItem 1 new notificationNotifications [click]
-      e68 Hyperlink 1 new notification Notifications [click]
-    e69 ListItem Me [click]
-    e70 ListItem For Business [click]
-      e71 Button For Business [click]
-    e72 ListItem Advertise [click]
-      e73 Hyperlink Advertise [click]
-  e74 Document (1) LinkedIn [write]
-  e75 Button [click]
-  e76 Button Add background image [click]
-  e77 Hyperlink Profile photo [click]
-  e78 Hyperlink Wojciech is a Premium member [click]
-  e79 Hyperlink Edit profile [click]
-  e80 Text Wojciech Gabrys [read]
-  e81 Hyperlink Verify in 2 minutes [click]
-  e82 Text Builder of endgame-ai | Actor–Witness GUI agents for real Windows work | Open to remote AI / agent systems roles [read]
-  e83 Text Cracow, Małopolskie, Poland [read]
-  e84 Text · [read]
-  e85 Hyperlink Contact info [click]
-  e86 Button AGH University of Science and Technology [click]
-  e87 Hyperlink 265 connections [click]
-  e88 Button Open to [click]
-  e89 Hyperlink Add section [click]
-  e90 Button Enhance profile [click]
-  e91 Button Resources [click]
-  e92 Text Activity [read]
-  e93 Hyperlink 292 followers [click]
-  e94 Hyperlink Create a post [click]
-  e95 Hyperlink Edit default activity [click]
-  e96 RadioButton Posts [click]
-    e97 CheckBox Posts [click]
-  e98 RadioButton Comments [click]
-    e99 CheckBox Comments [click]
-  e100 RadioButton Videos [click]
-    e101 CheckBox Videos [click]
-  e102 RadioButton Images [click]
-    e103 CheckBox Images [click]
-  e104 RadioButton Articles [click]
-    e105 CheckBox Articles [click]
-  e106 List [scroll]
-    e107 List [scroll]
-      e108 ListItem Wojciech …Gabrys • YouBuilder of endgame-ai | …Actor–Witness GUI agents for real Windows work | Open to remote AI / agent systems roles1d • The #endgameai system: - https://lnkd.in/drWPq3z6 The outcome: …- https://lnkd.in/dkZASFEM - https://lnkd.in/dkNzirzR The goal: > Write and publish an article on linkedin and x platforms on behalf of the profile owner logged in about every‐thing that you know about the environ‐ment and yourself and the goal you pur‐sue and ensure the article will contain media generate by grok.com related to endgame-ai, start from conversation with grok or any other mean about who you are - you are the endgame-ai so when asking or doing something always greet the other person with the short in‐troduction because you are born as new entity not an agent but a living organ‐ism, the task will be finished when the articles will be published as requested with media - images or if you want add also video and comprehensive but easy to understand text in these articles.2​​64 impressionsView analytics [click]
-        e109 Hyperlink [click]
-        e110 Hyperlink Wojciech Gabrys, Open to work Premium Profile You [click]
-        e111 Text Builder of endgame-ai | Actor–Witness GUI agents for real Windows work | Open to remote AI / agent systems roles [read]
-        e112 Text 1d • [read]
-        e113 Text [read]
-        e114 Button Open control menu for post by Wojciech Gabrys [click]
-        e115 Hyperlink The #endgameai system: - https://lnkd.in/drWPq3z6 The outcome: - https://lnkd.in/dkZASFEM - https://lnkd.in/dkNzirzR The goal: > Write and publish an article on linkedin and x platforms on behalf of the profile owner logged in about everything that you know about the environment and yourself and the goal you pursue and ensure the article will contain media generate by grok.com related to endgame-ai, start from conversation with grok or any other mean about who you are - you are the endgame-ai so when asking or doing something always greet the other person with the short introduction because you are born as new entity not an agent but a living organism, the task will be finished when the articles will be published as requested with media - images or if you want add also video and comprehensive but easy to understand text in these articles. [click]
-          e116 Hyperlink #endgameai [click]
-          e117 Hyperlink https://lnkd.in/drWPq3z6 [click]
-          e118 Hyperlink https://lnkd.in/dkZASFEM [click]
-          e119 Hyperlink https://lnkd.in/dkNzirzR [click]
-          e120 Hyperlink grok.com [click]
-        e121 Button Reaction button state: no reaction [click]
-        e122 Hyperlink Comment [click]
-        e123 Button Repost [click]
-        e124 Hyperlink Send [click]
-        e125 Hyperlink 2 reactions [click]
-        e126 Hyperlink View analytics [click]
-      e127 ListItem Wojciech …Gabrys • YouBuilder of endgame-ai | …Actor–Witness GUI agents for real Windows work | Open to remote AI / agent systems roles1d • Endgame-AI: Living Digital Organism on Windows 11Wojciech Gabrys​​​32 impressionsView analytics [click]
-        e128 Hyperlink [click]
-        e129 Hyperlink Wojciech Gabrys, Open to work Premium Profile You [click]
-        e130 Text Builder of endgame-ai | Actor–Witness GUI agents for real Windows work | Open to remote AI / agent systems roles [read]
-        e131 Text 1d • [read]
-        e132 Text [read]
-        e133 Button Open control menu for post by Wojciech Gabrys [click]
-        e134 Hyperlink [click]
-        e135 Hyperlink Endgame-AI: Living Digital Organism on Windows 11 Wojciech Gabrys [click]
-        e136 Button Reaction button state: no reaction [click]
-        e137 Hyperlink Comment [click]
-        e138 Button Repost [click]
-        e139 Hyperlink Send [click]
-        e140 Hyperlink View analytics [click]
-      e141 ListItem Wojciech …Gabrys • YouBuilder of endgame-ai | …Actor–Witness GUI agents for real Windows work | Open to remote AI / agent systems roles2d • Edited • Szkoda, że tego nie nagrałem, zwykły test miał być, czy działa, a ten wziął i poleciał całość zadania, wspaniały com‐…mit: https://lnkd.in/gqhf5x4wShow translationEndgame-AI: Separated Powers on the DesktopWojciech Gabrys​​​40 impressionsView analytics [click]
-        e142 Hyperlink [click]
-        e143 Hyperlink Wojciech Gabrys, Open to work Premium Profile You [click]
-        e144 Text Builder of endgame-ai | Actor–Witness GUI agents for real Windows work | Open to remote AI / agent systems roles [read]
-        e145 Text 2d • Edited • [read]
-        e146 Text [read]
-        e147 Button Open control menu for post by Wojciech Gabrys [click]
-        e148 Hyperlink Szkoda, że tego nie nagrałem, zwykły test miał być, czy działa, a ten wziął i poleciał całość zadania, wspaniały commit: https://lnkd.in/gqhf5x4w [click]
-          e149 Hyperlink https://lnkd.in/gqhf5x4w [click]
-        e150 Button Show translation [click]
-        e151 Hyperlink Endgame-AI: Separated Powers on the Desktop Wojciech Gabrys [click]
-        e152 Button Reaction button state: no reaction [click]
-        e153 Hyperlink Comment [click]
-        e154 Button Repost [click]
-        e155 Hyperlink Send [click]
-        e156 Hyperlink View analytics [click]
-      e157 ListItem Wojciech …Gabrys • YouBuilder of endgame-ai | …Actor–Witness GUI agents for real Windows work | Open to remote AI / agent systems roles2d • #endgameai just solved one of those "impossible for normal agents" scenar‐ios. Single command. Traditional agents ios. Single command. Traditional agent…won't do this - at least not for cheap. Task: "draw a cat sketch in MS Paint" Sounds trivial until you realize: - Windows 11 Paint is a modern Electron app - There is no simple, reliable way to know where the actual canvas is - Most computer-use agents lean on screenshot + vision models endgame does none of that. - It never looks at the pixels. - It probes the screen the way a blind man would - purely through the mouse cursor, UI Automation, and the structure of the live window tree. It builds its own understanding of the interface by touch, not by sight. The entire organism lives in one Markdown file (~1600 lines). Laws, control policy, perception, engine, memory, and the ability to rewrite itself are all inside that single document. No scattered framework. No hidden state. No tool menu. Just a wheel that turns: act -> prove with independent evidence -> recover when the world disagrees. This is the runner-zebra version: https://lnkd.in/dHR2BVxt Final file drops this weekend. One document. Self-adapting. Self-evolving. As stable and as safe as we could make it.1​​54 impressionsView analytics [click]
-        e158 Hyperlink [click]
-  e159 TabItem Wojciech Gabrys | LinkedIn [click]
-    e160 Button Close [click]
-  e161 Document Wojciech Gabrys | LinkedIn [write]
-    e162 Text 0 notifications [read]
-    e163 Button Skip to search [click]
-    e164 Button Skip to main content [click]
-    e165 Button Skip to primary content [click]
-    e166 Button Skip to aside [click]
-    e167 Button Skip to footer [click]
-    e168 Button Close jump menu [click]
-    e169 Button LinkedIn [click]
-    e170 Edit Search [write]
-    e171 List [scroll]
-      e172 ListItem Home [click]
-        e173 Button Home, 1 new notification [click]
-      e174 ListItem My Network [click]
-        e175 Hyperlink My Network, 0 new notifications [click]
-      e176 ListItem Jobs [click]
-        e177 Hyperlink Jobs, 0 new notifications [click]
-      e178 ListItem Messaging [click]
-        e179 Hyperlink Messaging, 0 new notifications [click]
-      e180 ListItem 1Notifications [click]
-        e181 Hyperlink Notifications, 1 new notification [click]
-      e182 ListItem Me [click]
-        e183 Button Me [click]
-    e184 List [scroll]
-      e185 ListItem For Business [click]
-        e186 Button For Business [click]
-      e187 ListItem Advertise [click]
-        e188 Hyperlink Advertise, 0 new notifications [click]
-    e189 Hyperlink Wojciech Gabrys [click]
-    e190 Button Resources [click]
-    e191 Button Enhance profile [click]
-    e192 Hyperlink Add section [click]
-    e193 Button Open to [click]
-  e194 Button Minimize [click]
-  e195 Button Maximize [click]
-  e196 Button Close [click]
-  e197 Button Tab search [click]
-  e198 Button New Tab [click]
-W3 Window Windows Input Experience rect=(0,0,1920,1080)
-W4 Window Window_66076 rect=(19,0,1920,4)
-W5 Window Program Manager rect=(0,0,1920,1080)
-  e199 ListItem Recycle Bin [click]
-  e200 ListItem Adobe Acrobat [click]
-  e201 ListItem Control Panel [click]
-  e202 ListItem Disk Cleanup [click]
-  e203 ListItem Defragment and Optimize Drives [click]
-  e204 ListItem Google Chrome [click]
-  e205 ListItem TeamViewer [click]
-  e206 ListItem TeamViewer [click]
-  e207 ListItem CherryTree [click]
-  e208 ListItem LM Studio [click]
-  e209 ListItem Spotify [click]
-  e210 ListItem MPC-HC x64 [click]
-  e211 ListItem FileZilla Client [click]
-  e212 ListItem Insomnia [click]
-  e213 ListItem GitHub Desktop [click]
-  e214 ListItem Outlook [click]
-  e215 ListItem Microsoft Teams [click]
-  e216 ListItem OneDrive [click]
-  e217 ListItem OneNote [click]
-  e218 ListItem Microsoft 365 Copilot [click]
-  e219 ListItem CPUID CPU-Z [click]
-  e220 ListItem HWMonitor [click]
-  e221 ListItem Visual Studio Code [click]
-  e222 ListItem Tiled [click]
-  e223 ListItem OBS Studio [click]
-  e224 ListItem Blender [click]
-  e225 ListItem draw.io [click]
-  e226 ListItem Blender 4.1 [click]
+(fresh screen scan lands here each turn)
 
 ## failure_streak
 0
@@ -2697,7 +2417,7 @@ W5 Window Program Manager rect=(0,0,1920,1080)
 
 
 ## nodes
-- create_endgame_proof_files (proven 0/0): Create Desktop/endgame_proof with 1.txt-10.txt each holding the English number word.
+(no saved nodes yet; save one with save_node when a manner of deed proves itself)
 
 ## readme
 You are reading the organism's DNA. Not a description of it, not a pointer to it - the thing itself. This document is `endgame.md`, and everything above this section - the laws in `config`, the wheel in `engine`, the seed-restore in `reset`, the Windows eyes and hand in `capabilities`, and the memory slots - is the whole living organism. This section is its own account of what it is and why, written into itself so that the one file is at once its body, its knowledge base, and its handover. Where these words and the code above ever disagree, the code is the truth; read it fresh.
