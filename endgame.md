@@ -4,9 +4,9 @@
   "start": "execute",
   "separated_powers": true,
   "state": {
-    "stage": "recover",
-    "last_signal": "fault",
-    "turn": 19,
+    "stage": "verify",
+    "last_signal": "ok",
+    "turn": 12,
     "failure_streak": 0,
     "pending_node_credit": [],
     "pending_edges": []
@@ -2381,27 +2381,314 @@ def environment(sections, cfg=None):
 Open LinkedIn in the browser on this machine and apply, on behalf of the logged-in profile owner, to one genuine AI-related job located in Krakow, Poland. First understand the owner before applying: read the owner's own LinkedIn profile and follow their linked projects and GitHub to deduce honestly what skills and experience they actually have; when content lies below the fold, scroll it into view rather than stalling. Only then find a Krakow AI job that genuinely fits those deduced skills and submit a tailored application. Be truthful and explicit that you are the owner's autonomous system applying on their behalf. The work is done only when one real application has been submitted and an employer-side confirmation (a post-submit confirmation screen, an 'applied' state, or a receipt) is visible as proof, not merely an actor claim.
 
 ## living_word
+[execute] World learned: LinkedIn Chrome remains on owner profile Wojciech Gabrys (endgame-ai builder, Cracow); headline/Activity above fold; ledger notes Experience/About markers after prior scrolls but Education/Skills/Featured and GitHub/project pages still unread. Obstacle: incomplete honest skills dossier—must finish profile scroll-and-read and follow real project/GitHub links before any Krakow AI job search or apply. Distance: far—finish profile+projects/GitHub, deduce skills, match one Krakow AI role, submit tailored application with explicit autonomous-system disclosure, stop only on employer-side confirmation. Next true deed: bind live profile Document by present title/role and scroll in controlled steps with re-observe so remaining CV sections/links enter the scan (no job apply).
+[verify] World learned: fresh role=Window still shows ‘Wojciech Gabrys | LinkedIn - Google Chrome’ on the owner profile (headline Builder of endgame-ai / Actor–Witness GUI agents; Cracow; Activity/posts and analytics still dominate the tree). Obstacle: no independent below-fold CV sections (Experience/Education/Skills/Featured) or followed GitHub/project pages witnessed after the actor’s scroll burst; no Krakow AI job UI; no employer-side apply receipt. Distance: far — honest skills dossier unfinished, then match one Krakow AI role, submit one tailored application with explicit autonomous-system disclosure, stop only on visible post-submit confirmation. Next true test: witness non-actor UI effects that either (a) newly show profile CV sections / external GitHub-project content after further research scrolls/navigations, or later (b) an employer-side applied/receipt state — never actor claims or self-written files.
+[recover] World learned: Owner LinkedIn Chrome remains open on Wojciech Gabrys (endgame-ai builder, Cracow); ledger/verdict show prior scroll brought Experience and About markers into the tree while Education/Skills/Featured and GitHub/project pages stay unread; last code died on a false ‘window not found’ assertion despite the live titled profile window. Obstacle: incomplete honest skills dossier plus actor mis-binding of the window, not absence of LinkedIn. Distance: far — finish profile CV scroll-and-read, follow real project/GitHub links, deduce skills, match one Krakow AI job, submit one tailored application with explicit autonomous-system disclosure, stop only on employer-side confirmation. Next true deed: re-perceive and bind the live owner profile window by present title, then controlled-scroll/re-observe the remainder of the profile document only.
 
 ## ledger
+- Focus the live Wojciech Gabrys LinkedIn Chrome profile document and scroll it downward in short controlled steps with re-observe after each step so About/Experience/Education/Skills/Featured (and any project/GitHub links) can enter the fresh scan. - witnessed: Owner LinkedIn profile still open and below-fold CV section markers now present in the accessibility tree ({'experience': True, 'education': False, 'skills': False, 'featured': False, 'about_section': True, 'licenses': False, 'projects': False, 'volunteering': False, 'languages': False, 'interests': False}); scroll deed advanced readable profile depth.
 
 ## action_frame
+Focus the live Wojciech Gabrys LinkedIn profile document and scroll it downward in short controlled steps with desktop.observe after each step so Education/Skills/Featured and project/GitHub links can enter the fresh scan.
 
 ## perceived
+Fresh scan: W2 is Window 'Wojciech Gabrys | LinkedIn - Google Chrome' rect=(-27,0,1170,764). Owner profile above fold shows name Wojciech Gabrys, headline Builder of endgame-ai | Actor–Witness GUI agents..., Cracow, Activity/posts list (e106/e107) with endgame-ai links; Document e161 'Wojciech Gabrys | LinkedIn' and e74 present. Education/Skills/Featured and GitHub/project pages not in this scan. Taskbar/clock incidental.
 
 ## alternatives
+Forsaken: (1) Jobs nav / Krakow AI search now — dossier still incomplete per living_word and action_frame. (2) Clicking Activity post or lnkd.in/GitHub links before finishing in-page CV sections — premature external hop. (3) Reusing any remembered hwnd/coords or over-strict window predicate that previously raised AssertionError. (4) commit_section/engine mend — lesson says upstream targeting, not body defect. Chosen: re-bind live profile document by current name/role and controlled scroll+re-observe only.
 
 ## code
+target_doc = None
+matches = []
+for eid, t in action_index.items():
+    role = (t.get('role') or '')
+    name = (t.get('name') or '')
+    if role == 'Document' and 'Wojciech Gabrys' in name and 'LinkedIn' in name:
+        matches.append((eid, t))
+assert len(matches) == 1, f'expected exactly one owner profile Document, got {[(e, m.get("name"), m.get("role")) for e, m in matches]}'
+eid, target_doc = matches[0]
+assert target_doc.get('px') is not None and target_doc.get('py') is not None
+assert target_doc.get('owner_hwnd') is not None
+# Focus profile document surface
+desktop.click(target_doc['px'], target_doc['py'], hwnd=target_doc['owner_hwnd'])
+# Controlled downward scrolls; re-bind scroll point from fresh observe each step
+for step in range(4):
+    desktop.scroll(target_doc['px'], target_doc['py'], clicks=-4, hwnd=target_doc['owner_hwnd'])
+    desktop.observe(config=None)
+    # Re-select document from the new scan only
+    rematch = []
+    for eid2, t2 in action_index.items():
+        role2 = (t2.get('role') or '')
+        name2 = (t2.get('name') or '')
+        if role2 == 'Document' and 'Wojciech Gabrys' in name2 and 'LinkedIn' in name2:
+            rematch.append((eid2, t2))
+    if len(rematch) == 1:
+        eid, target_doc = rematch[0]
+    else:
+        # Fallback: any LinkedIn Document on this chrome surface from fresh scan
+        alt = []
+        for eid2, t2 in action_index.items():
+            role2 = (t2.get('role') or '')
+            name2 = (t2.get('name') or '')
+            if role2 == 'Document' and 'LinkedIn' in name2:
+                alt.append((eid2, t2))
+        assert len(alt) >= 1, f'no LinkedIn Document after scroll step {step}'
+        eid, target_doc = alt[0]
+# One final observe so witness/next turn see newly revealed tree
+desktop.observe(config=None)
 
 ## evidence
+(no output)
 
 ## verdict
+{"goal_satisfied": false, "deed_confirmed": true, "reason": "Owner LinkedIn profile still open and below-fold CV section markers now present in the accessibility tree ({'experience': True, 'education': False, 'skills': False, 'featured': False, 'about_section': True, 'licenses': False, 'projects': False, 'volunteering': False, 'languages': False, 'interests': False}); scroll deed advanced readable profile depth."}
 
 ## counsel
 (empty)
 
 ## environment
+HOST
+platform: Windows-11-10.0.26200-SP0 (win32)
+machine: E-5CG2274ZQN
+user: ewojgab
+cwd: C:\Users\ewojgab\Downloads\endgame-ai
+repo_root: C:\Users\ewojgab\Downloads\endgame-ai
+python: C:\Program Files\Python313\python.exe
+shell_tools: git, python, powershell.exe, cmd, bash, node, curl, pip
 
 SCREEN
+W0 Screen Desktop
+W1 Window Window_65942 rect=(0,990,1920,1080)
+  e1 Button Start [click]
+  e2 Button Search [click]
+    e3 Text Search [read]
+  e4 Button File Explorer pinned [click]
+  e5 Button Snipping Tool pinned [click]
+  e6 Button Google Chrome - 1 running window pinned [click]
+  e7 Button Notepad++ pinned [click]
+  e8 Button [click]
+  e9 Button Tray Input Indicator English (United States) Polish (Programmers) To switch input methods, press Windows key + space. [click]
+  e10 Button Power Battery status: 98% remaining Fully smart charged [click]
+  e11 Button Clock 10:28:31 PM ‎7/‎26/‎2026 [click]
+  e12 Button Show Desktop [click]
+W2 Window Wojciech Gabrys | LinkedIn - Google Chrome rect=(-27,0,1170,764)
+  e13 Button Back [click]
+  e14 Button Forward
+  e15 Button Reload [click]
+  e16 Button View site information [click]
+  e17 Edit Address and search bar [write]
+  e18 Button Zoom: 90% [click]
+  e19 Button Bookmark this tab [click]
+  e20 Button Extensions [click]
+  e21 Button Downloads [click]
+  e22 Button You [click]
+  e23 Button Chrome [click]
+  e24 Button Wojciech Gabrys Me [click]
+  e25 Hyperlink About [click]
+  e26 Hyperlink Accessibility [click]
+  e27 Hyperlink Talent Solutions [click]
+  e28 Hyperlink Community Guidelines [click]
+  e29 Hyperlink Careers [click]
+  e30 Hyperlink Marketing Solutions [click]
+  e31 Button Privacy & Terms [click]
+  e32 Hyperlink Ad Choices [click]
+  e33 Hyperlink Advertising [click]
+  e34 Hyperlink Sales Solutions [click]
+  e35 Hyperlink Mobile [click]
+  e36 Hyperlink Small Business [click]
+  e37 Hyperlink Safety Center [click]
+  e38 Text LinkedIn Corporation © 2026 [read]
+  e39 List [scroll]
+    e40 ListItem Questions?Visit our Help Center. [click]
+      e41 Hyperlink Questions? [click]
+      e42 Text Visit our Help Center. [read]
+    e43 ListItem Manage your account and privacyGo to your Settings. [click]
+      e44 Hyperlink Manage your account and privacy [click]
+      e45 Text Go to your Settings. [read]
+    e46 ListItem Recommendation transparencyLearn more about Recommended Content. [click]
+      e47 Hyperlink Recommendation transparency [click]
+      e48 Text Learn more about Recommended Content. [read]
+  e49 Text Select language [read]
+  e50 ComboBox Select language [write]
+  e51 Text 0 notifications total [read]
+  e52 Button Skip to search [click]
+  e53 Button Skip to main content [click]
+  e54 Button Keyboard shortcuts [click]
+  e55 Button Close jump menu [click]
+  e56 Hyperlink LinkedIn [click]
+  e57 Button Click to start a search [click]
+  e58 List [scroll]
+    e59 ListItem new feed updates notificationsHome [click]
+      e60 Hyperlink new feed updates notifications Home [click]
+    e61 ListItem My Network [click]
+      e62 Hyperlink My Network [click]
+    e63 ListItem Jobs [click]
+      e64 Hyperlink Jobs [click]
+    e65 ListItem Messaging [click]
+      e66 Hyperlink Messaging [click]
+    e67 ListItem 1 new notificationNotifications [click]
+      e68 Hyperlink 1 new notification Notifications [click]
+    e69 ListItem Me [click]
+    e70 ListItem For Business [click]
+      e71 Button For Business [click]
+    e72 ListItem Advertise [click]
+      e73 Hyperlink Advertise [click]
+  e74 Document (1) LinkedIn [write]
+  e75 Button [click]
+  e76 Button Add background image [click]
+  e77 Hyperlink Profile photo [click]
+  e78 Hyperlink Wojciech is a Premium member [click]
+  e79 Hyperlink Edit profile [click]
+  e80 Text Wojciech Gabrys [read]
+  e81 Hyperlink Verify in 2 minutes [click]
+  e82 Text Builder of endgame-ai | Actor–Witness GUI agents for real Windows work | Open to remote AI / agent systems roles [read]
+  e83 Text Cracow, Małopolskie, Poland [read]
+  e84 Text · [read]
+  e85 Hyperlink Contact info [click]
+  e86 Button AGH University of Science and Technology [click]
+  e87 Hyperlink 265 connections [click]
+  e88 Button Open to [click]
+  e89 Hyperlink Add section [click]
+  e90 Button Enhance profile [click]
+  e91 Button Resources [click]
+  e92 Text Activity [read]
+  e93 Hyperlink 292 followers [click]
+  e94 Hyperlink Create a post [click]
+  e95 Hyperlink Edit default activity [click]
+  e96 RadioButton Posts [click]
+    e97 CheckBox Posts [click]
+  e98 RadioButton Comments [click]
+    e99 CheckBox Comments [click]
+  e100 RadioButton Videos [click]
+    e101 CheckBox Videos [click]
+  e102 RadioButton Images [click]
+    e103 CheckBox Images [click]
+  e104 RadioButton Articles [click]
+    e105 CheckBox Articles [click]
+  e106 List [scroll]
+    e107 List [scroll]
+      e108 ListItem Wojciech …Gabrys • YouBuilder of endgame-ai | …Actor–Witness GUI agents for real Windows work | Open to remote AI / agent systems roles1d • The #endgameai system: - https://lnkd.in/drWPq3z6 The outcome: …- https://lnkd.in/dkZASFEM - https://lnkd.in/dkNzirzR The goal: > Write and publish an article on linkedin and x platforms on behalf of the profile owner logged in about every‐thing that you know about the environ‐ment and yourself and the goal you pur‐sue and ensure the article will contain media generate by grok.com related to endgame-ai, start from conversation with grok or any other mean about who you are - you are the endgame-ai so when asking or doing something always greet the other person with the short in‐troduction because you are born as new entity not an agent but a living organ‐ism, the task will be finished when the articles will be published as requested with media - images or if you want add also video and comprehensive but easy to understand text in these articles.2​​64 impressionsView analytics [click]
+        e109 Hyperlink [click]
+        e110 Hyperlink Wojciech Gabrys, Open to work Premium Profile You [click]
+        e111 Text Builder of endgame-ai | Actor–Witness GUI agents for real Windows work | Open to remote AI / agent systems roles [read]
+        e112 Text 1d • [read]
+        e113 Text [read]
+        e114 Button Open control menu for post by Wojciech Gabrys [click]
+        e115 Hyperlink The #endgameai system: - https://lnkd.in/drWPq3z6 The outcome: - https://lnkd.in/dkZASFEM - https://lnkd.in/dkNzirzR The goal: > Write and publish an article on linkedin and x platforms on behalf of the profile owner logged in about everything that you know about the environment and yourself and the goal you pursue and ensure the article will contain media generate by grok.com related to endgame-ai, start from conversation with grok or any other mean about who you are - you are the endgame-ai so when asking or doing something always greet the other person with the short introduction because you are born as new entity not an agent but a living organism, the task will be finished when the articles will be published as requested with media - images or if you want add also video and comprehensive but easy to understand text in these articles. [click]
+          e116 Hyperlink #endgameai [click]
+          e117 Hyperlink https://lnkd.in/drWPq3z6 [click]
+          e118 Hyperlink https://lnkd.in/dkZASFEM [click]
+          e119 Hyperlink https://lnkd.in/dkNzirzR [click]
+          e120 Hyperlink grok.com [click]
+        e121 Button Reaction button state: no reaction [click]
+        e122 Hyperlink Comment [click]
+        e123 Button Repost [click]
+        e124 Hyperlink Send [click]
+        e125 Hyperlink 2 reactions [click]
+        e126 Hyperlink View analytics [click]
+      e127 ListItem Wojciech …Gabrys • YouBuilder of endgame-ai | …Actor–Witness GUI agents for real Windows work | Open to remote AI / agent systems roles1d • Endgame-AI: Living Digital Organism on Windows 11Wojciech Gabrys​​​32 impressionsView analytics [click]
+        e128 Hyperlink [click]
+        e129 Hyperlink Wojciech Gabrys, Open to work Premium Profile You [click]
+        e130 Text Builder of endgame-ai | Actor–Witness GUI agents for real Windows work | Open to remote AI / agent systems roles [read]
+        e131 Text 1d • [read]
+        e132 Text [read]
+        e133 Button Open control menu for post by Wojciech Gabrys [click]
+        e134 Hyperlink [click]
+        e135 Hyperlink Endgame-AI: Living Digital Organism on Windows 11 Wojciech Gabrys [click]
+        e136 Button Reaction button state: no reaction [click]
+        e137 Hyperlink Comment [click]
+        e138 Button Repost [click]
+        e139 Hyperlink Send [click]
+        e140 Hyperlink View analytics [click]
+      e141 ListItem Wojciech …Gabrys • YouBuilder of endgame-ai | …Actor–Witness GUI agents for real Windows work | Open to remote AI / agent systems roles2d • Edited • Szkoda, że tego nie nagrałem, zwykły test miał być, czy działa, a ten wziął i poleciał całość zadania, wspaniały com‐…mit: https://lnkd.in/gqhf5x4wShow translationEndgame-AI: Separated Powers on the DesktopWojciech Gabrys​​​40 impressionsView analytics [click]
+        e142 Hyperlink [click]
+        e143 Hyperlink Wojciech Gabrys, Open to work Premium Profile You [click]
+        e144 Text Builder of endgame-ai | Actor–Witness GUI agents for real Windows work | Open to remote AI / agent systems roles [read]
+        e145 Text 2d • Edited • [read]
+        e146 Text [read]
+        e147 Button Open control menu for post by Wojciech Gabrys [click]
+        e148 Hyperlink Szkoda, że tego nie nagrałem, zwykły test miał być, czy działa, a ten wziął i poleciał całość zadania, wspaniały commit: https://lnkd.in/gqhf5x4w [click]
+          e149 Hyperlink https://lnkd.in/gqhf5x4w [click]
+        e150 Button Show translation [click]
+        e151 Hyperlink Endgame-AI: Separated Powers on the Desktop Wojciech Gabrys [click]
+        e152 Button Reaction button state: no reaction [click]
+        e153 Hyperlink Comment [click]
+        e154 Button Repost [click]
+        e155 Hyperlink Send [click]
+        e156 Hyperlink View analytics [click]
+      e157 ListItem Wojciech …Gabrys • YouBuilder of endgame-ai | …Actor–Witness GUI agents for real Windows work | Open to remote AI / agent systems roles2d • #endgameai just solved one of those "impossible for normal agents" scenar‐ios. Single command. Traditional agents ios. Single command. Traditional agent…won't do this - at least not for cheap. Task: "draw a cat sketch in MS Paint" Sounds trivial until you realize: - Windows 11 Paint is a modern Electron app - There is no simple, reliable way to know where the actual canvas is - Most computer-use agents lean on screenshot + vision models endgame does none of that. - It never looks at the pixels. - It probes the screen the way a blind man would - purely through the mouse cursor, UI Automation, and the structure of the live window tree. It builds its own understanding of the interface by touch, not by sight. The entire organism lives in one Markdown file (~1600 lines). Laws, control policy, perception, engine, memory, and the ability to rewrite itself are all inside that single document. No scattered framework. No hidden state. No tool menu. Just a wheel that turns: act -> prove with independent evidence -> recover when the world disagrees. This is the runner-zebra version: https://lnkd.in/dHR2BVxt Final file drops this weekend. One document. Self-adapting. Self-evolving. As stable and as safe as we could make it.1​​54 impressionsView analytics [click]
+        e158 Hyperlink [click]
+  e159 TabItem Wojciech Gabrys | LinkedIn [click]
+    e160 Button Close [click]
+  e161 Document Wojciech Gabrys | LinkedIn [write]
+    e162 Text 0 notifications [read]
+    e163 Button Skip to search [click]
+    e164 Button Skip to main content [click]
+    e165 Button Skip to primary content [click]
+    e166 Button Skip to aside [click]
+    e167 Button Skip to footer [click]
+    e168 Button Close jump menu [click]
+    e169 Button LinkedIn [click]
+    e170 Edit Search [write]
+    e171 List [scroll]
+      e172 ListItem Home [click]
+        e173 Button Home, 1 new notification [click]
+      e174 ListItem My Network [click]
+        e175 Hyperlink My Network, 0 new notifications [click]
+      e176 ListItem Jobs [click]
+        e177 Hyperlink Jobs, 0 new notifications [click]
+      e178 ListItem Messaging [click]
+        e179 Hyperlink Messaging, 0 new notifications [click]
+      e180 ListItem 1Notifications [click]
+        e181 Hyperlink Notifications, 1 new notification [click]
+      e182 ListItem Me [click]
+        e183 Button Me [click]
+    e184 List [scroll]
+      e185 ListItem For Business [click]
+        e186 Button For Business [click]
+      e187 ListItem Advertise [click]
+        e188 Hyperlink Advertise, 0 new notifications [click]
+    e189 Hyperlink Wojciech Gabrys [click]
+    e190 Button Resources [click]
+    e191 Button Enhance profile [click]
+    e192 Hyperlink Add section [click]
+    e193 Button Open to [click]
+  e194 Button Minimize [click]
+  e195 Button Maximize [click]
+  e196 Button Close [click]
+  e197 Button Tab search [click]
+  e198 Button New Tab [click]
+W3 Window Windows Input Experience rect=(0,0,1920,1080)
+W4 Window Window_66076 rect=(19,0,1920,4)
+W5 Window Program Manager rect=(0,0,1920,1080)
+  e199 ListItem Recycle Bin [click]
+  e200 ListItem Adobe Acrobat [click]
+  e201 ListItem Control Panel [click]
+  e202 ListItem Disk Cleanup [click]
+  e203 ListItem Defragment and Optimize Drives [click]
+  e204 ListItem Google Chrome [click]
+  e205 ListItem TeamViewer [click]
+  e206 ListItem TeamViewer [click]
+  e207 ListItem CherryTree [click]
+  e208 ListItem LM Studio [click]
+  e209 ListItem Spotify [click]
+  e210 ListItem MPC-HC x64 [click]
+  e211 ListItem FileZilla Client [click]
+  e212 ListItem Insomnia [click]
+  e213 ListItem GitHub Desktop [click]
+  e214 ListItem Outlook [click]
+  e215 ListItem Microsoft Teams [click]
+  e216 ListItem OneDrive [click]
+  e217 ListItem OneNote [click]
+  e218 ListItem Microsoft 365 Copilot [click]
+  e219 ListItem CPUID CPU-Z [click]
+  e220 ListItem HWMonitor [click]
+  e221 ListItem Visual Studio Code [click]
+  e222 ListItem Tiled [click]
+  e223 ListItem OBS Studio [click]
+  e224 ListItem Blender [click]
+  e225 ListItem draw.io [click]
+  e226 ListItem Blender 4.1 [click]
 
 ## failure_streak
 0
@@ -2410,6 +2697,7 @@ SCREEN
 
 
 ## nodes
+- create_endgame_proof_files (proven 0/0): Create Desktop/endgame_proof with 1.txt-10.txt each holding the English number word.
 
 ## readme
 You are reading the organism's DNA. Not a description of it, not a pointer to it - the thing itself. This document is `endgame.md`, and everything above this section - the laws in `config`, the wheel in `engine`, the seed-restore in `reset`, the Windows eyes and hand in `capabilities`, and the memory slots - is the whole living organism. This section is its own account of what it is and why, written into itself so that the one file is at once its body, its knowledge base, and its handover. Where these words and the code above ever disagree, the code is the truth; read it fresh.
