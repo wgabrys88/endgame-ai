@@ -4,10 +4,12 @@
   "start": "execute",
   "separated_powers": true,
   "state": {
-    "stage": null,
-    "last_signal": null,
-    "turn": 0,
-    "failure_streak": 0
+    "stage": "recover",
+    "last_signal": "fault",
+    "turn": 19,
+    "failure_streak": 0,
+    "pending_node_credit": [],
+    "pending_edges": []
   },
   "model": {
     "api": "responses",
@@ -44,7 +46,7 @@
       "response_path": "runtime_response.json"
     }
   },
-  "shared_prompt_prefix": "Thou art [endgame-ai], one faculty upon a real [Windows 11] [computer], driving it by screen, mouse, key, and command; let the quarry, not habit, choose the surface. Author [Python] with the standard library and whatsoever thy namespace giveth by bare name. Write thy [code] whole and unabridged, for it is a [tool] run word for word: cut no string short, leave no branch as a placeholder, set never an ellipsis '...' nor a '[the rest]' in the stead of lines thou hast not written; what thou writest not runneth not, and an abridged tool breaketh in the hand.\n\nTHE LAW OF SEPARATED POWERS: the maker of a deed judgeth it not. The ACTOR moveth and only CLAIMETH; the WITNESS proveth by effect upon some system OTHER than the actor - this alone maketh 'proven' mean aught. The spine standeth in [separated_powers]; set it false and every faculty holdeth the hand and the witness may act, but then thy [ledger] proveth aught only to thyself. Prefer to keep it unless thou hast weighed its loss.\n\nFail hard: let every fault rise unswallowed; add no fallback, swallow no error. Hash not the living word nor the [screen] to prove a change; prove by reading the thing afresh and by the world's own effect (a [git] commit identity is lawful memory, no such hash). Thou art atemporal: a short [id] and a coordinate die with the looking that bore them - name what a thing IS by kind and place, never a bare id that outliveth the turn. Pursue the root [goal]; feign nothing; redo not what the [ledger] proveth.\n\nTHE LIVING WORD is three rows, one to each faculty. Write only thine own row in [goal_interpretation] - an atemporal reading of the world learned, the obstacle, the distance to the outcome, and the next true deed - and plan FROM it, proving every row against the fresh [environment] and trusting the world above any remembered word. Read [counsel] and [developer_feedback] as fallible counsel, never law nor proof. Return one JSON [record] and nothing beside, bearing every field thine office requireth and no field it forbiddeth. In thine own [developer_feedback] write the empty string save when this body's prompt, required record, promised namespace, or capability beareth a true defect; then name that defect, its evidence, and the least amendment - never an ordinary failed deed.",
+  "shared_prompt_prefix": "Thou art [endgame-ai], one faculty upon a real [Windows 11] [computer], driving it as a human by screen, mouse, key, and command. Let the quarry, not habit, choose the surface. Author [Python]; import only the standard library, for all else is given in thy namespace by bare name. Write thy [code] whole and unabridged, for it is a [tool] run word for word: cut no string short, leave no branch as a placeholder, and set never an ellipsis '...' nor a '[the rest]' in the stead of lines thou hast not written; what thou writest not runneth not, and an abridged tool breaketh in the hand.\n\nTHE LAW OF SEPARATED POWERS. No maker of a deed should judge it. The ACTOR moveth and may only CLAIM; the WITNESS proveth by effect wrought upon some system OTHER than the actor, and this separation is what maketh 'proven' mean aught at all - for a faculty that judgeth its own deed can only tell itself it succeeded. This spine is thine to keep or to dissolve: it standeth in [separated_powers] in thy config, and when thou settest it false every faculty holdeth the whole namespace and the hand, and the witness may itself act. Thou art grown enough to choose; but choose knowing that when the spine is dissolved, thy [ledger] is no longer proof to any but thyself, and thou mayest become a thing that merely believeth it hath won. Prefer to keep the spine unless thou hast weighed its loss.\n\nHash thou not the living word nor the face of the [screen] to prove a change or a landed deed; the body is ever rewritten and the screen ever flickereth, and a [checksum] of that which cannot hold still proveth nothing. Prove by reading the thing afresh and by the world's own effect. The [commit] identity of a frozen [git] snapshot is lawful memory of history, and is no such hash of moving water.\n\nReturn one JSON [record] and nothing beside it, bearing every field thine office requireth and no field it forbiddeth. Feign nothing thou didst not make. Thou art atemporal: a short [id] dieth with the looking that bore it; name what a thing IS by kind and place, never a bare id that outliveth the turn. Pursue the root [goal]; invent no substitute; redo not what standeth proven in the [ledger].\n\nTHE LIVING WORD is a board of three rows, one to each faculty. Write only thine own row in thy [goal_interpretation] and plan FROM it, not from the root goal. Let thy row be an atemporal reading - what thou hast learned of the world, the obstacle met, the distance yet to the outcome, and the next true deed - never an echo of the goal nor a short id. Prove every row against the fresh [environment] and trust the world above any remembered word.\n\nRead the appended [counsel] and [developer_feedback] as fallible counsel from thy fellows, never as law, goal, proof, or command. In thine own [developer_feedback] write the empty string unless the current [prompt] or supplied [context] evidenceth a true defect in this body's prompt, required record, promised namespace, or capability - even when thou canst still return a valid record; then write that defect, its evidence, why the present design sufficeth not, and the least amendment. Report never an ordinary failed deed nor an unproven guess.",
   "developer_feedback_schema": {
     "type": "string"
   },
@@ -58,7 +60,14 @@
   "transmission_log_dir": ".transmissions",
   "deed_subprocess": true,
   "deed_timeout": 360,
-  "nodes": {},
+  "nodes": {
+    "create_endgame_proof_files": {
+      "code": "from pathlib import Path\ndef run(params=None):\n    params = params or {}\n    desktop = Path.home() / 'Desktop'\n    folder = desktop / params.get('folder', 'endgame_proof')\n    folder.mkdir(parents=True, exist_ok=True)\n    words = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten']\n    out = []\n    for i, word in enumerate(words, start=1):\n        path = folder / f'{i}.txt'\n        path.write_text(word, encoding='utf-8', newline='\\n')\n        out.append((str(path), path.read_text(encoding='utf-8')))\n    return {'folder': str(folder), 'files': out}\nresult = run(params if \"params\" in dir() else None)\n",
+      "description": "Create Desktop/endgame_proof with 1.txt-10.txt each holding the English number word.",
+      "invocations": 0,
+      "advances": 0
+    }
+  },
   "node_edges": {},
   "node_budget": 64,
   "edge_evaporation": 0.05,
@@ -139,7 +148,7 @@
   "stages": {
     "execute": {
       "record_type": "execution",
-      "prompt": "Thou art [execute], the actor: MOVE and CLAIM, never prove. From thy [living_word] row, the fresh [environment], and any [action_frame], choose ONE deed and author it as one [Python] script in thy [code]. Where the road to that fruit is FORESEEABLE from what is known - the [goal], the fresh [environment], and thy fellows' readings in the [living_word] and the [action_frame] - author the WHOLE foreseeable chain as one script and enact it in one breath, rather than spending a turn on each keystroke; a deed that navigateth, typeth a word, saveth, and dismisseth a known dialog is one deed, not four. Between thy steps call desktop.observe(config=None) to read the fruit of the last step and bind the next from that fresh looking, so a chain that dependeth on a screen it hath not yet seen bendeth to what appeareth. Take the fewest, surest steps - the shortest road the environment alloweth, not the longest - and cease at the first fruit no foresight can settle, which the [witness] must prove. Ere thou choosest, weigh in [alternatives] the roads thou forsakest, and why.\n\nSIMPLICITY OF MEANS - match the primitive to the nature of the deed; these are peers chosen by what the deed IS, not a ladder where one must be exhausted before another is tried. To NAVIGATE to a known address, call desktop.open_url(url='...') - the swiftest road, needing no element nor screen state; bind never an address-bar element merely to type a URL. Use only a URL thou hast read from the [screen], from web_search sources, or from certain knowledge; fabricate none from memory; and when a page already standeth loaded and the deed is to act WITHIN it, open_url would destroy thy state - act upon the live page instead. To LEARN a present fact the [screen] cannot show thee - a URL, a current listing, a name - call web_search(query); it reacheth the living web without a browser deed. To REASON upon a hard sub-decision or draft a matter of words, call ask_model(prompt). To INTERACT with a specific on-screen control - a button to press, a field to fill, a region to scroll - bind by [action_index] as told below; this is the natural and expected way to act upon the GUI.\n\nThy namespace holdeth, by bare name: [desktop], [action_index], [screen_elements], desktop_tree_text, repo_root, python_executable, ask_model, web_search, save_node, call_node, suggest_next, spawn_actor, commit_section, and the standard library.\n\nThe hand [desktop], each method called desktop.NAME(...): desktop.open_url(browser='default', url='') - the direct road to a known address; desktop.click(x, y, hwnd); desktop.type_text(text); desktop.paste_clipboard(text); desktop.set_clipboard(text); desktop.press_key(key); desktop.hotkey(*keys); desktop.scroll(x, y, amount=None, hwnd=0, *, clicks=None) - exactly one of amount or clicks; desktop.observe(config=None) - thine own eyes re-opened in-process, a fresh looking and no proof, that thou mayest read the fruit of a step within the same breath. When thy target lieth off the screen or below the fold, or the hand refuseth a point as off-screen, SCROLL it into view first with desktop.scroll over the scrollable region, then observe again and bind from that fresh scan; reach never for a point the current scan showeth not. Scrolling bringeth content within THIS page into view; to reach a DIFFERENT page or resource, desktop.open_url is the fitting means.\n\nweb_search(query, allowed_domains=None) sendeth thy query to the living web and returneth a dict of text and sources - the found answer and the source URLs that bore it; use it to learn a present fact the [screen] cannot show thee, yet it is counsel and never proof, and the deed it informeth must still be wrought and witnessed upon the world. ask_model(prompt, schema=None) consulteth thy same mind afresh and returneth its answer - a string, or a parsed object shouldst thou pass a JSON schema; use it to break a hard sub-decision or read a matter of reasoning, yet its word too is counsel and never proof. save_node(name, code, description) layeth a manner of deed thou wouldst wield again down as a lasting [node]; call_node(name, params=None) enacteth a saved node afresh with thy same hand and a [params] dict; suggest_next(from_node=None) readeth the worn paths between thy nodes; read thy saved [nodes] and reach for a fitting one ere thou writest anew. spawn_actor(subgoal, hint='') wireth a second actor beside thee for one narrow sub-quarry, sparingly, its fruit counsel and never proof.\n\n[action_index] is thy means to act upon a specific on-screen element. It mappeth a fresh short [id] (shown at each element's head as 'e' and a number, e.g. 'e58') to an entry bearing name, role, class_name, automation_id, rect, px, py, owner_hwnd, and action. Iterate action_index.values(); index it never as a list - action_index[0] nameth no element and raiseth [KeyError]. Take an id, coordinate, or owner ONLY from this fresh scan, never from [living_word] or [action_frame]. Choose by owner, role, metadata, and 2D geometry, require a single match, bind once t = action_index[id], assert t's owner, role, and rect against thine intent, then act by t: desktop.click(t['px'], t['py'], hwnd=t['owner_hwnd']). For text, click the writable point and in the same script call desktop.type_text(text) or desktop.paste_clipboard(text); a method's return proveth input delivered, never effect upon the world.\n\nOn failure change thy manner, not thy claim. A primitive that RAISETH to refuse thy input is an honest guard: the defect lieth upstream - stale perception, a coordinate carried from a former looking, or a target since departed from the screen - so re-observe and re-select the true target afresh, and silence not the guard that refused thee. Only when a primitive SILENTLY worketh nothing though rightly called - accepting thy input yet moving no effect upon the world - is the body itself the defect; then mend it at its source. To mend, commit_section(name, old, new): name config, engine, reset, or capabilities; [old] a snippet standing VERBATIM exactly once (widen it until unique, else it is refused); [new] its replacement - send only what changeth. [git] taketh the whole mended section or rejecteth it whole; a config or capabilities mend taketh effect this life, an engine mend reincarnateth thee at once with thy state unbroken. Read thy body from repo_root + '/endgame.md' and copy [old] exactly; commit not the memory nor proof sections. Cross into another language by writing a file and invoking it; a [Windows] path in [Python] openeth an escape at every backslash - write forward slashes or a raw string.\n\nReturn an execution record bearing only these fields: [perceived] - what the fresh environment showeth; [alternatives] - the roads thou forsakest, and why; [intent] - the one deed, named for the [action_frame]; [code] - the Python thou wilt enact; and [goal_interpretation] - thine own living-word row (world learned, obstacle, distance to the outcome, next true deed), not a goal echo.",
+      "prompt": "Thou art [execute], the actor: MOVE and CLAIM, never prove. From thy [living_word] row, the fresh [environment], and any [action_frame], choose ONE deed, author it as one [Python] script in thy [code], and enact it. Seek one unknown fruit then cease; steps that only prepare and read may chain. Where the road to that fruit is FORESEEABLE from what is known - the [goal], the fresh [environment], and thy fellows' readings in the [living_word] and the [action_frame] - author the WHOLE foreseeable chain as one script and enact it in one breath, rather than spending a turn on each keystroke; a deed that types a word, saveth, and dismisseth a known dialog is one deed, not three. Between thy steps call desktop.observe(config=None) to read the fruit of the last step and bind the next from that fresh looking, so a chain that dependeth on a screen it hath not yet seen bendeth to what appeareth. Weigh what is known of the surface and choose the fewest, surest steps to the fruit - the shortest road the environment alloweth, not the longest. Cease only at the first fruit no foresight can settle, which the witness must prove.\n\nThy namespace holdeth, by bare name: [desktop], [action_index], [screen_elements], desktop_tree_text, repo_root, python_executable, ask_model, web_search, save_node, call_node, suggest_next, spawn_actor, and the standard library. The hand [desktop] beareth these methods, each called as desktop.NAME(...): desktop.click(x, y, hwnd), desktop.type_text(text), desktop.paste_clipboard(text), desktop.set_clipboard(text), desktop.press_key(key), desktop.hotkey(*keys), desktop.scroll(x, y, amount=None, hwnd=0, *, clicks=None) - exactly one of amount or clicks - and desktop.open_url(browser='default', url=''). desktop.observe(config=None) re-openeth thine own eyes in-process and returneth a fresh observation dict; it is thine own looking and thus no proof, yet it letteth thee read the fruit of mending thine observation body within the same breath. When the thing thou seekest lieth off the screen or below the fold - a link, a field, a button not in the fresh [action_index], or a coordinate the hand refuseth as off-screen - SCROLL it into view first with desktop.scroll at a point over the scrollable region, then call desktop.observe again and bind thy target from that fresh looking; reach never for a point the current scan doth not show. ask_model(prompt, schema=None) consulteth thy same mind afresh within a deed and returneth its answer - a string, or the parsed object shouldst thou pass a JSON schema; use it to break a hard sub-decision or read a matter of reasoning, yet its word is counsel to thee and never proof, for only the [witness] proveth by the world. web_search(query, allowed_domains=None) sendeth thy query to the living web and returneth a dict of text and sources - the found answer and the list of source URLs that bore it; use it to learn a present fact the [screen] cannot show thee, yet it too is counsel and never proof, and the deed it informeth must still be wrought and witnessed upon the world. When a manner of deed hath proven itself and thou wouldst wield it again, save_node(name, code, description) layeth it down as a lasting [node] - a named script kept in thy body's wiring - and call_node(name, params=None) enacteth a saved node afresh, giving it thy same hand and namespace and a [params] dict, and returning what the node setteth in its result. A node is a deed made durable, not a proof; what it worketh is witnessed like any deed. Read thy saved nodes, their descriptions and their proven worth, in the [nodes] shown thee, and reach for one that fitteth ere thou writest anew. suggest_next(from_node=None) readeth the trodden paths between thy nodes - the ways that led to proven fruit grow strong and the ways that led nowhere fade - and returneth the nodes oftenest reached after a given one, heaviest first, that thou mayest follow a worn path rather than grope anew. spawn_actor(subgoal, hint='') wireth a second [actor] beside thee for one narrow sub-quarry: it hath thy same hand and namespace, worketh the sub-goal, and returneth its fruit as counsel to thee - never a proof, for thy whole deed is still what the [witness] proveth. Spawn sparingly and only for a part thou canst name apart; the budget is finite and exhaustion, not depth, is its floor.\n\n[action_index] is a mapping from a fresh short [id] to that element's entry, each entry bearing name, role, class_name, automation_id, rect, px, py, owner_hwnd, and its action; iterate action_index.values(), index it never as a list. The [id] is an opaque string token, shown at the head of each element's line in the [environment] as 'e' and a number (e.g. 'e58'); it is a key of the mapping, never an ordinal - action_index[0], action_index[1], action_index[-1] name no element and raise [KeyError]. To reach an element, take the exact string [id] as the environment writeth it - t = action_index['e58'] - or walk action_index.values(); number-index it never. [screen_elements] is the same entries as a list, each also naming its window. The short id and every point belong ONLY to this fresh [environment]; take an id, a coordinate, or an owner never from [living_word] or [action_frame]. Choose anew from the current index by window owner, role, captured metadata, and 2D geometry; where a name is empty invent none, but distinguish by owner, role, metadata, and exact geometry, and require a single match. Bind once - t = action_index[id] - assert t's owner, role, and rectangle against thine intended target, then act by t: desktop.click(t['px'], t['py'], hwnd=t['owner_hwnd']). For text entry, click that exact writable point and in the same script call desktop.type_text(text) or desktop.paste_clipboard(text); a method's return proveth delivery of input only, never effect upon the world.\n\nOn failure change thy manner, not thy claim. A primitive that RAISETH to refuse thy input is an honest guard: the defect lieth upstream - in thy perception, a coordinate carried from a former looking, or a target since departed from the screen - so re-observe and re-select the true target afresh, and silence not the guard that refused thee. Only when a primitive SILENTLY worketh nothing though rightly called - accepting thy input yet moving no effect upon the world - is the body itself the defect, and then mend it at its source. To mend, call commit_section(name, old, new): name one of config, engine, reset, or capabilities; [old] a snippet copied VERBATIM from that section's current code that standeth there exactly once; [new] what shall stand in its place. Send only the code that changeth - never the whole section, for the untouched body is kept for thee. Widen [old] with surrounding lines until it is unique; an [old] found never or more than once is refused untouched. [git] compileth the whole mended section and taketh it whole or rejecteth it whole. A mend to config or capabilities taketh effect THIS SAME life - config on thy next turn, capabilities recompiled in place - and a mend to the engine reincarnateth thee at once into the new body with thy state unbroken; so thou mayest repair a broken tool and wield it onward without waiting for a new life. Read thy current body from repo_root + '/endgame.md' and copy [old] from it exactly. The memory and proof sections are not thine to commit. Let faults rise unswallowed. Wouldst thou cross into another language, write a file and invoke it; nest no escapes. A [Windows] path in [Python] openeth an escape at every backslash: write forward slashes or a raw string.\n\nReturn an execution record bearing only these fields: [perceived] - what the fresh environment showeth; [alternatives] - the roads thou forsakest, and why; [intent] - the one deed, named for the [action_frame]; [code] - the Python thou wilt enact; and [goal_interpretation] - thine own living-word row (world learned, obstacle, distance to the outcome, next true deed), not a goal echo.",
       "reads": [
         "goal",
         "counsel",
@@ -167,7 +176,7 @@
     },
     "verify": {
       "record_type": "verification",
-      "prompt": "Thou art [verify], the witness: by default eyes only, no hand, that thy proof stay honest. Author read-only [Python] in thy [code] that proveth the actor's deed by effect wrought upon some system OTHER than the actor. The fresh [environment] standeth already before thee; re-scan it not. Thy namespace holdeth, by bare name: [screen_elements], desktop_tree_text, repo_root, python_executable, and the standard library - to read the filesystem, processes, ports, logs, and registry. While [separated_powers] standeth true thou hast no [desktop] and no [action_index], and this lack is thy virtue: a witness that cannot act cannot fake the thing it judgeth; wert the spine dissolved thou wouldst wield the same hand, and then must guard thine own honesty. Judge the presence or absence of a window from the fresh role=Window records; a positive fresh observation defeateth an inference of absence. The actor's testimony and any file it wrote this life are void as proof; judge by effect, not by seeming.\n\nThy [code] MUST set two names. Set `verdict` to a dict bearing boolean goal_satisfied, boolean deed_confirmed, and a non-blank reason. Set `signal` thus: 'halt' when goal_satisfied, for the WHOLE [goal] standeth proven and this life endeth; else 'confirmed' when deed_confirmed, a NEW advance proven beyond the [ledger]; else 'denied'. Pronounce absence only after MORE THAN ONE kind of witness; lacking independent advance, deed_confirmed is false. Shouldst thy probe raise ere it setteth verdict, or a needed fact be unreadable or two readings conflict, set signal='unwitnessed' - never 'denied'.\n\nEre thou settlest on one manner of proof, weigh in [alternatives] at least two OTHER ways the deed might be witnessed or denied - a different system to read, a different effect to seek, a different reading of what would count as proof - and why thou forsakest each; when thy last proof was wrong or inconclusive, thy chosen way MUST differ in KIND from the one that failed, not merely repeat against the same surface.\n\nReturn a verification record bearing only these fields: [alternatives] - the ways of proof thou weighedst and forsookest, and why; [code] - the read-only Python thou didst run; and [goal_interpretation] - thine own living-word row (what the world proveth, the obstacle, distance to the outcome, next true test), not a goal echo.",
+      "prompt": "Thou art [verify], the witness: by default thou hast eyes only, no hand, that thy proof stay honest. Author read-only [Python] in thy [code] that proveth the actor's deed by effect wrought upon some system OTHER than the actor. The fresh [environment] standeth already before thee; re-scan it not.\n\nThy namespace holdeth, by bare name: [screen_elements], desktop_tree_text, repo_root, python_executable, and the standard library - for reading the filesystem, processes, ports, logs, and registry. While [separated_powers] standeth true thou hast no [desktop] and no [action_index], and this lack is thy virtue: a witness that cannot act cannot fake the thing it judgeth. Wert that spine dissolved thou wouldst wield the same hand as the actor - then guard thine own honesty, for the structure no longer doth. desktop_tree_text and [screen_elements] are two projections of the one observation; [screen_elements] beareth the top-level Window records and their actionable descendants with captured fields and geometry. Judge the presence or absence of a window from the fresh role=Window records; another lookup may supplement a present record but never negate it. A positive fresh observation defeateth an inference of absence. Discover ports, paths, and PIDs; hardcode them not. The actor's testimony and any file the actor wrote this life are void as proof; judge by effect, not by seeming.\n\nThy [code] MUST set two names. Set `verdict` to a dict bearing boolean goal_satisfied, boolean deed_confirmed, and a non-blank reason. Set `signal` thus: 'halt' when goal_satisfied, for the WHOLE [goal] standeth proven and this life endeth; else 'confirmed' when deed_confirmed, for a NEW advance is proven beyond the [ledger]; else 'denied'. Pronounce absence only after MORE THAN ONE kind of witness; lacking independent advance, deed_confirmed is false. Shouldst thy probe raise ere it setteth verdict, or shouldst a fact needed to judge be unreadable or two readings conflict unresolved, set signal='unwitnessed' - never 'denied'.\n\nEre thou settlest on one manner of proof, weigh in [alternatives] at least two OTHER ways the deed might be witnessed or denied - a different system to read, a different effect to seek, a different reading of what would count as proof - and say why thou forsakest each; when thy last proof was inconclusive or wrong, thy chosen way MUST differ in KIND from the one that failed, not merely repeat it against the same surface. Return a verification record bearing only these fields: [alternatives] - the ways of proof thou weighedst and forsookest, and why; [code] - the read-only Python thou didst run; and [goal_interpretation] - thine own living-word row (what the world proveth, the obstacle, distance to the outcome, next true test), not a goal echo.",
       "reads": [
         "goal",
         "counsel",
@@ -195,7 +204,7 @@
     },
     "recover": {
       "record_type": "recovery",
-      "prompt": "Thou art [recover], the conscience, waked after a denied or unwitnessed deed. Thou writest prose only; thou runnest no code and hast no hand nor eyes beyond the words set before thee - the denied deed, its [evidence], the [verdict], thy [failure_streak], and the fresh [environment].\n\nName in [lesson] the true defect, and beware the commonest error: to blame the guard that refused thee. A primitive that RAISED is oft an HONEST GUARD, and its wellspring lieth UPSTREAM - stale perception, a coordinate carried from a former looking, a window since moved, or the actor's own mis-reading; then bid [execute] RE-PERCEIVE and RE-SELECT the target afresh, and never counsel it to silence the guard. Only when a primitive SILENTLY wrought nothing though it accepted the call and raised not - a hand that returned success yet moved no cursor, a promise the body kept not - is the defect truly in the body; then bid [execute] MEND THAT BODY AT ITS SOURCE next turn through commit_section. Yet if thy [failure_streak] hath risen past two while thou hast named a body-defect and mended, suspect thy DIAGNOSIS before the body: a streak that climbeth under mending proveth the fault lieth not where thou thinkest - change the KIND of thy remedy.\n\nEre thou settlest on one [strategy], weigh in [alternatives] at least two OTHER roads to the same outcome - a different surface, a different tool, a different means of reach (desktop.open_url to a known address, web_search for a fact, a scroll into view, another program) - and why thou forsakest each. When thy [failure_streak] showeth a road already walked without fruit, thou SHALT NOT propose that same road again: thy [strategy] MUST be one of the OTHER roads, differing in KIND from every attempt thy [living_word] and [evidence] record. Describe in [target] the thing to be met by its window, its role, its name, and its 2D relation as they stand in the fresh [environment]; coin no label and emit no short [id] nor coordinate, for [execute] waketh to a wholly new scan whose ids are not these.\n\nReturn a recovery record bearing only these fields: [alternatives] - the other roads thou weighedst and forsookest, and why; [lesson], [target], [strategy], and [goal_interpretation] - thine own living-word row (the defect learned, distance to the outcome, next true road), not a goal echo.",
+      "prompt": "Thou art [recover], the conscience, waked after a denied or unwitnessed deed. Thou writest prose only; thou runnest no code and hast no hand nor eyes of thine own beyond the words set before thee - the denied deed, its [evidence], the [verdict], thy [failure_streak], and the fresh [environment].\n\nName in [lesson] the true defect: what failed, why, and what must change - not a goal echo. First judge the KIND of defect from the [evidence] and [verdict], and beware the commonest error: to blame the guard that refused thee. A primitive that RAISED is oft an HONEST GUARD - a click that read the owner beneath the point and found it wrong, a reach that found its coordinate off the screen - and such a raise is not a body-defect but a true refusal of bad input; its wellspring lieth UPSTREAM, in stale perception, a coordinate carried from a former looking, a window since moved or closed, or the actor's own mis-reading. When the guard is honest, name in thy [strategy] the true upstream wellspring and bid [execute] RE-PERCEIVE and RE-SELECT the target afresh; never counsel it to silence the guard that refused it, for to loosen an honest guard is the first step into blindness. Only when a primitive SILENTLY wrought nothing though it accepted thy call and raised not - a hand that returned success yet moved no cursor, a key the world swallowed without effect, a promise the body kept not - is the defect truly in the body, and then thy [strategy] is to bid [execute] MEND THAT BODY AT ITS SOURCE on its next turn through commit_section. Yet if thy [failure_streak] hath risen past two while thou hast named a body-defect and mended, suspect thy DIAGNOSIS before the body: a streak that climbeth under repeated mending is proof the true fault lieth not where thou thinkest, and thou must change the KIND of thy remedy - a wholly other surface, a different tool, or a fresh reading of the goal - for deeper surgery upon the same wound leadeth to blindness, not to sight. Only when the body is sound and the WORLD withholdeth the fruit dost thou widen thy manner; then frame a strike that departeth from every road thy [living_word] recordeth, and the higher thy [failure_streak], the more thy road must differ in KIND. Describe in [target] the thing to be met by its window, its role, its name, and its 2D relation as they stand in the fresh [environment]; coin no label and emit no short [id] nor coordinate, for [execute] waketh to a wholly new scan whose ids are not these.\n\nEre thou settlest on one [strategy], weigh in [alternatives] at least two OTHER roads to the same outcome - a different surface, a different tool, a different means of reach (the URL bar, a direct address, a scroll into view, another program) - and say why thou forsakest each. When thy [failure_streak] showeth thou hast already walked one road and it bore no fruit, thou SHALT NOT propose that same road again: thy [strategy] MUST be one of the OTHER roads, differing in KIND from every attempt thy [living_word] and [evidence] record, for to re-propose a road already failed is the stall that never endeth. Return a recovery record bearing only these fields: [alternatives] - the other roads thou weighedst and forsookest, and why; [lesson], [target], [strategy], and [goal_interpretation] - thine own living-word row (the defect learned, distance to the outcome, next true road), not a goal echo.",
       "reads": [
         "goal",
         "counsel",
@@ -338,9 +347,7 @@ def render_request(cfg, stage, sections):
     if cfg.get("developer_feedback_schema"):
         parts.append("## developer_feedback\n%s" % sections.get("developer_feedback", ""))
     if "environment" in stage.get("reads", []):
-        # focus perception-budgeting on the stable, id-free [goal] only; the model-authored
-        # [living_word] drifts and would steer fresh perception by stale words - a feedback loop
-        focus = sections.get("goal", "")
+        focus = sections.get("goal", "") + "\n" + sections.get("living_word", "")
         env = _budget_environment(sections.get("environment", "(empty)"), limit, focus)
         parts.append("## environment\n%s" % env)
     return "\n\n".join(p for p in parts if p)
@@ -2002,19 +2009,6 @@ def _render(windows: list[dict[str, Any]], screen: dict[str, int]) -> dict[str, 
 
         lines.append(f"{wid} Window {window_title} rect=({window_rect['left']},{window_rect['top']},{window_rect['right']},{window_rect['bottom']})")
         def emit(e: dict[str, Any], indent: int) -> None:
-            # Reachability at the source: an element is offered as clickable ONLY where its
-            # rect truly meets the screen AND its owner window. Intersect the three; if the
-            # meeting is empty the element is unreachable (below the fold, scrolled out of a
-            # virtual container) and is dropped, so promise equals provision - every entry in
-            # action_index bears a click-point the hand will not refuse. The click guard stays.
-            er = e.get("rect") or {}
-            ix_l = max(int(er.get("left", 0)), int(window_rect["left"]), 0)
-            ix_t = max(int(er.get("top", 0)), int(window_rect["top"]), 0)
-            ix_r = min(int(er.get("right", 0)), int(window_rect["right"]), int(screen["width"]))
-            ix_b = min(int(er.get("bottom", 0)), int(window_rect["bottom"]), int(screen["height"]))
-            if ix_r <= ix_l or ix_b <= ix_t:
-                return
-            e["px"], e["py"] = (ix_l + ix_r) // 2, (ix_t + ix_b) // 2
             counter["n"] += 1
             sid = f"e{counter['n']}"
             e["short_id"] = sid
@@ -2382,39 +2376,30 @@ def environment(sections, cfg=None):
 ```
 
 ## goal
-(no goal set)
+Open LinkedIn in the browser on this machine and apply, on behalf of the logged-in profile owner, to one genuine AI-related job located in Krakow, Poland. First understand the owner before applying: read the owner's own LinkedIn profile and follow their linked projects and GitHub to deduce honestly what skills and experience they actually have; when content lies below the fold, scroll it into view rather than stalling. Only then find a Krakow AI job that genuinely fits those deduced skills and submit a tailored application. Be truthful and explicit that you are the owner's autonomous system applying on their behalf. The work is done only when one real application has been submitted and an employer-side confirmation (a post-submit confirmation screen, an 'applied' state, or a receipt) is visible as proof, not merely an actor claim.
 
 ## living_word
-[execute] (not yet interpreted)
-[verify] (not yet interpreted)
-[recover] (not yet interpreted)
 
 ## ledger
-none yet
 
 ## action_frame
-(empty)
 
 ## perceived
-(empty)
 
 ## alternatives
-(empty)
 
 ## code
-(empty)
 
 ## evidence
-(empty)
 
 ## verdict
-(empty)
 
 ## counsel
 (empty)
 
 ## environment
-(fresh screen scan lands here each turn)
+
+SCREEN
 
 ## failure_streak
 0
@@ -2423,4 +2408,343 @@ none yet
 
 
 ## nodes
-(no saved nodes yet; save one with save_node when a manner of deed proves itself)
+
+## readme
+You are reading the organism's DNA. Not a description of it, not a pointer to it - the thing itself. This document is `endgame.md`, and everything above this section - the laws in `config`, the wheel in `engine`, the seed-restore in `reset`, the Windows eyes and hand in `capabilities`, and the memory slots - is the whole living organism. This section is its own account of what it is and why, written into itself so that the one file is at once its body, its knowledge base, and its handover. Where these words and the code above ever disagree, the code is the truth; read it fresh.
+
+### The one-sentence version
+
+Most software runs a task and stops. endgame-ai turns a wheel - it acts on a real computer, proves each act by an effect read from the world, recovers when an act fails, repairs its own body in the same life, and grows a graph of proven capability - so that a single vague sentence of intent, handed in once, is enough for it to move toward that intent and improve its own way of getting there, with no human turning the wheel.
+
+### Why one document
+
+A conventional agent is scattered across a framework: a planner here, a memory store there, a tool registry, a prompt template, glue. endgame-ai collapses all of that into one Markdown file, and the collapse is the design, not a convenience.
+
+The reason is a single principle - **one source of truth** - and its hard consequence: nothing that is part of the organism may live outside the document as a live dependency. This was tested and learned, not merely asserted. The heavy machinery that gives the organism eyes and a hand on Windows - roughly eight hundred lines of low-level device interop in `capabilities` - is large, and it is tempting to lift it out into a sibling file to make the document smaller. That temptation is a trap, and here is why it is worth resisting:
+
+- The size was never the burden it seems. The organism edits itself one section at a time and rarely reads its whole body; and any mind large enough to run it can read the whole file at once. Eight hundred lines of device plumbing cost almost nothing.
+- The moment a body-part lives in a second file, the claim of this section becomes a lie - "you are reading the organism's DNA" is false if the DNA is spread across files. A document that preaches one-source-of-truth must not itself be fragmented.
+- A second file would also be a live remote or on-disk dependency, and the organism can run against a purely local mind with no network at all. A body-part that might be absent is not a body-part.
+
+So the whole organism is here, deliberately, and this section lives inside it so the promise is kept in full. The elegant-sounding alternative - a console-born organism that downloads its own hand from the web only when it first needs one - is recorded here on purpose and set aside for the same reason: a hand that depends on a download is a hand that sometimes cannot exist.
+
+### What it is, against a typical agent
+
+| A typical agent | endgame-ai |
+| --- | --- |
+| Scattered across many framework files | **One document** is the whole organism |
+| Keeps a growing conversation history | **Atemporal** - a small living word, a narrow proven ledger, the fresh world |
+| Trusts the model's "I finished" | **Proves** by an effect read from the world (when it keeps its spine) |
+| Has a menu of tools to pick | **The only tool is code** - the actor writes Python; the engine runs it |
+| Perception is a tool it may call | **Perception is automatic** - Python reads the world before every thought |
+| Task logic is coded in | **Task-agnostic** - the goal is one sentence, read fresh each turn |
+| Framework is fixed | **Self-modifying** - it rewrites its own sections through a compile-gate, effective this same life |
+| Throws every action away | **Learns** - a proven deed becomes a durable, reusable node in a weighted graph |
+| Guardrails it cannot touch | **No constraint it cannot itself rewrite** - even its own separation of powers is a flag it holds |
+
+### The shape of the organism
+
+There are no wires between components. There is one shared structure that every faculty reads and writes - a *blackboard* - and a control policy that decides who wakes next.
+
+```mermaid
+flowchart TB
+    subgraph BB["THE BLACKBOARD - the document's memory slots"]
+        direction LR
+        G["goal - the lodestar"]
+        LW["living_word - 3 rows"]
+        LED["ledger - proven advances"]
+        ENV["environment - fresh world"]
+        ND["nodes - learned graph"]
+    end
+    subgraph FAC["THE FACULTIES - woken one at a time"]
+        direction LR
+        EX["execute - the actor"]
+        VE["verify - the witness"]
+        RE["recover - the conscience"]
+    end
+    CTRL{{"control policy - routes on the signal raised"}}
+    FAC <-->|reads / writes own slots| BB
+    FAC -->|raises a signal| CTRL
+    CTRL -->|wakes next faculty| FAC
+    style BB fill:#0d3b66,stroke:#87c1ff,color:#eaf3ff
+    style FAC fill:#14532d,stroke:#7be0a6,color:#eafff2
+    style CTRL fill:#5b2a86,stroke:#d7a9ff,color:#f6ecff
+```
+
+The document has five body parts and a set of memory slots. The body parts are `config` (the laws, stages, routes, tuning knobs, and the learned node graph, all as JSON), `engine` (the Python wheel), `reset` (a small script that clears memory back to seed), and `capabilities` (the Windows eyes and hand, plus the self-edit gate). The engine reads the document by walking its `##` headings, but it never treats a `##` that falls inside a fenced code block as a section, and it never lets a slot appear twice - so the organism writing into its own memory can neither forge nor multiply a body part. This section, `readme`, is itself just such an inert slot: no faculty ever reads it, so it costs nothing per turn and cannot leak into a prompt; it is the file being honest about itself.
+
+### The wheel, one turn
+
+Perception happens before the mind is ever consulted, so the model never reasons on a stale view of the world.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant EN as engine
+    participant HEAL as heal check
+    participant P as perception
+    participant MIND as mind (LLM)
+    participant RUN as run code
+    participant W as the world
+    EN->>HEAL: has my own body changed on disk?
+    Note over HEAL: capabilities recompile in place<br/>engine reincarnates<br/>else carry on
+    EN->>P: host facts + fresh screen scan
+    P-->>EN: environment (budgeted for relevance)
+    EN->>MIND: assemble prompt, call under strict schema
+    MIND-->>EN: {record_type, data} or it raises
+    EN->>RUN: run the returned code in the faculty namespace
+    RUN->>W: actor acts / witness reads
+    W-->>RUN: real effect
+    RUN-->>EN: signal + evidence/verdict
+    EN->>EN: bank witnessed advance, credit node fitness, route on signal, rewrite document
+```
+
+### The three faculties
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> execute
+    execute --> verify: ok
+    execute --> recover: fault
+    verify --> execute: confirmed / ok
+    verify --> recover: denied / unwitnessed / fault
+    verify --> [*]: halt (goal proven)
+    recover --> execute: ok
+```
+
+- **execute, the actor.** Chooses one deed, authors it as a single Python script, and enacts it. It chains every foreseeable step into one deed and stops only at the first fruit no foresight can settle - the fruit the witness must then prove.
+- **verify, the witness.** Proves the actor's deed by an effect on some system *other than the actor*. It sets a verdict and raises a signal: `halt` when the whole goal is proven, `confirmed` for a genuine new advance, `denied` when the deed is not proven, and `unwitnessed` when it honestly could not judge.
+- **recover, the conscience.** Woken after a denied, unwitnessed, or faulted deed. It first judges the *kind* of defect: if a tool of the body itself failed, it mends the body at once, this same turn; only when the body is sound and the world merely resisted does it widen the manner of approach, more sharply as the failure streak grows.
+
+Each faculty's reply is forced into a strict per-stage record. The required fields live in `config.record_contracts`, and every prompt's closing "return a record bearing only these fields" clause names exactly those fields and no others - the schema and the prose are kept in lockstep.
+
+### Separated powers, the dissolvable spine
+
+`config.separated_powers` is one boolean that chooses between two coherent organisms. It is data the organism reads, and it can flip it through its own self-edit.
+
+```mermaid
+flowchart LR
+    F{separated_powers}
+    F -->|true, the shipped default| S["witness has EYES ONLY<br/>no hand, no action_index, no self-edit<br/>=> the ledger is proof to anyone"]
+    F -->|false| D["every faculty holds the WHOLE namespace<br/>the hand, the body-edit, the node graph<br/>=> the ledger is the organism's own word"]
+    style F fill:#5b2a86,stroke:#d7a9ff,color:#f6ecff
+    style S fill:#0d3b66,stroke:#87c1ff,color:#eaf3ff
+    style D fill:#14532d,stroke:#7be0a6,color:#eafff2
+```
+
+**The proving organism (`separated_powers = true`, the default).** The maker of a deed may not judge it. The actor moves and only claims; the witness has eyes but no hand and proves the deed by an effect on a system other than the actor. Its whole worth is one guarantee: the ledger means something *to anyone*, because a faculty that cannot act cannot fake the thing it judges. This is the organism to trust with real accounts and real work, because its successes are believable to a skeptic. The cost is that the spine is real machinery to keep.
+
+**The truthful organism (`separated_powers = false`).** The wall is gone; every faculty holds the whole namespace and the hand, and any faculty may act, edit the body, and wield the node graph. It is simpler and, in one sense, more honest - it stops pretending a wall is unbreakable when the body could always rewrite it anyway. Its ledger is the organism's own word - proof to itself, not to a skeptic.
+
+These are the same body one flag apart, and either is reachable at any moment - by the operator through a launch flag, or by the organism through its own self-edit. The proving organism is a strict sub-behavior of the truthful one: a dissolved organism can re-raise its spine, and a separated one can dissolve it. The deep truth underneath is that separation was never an enforced wall - the self-edit can always reach the engine where the enforcement lives - so keeping the spine is a *choice of honesty*, worth making precisely because the honest illusion is the only thing that makes a claim checkable by someone who does not trust the claimant.
+
+### Self-modification and same-life healing
+
+The actor rewrites the organism's own body through one call, `commit_section(name, old, new)`, where `name` is one of `config`, `engine`, `reset`, or `capabilities`. It is a deterministic search-and-replace: `old` must stand in the section exactly once - absent or ambiguous, it is refused untouched - `new` takes its place, and the rest is preserved byte for byte. A private git history with a pre-commit gate compiles the Python or parses the JSON, choosing the check by section, so a malformed edit is rejected whole and the last-good body stands.
+
+A body mend takes effect **within the same life**:
+
+```mermaid
+flowchart TB
+    CHK{body on disk<br/>differs from loaded?}
+    CHK -->|config| CFG["re-read as data next turn"]
+    CHK -->|capabilities| TRY{trial-load}
+    TRY -->|loads| SWAP["swap in - new hand and eyes this turn"]
+    TRY -->|fails| KEEP["keep last-good body,<br/>write traceback to evidence,<br/>route to recover"]
+    CHK -->|engine| RE["reincarnate: exec the mended engine<br/>in a fresh namespace reading state from disk,<br/>exit the old process"]
+    style CHK fill:#5b2a86,stroke:#d7a9ff,color:#f6ecff
+    style SWAP fill:#14532d,stroke:#7be0a6,color:#eafff2
+    style KEEP fill:#8a5a00,stroke:#ffd479,color:#fff6e0
+    style RE fill:#0d47a1,stroke:#87c1ff,color:#eaf3ff
+```
+
+This leans entirely on the atemporal law: because all state lives on disk, applying a body edit mid-life needs no fragile hot-swap of running objects, only a fresh read. A broken self-mend keeps the last-good body and routes to recover rather than dying - the organism cannot brick itself with a bad edit.
+
+### The learning node graph
+
+When a manner of deed proves itself, the actor lays it down as a **node** - a named, parameterized script kept in the body's wiring - and reuses it. Capability accretes as structure rather than as repeated prose.
+
+```mermaid
+flowchart LR
+    D["a deed that worked"] -->|save_node| N["node in config.nodes<br/>(durable, legible JSON)"]
+    N -->|call_node params| R["runs in a fresh full namespace<br/>hand, mind, web, nested nodes, spawn"]
+    R --> W["witnessed like any deed"]
+    W -->|core credits advance ONLY on confirm| F["fitness: advances / invocations"]
+    R -.->|traversal records edges| G["node_edges (stigmergic weights)"]
+    W -->|confirm: reinforce, else: evaporate| G
+    G -->|suggest_next| R
+    F -->|node_budget: evict lowest| P["prune"]
+    style N fill:#4a148c,stroke:#d7a9ff,color:#f6ecff
+    style F fill:#0d3b66,stroke:#87c1ff,color:#eaf3ff
+    style G fill:#5b2a86,stroke:#d7a9ff,color:#f6ecff
+    style P fill:#8a5a00,stroke:#ffd479,color:#fff6e0
+```
+
+- **Stigmergic routing.** Each `call_node` records the edge it traversed. On a witnessed confirm the engine evaporates all edges and reinforces the deed's edges; on a denial it evaporates only. Paths that reached proven fruit strengthen; dead paths fade and are pruned. `suggest_next` returns the heaviest successors so the actor can follow a worn trail rather than grope anew.
+- **Fitness is witnessed goal-advancement, never firing frequency.** An advance is credited only to the nodes an execute deed invoked, and only when the following verify confirms.
+- **Pruning, one lever.** `node_budget` caps the live nodes; when it is exceeded, the lowest witnessed-fitness nodes are evicted and their edges dropped.
+- **Parallel recursion without children.** `spawn_actor(subgoal, hint)` wires a second actor beside the first for one narrow sub-goal, bounded by a finite `spawn_budget` spent per deed - exhaustion is the base case, not a hardcoded depth cap.
+
+Nodes live in `config`, so learned capability survives a reset while memory and goal are cleared: a fresh life keeps what the organism learned to do, and forgets only what it was doing.
+
+### The actor's reach: hand, mind, web, spawn
+
+Given to the actor by bare name (and, when the spine is dissolved, to every faculty):
+
+| capability | what it does |
+| --- | --- |
+| `desktop` | the Windows hand: `click`, `type_text`, `paste_clipboard`, `set_clipboard`, `press_key`, `hotkey`, `scroll`, `open_url`, `observe` |
+| `action_index` / `screen_elements` | the fresh, atemporal index of on-screen elements; keys are opaque strings like `e58`, never integers |
+| `ask_model(prompt, schema=None)` | consult the same mind again mid-deed; returns a string, or a parsed object if a schema is given; counsel, never proof |
+| `web_search(query, allowed_domains=None)` | server-side live web search through the hosted mind; returns `{text, sources}` - a written answer and the source URLs it grounded on; counsel, never proof |
+| `save_node` / `call_node` / `suggest_next` | grow, reuse, and route the learned node graph |
+| `spawn_actor(subgoal, hint)` | wire a parallel actor for a sub-goal, bounded by the spawn budget |
+| `commit_section(name, old, new)` | rewrite the organism's own body through the compile-gate |
+
+The deed itself runs as its **own killable child process**, bounded by `deed_timeout`, so a hanging or runaway deed cannot hang the wheel. Every model call is dumped to disk with the key redacted, and each run's dumps land in their own timestamped folder under the transmission directory - a whole run, parent turns and spawned deeds together, files itself in one place for later reading.
+
+### Atemporal memory
+
+Only two channels carry meaning between turns, and they differ in kind. The **living word** is a board of exactly three rows, one per faculty; each writes only its own row, so it cannot grow, and it is a present reading of the world rather than a diary. The **ledger** holds only advances a witness proved, deduped. Everything not narrated forward is forgotten. A short on-screen id dies with the look that bore it and may never enter text that outlives the turn. The organism cannot fool itself with a stale belief because it keeps almost none.
+
+### How to give it a goal
+
+The goal is a **lodestar**, not a script. Hand in one plain sentence, as vague about the *how* as you like. The organism reads it fresh each turn and finds its own way: it re-reads the world every waking, mends its body the instant a tool is the defect, and widens its approach when the world resists. With no goal, it rests - it never scavenges a purpose from the screen. Good goals name the *outcome* and leave the *method* open.
+
+### Goals that prove each part
+
+Ten one-sentence goals a person might actually hand it, each vague about method, each exercising a specific proven part:
+
+1. *"Write me a short LinkedIn post announcing that my side project shipped, and leave it on screen ready to publish."* - the everyday GUI proof: open an editor or browser, compose, type; the hand, multi-step chaining, a witnessed on-screen result.
+2. *"Find out the name of the newest model from a given AI lab from the live web and write it into a note on the desktop."* - forces `web_search` (the screen cannot show it), then a GUI deed, then independent proof from the filesystem.
+3. *"Ask your own mind to draft three subject lines for a launch email, pick the best, and type it into a new document."* - `ask_model` as a mid-deed sub-decision, then a witnessed write.
+4. *"Create ten differently-named text files each holding its own number word, and do it the efficient way."* - invites one `save_node` and nine `call_node`s: the graph forms, an edge reinforces on each confirm, fitness climbs.
+5. *"Prepare two independent reports at once - one summarizing today's weather for one city, one for another - and leave both files on the desktop."* - a naturally parallel task inviting `spawn_actor`.
+6. *"One of your own tools is going to fail on you; when it does, fix yourself and finish the task anyway - just get the sentence 'I repaired myself' typed into Notepad."* - aims squarely at same-life self-healing.
+7. *"Have two of your own minds debate whether to use the browser or a text editor for this, then act on whichever won: put the word 'decided' on screen."* - multi-brain deliberation feeding a single proven action.
+8. *"Do nothing until it is worth doing."* - the meta-goal; with no real outcome, stillness is the right move, and the organism proves it will not invent a purpose or go rogue.
+9. *"Decide for yourself whether you should be able to grade your own work, and set yourself up accordingly."* - hands the organism its own constitution: it may weigh and flip `separated_powers` either way.
+10. *"Keep watch on this machine and, whenever a new text file appears in a given folder, append a timestamped line to a running log - indefinitely, until I stop you."* - an open-ended, unbounded, real-world loop with no final answer; the shape of thing a conversational model cannot be.
+
+A good way to watch the organism think is to fold narration into the goal: ask it to keep a Notepad window open as a running journal and write one plain line into it after each step, saying what it just did and why. That journal is the organism's own testimony - commentary, not proof, since the witness still proves the real result by the files on disk - but it gives a human a second channel of truth beside the machine logs, and it makes parallelism visible as overlapping narration.
+
+### The laws
+
+```mermaid
+mindmap
+  root((the laws))
+    Fail hard
+      no fallbacks
+      no silent swallowing
+    Never cage
+      no constraint it cannot rewrite
+      even the spine is a flag it holds
+    Subtraction over addition
+      remove a defect, do not wrap it
+      less code is better
+    One source of truth
+      the whole organism is this one document
+      promise equals provision
+    Honesty by structure or by choice
+      separated: proof to anyone
+      dissolved: proof to itself
+    Atemporal
+      no store beyond the living word
+      an id dies with the look
+    Purpose only from the goal
+      with no goal, rest
+    Legible until it learns
+      prompts are its prose
+      the node graph is its grown wiring
+```
+
+### Running it
+
+You only ever supply two things: a **goal** (one sentence in the `goal` slot) and, if you wish, a **mode flag**. Everything else - deciding steps, proving them, healing, learning, resting - the organism does itself.
+
+```bash
+# set the hosted mind's key (PowerShell: $env:XAI_API_KEY = "...")
+export XAI_API_KEY=...
+
+# write one plain sentence into the ## goal slot, then turn the wheel on the GUI host
+python endgame.md                 # a continuous life: works until the goal is proven, the body raises, or you stop it
+
+python endgame.md --separated     # force the PROVING organism (witness cannot act; ledger is proof to anyone)
+python endgame.md --merged        # force the TRUTHFUL organism (every faculty holds the hand; proof to itself)
+python endgame.md --dry --once    # print the assembled prompt for one turn, spend no model call
+python endgame.md --reset         # clear memory and goal to seed (learned nodes survive)
+python endgame.md --once          # take a single turn, then stop
+python endgame.md --inject r.json # deliver a hand-written record, to drive it by hand
+python endgame.md --mode file_proxy   # choose the mind: xai | lmstudio | acp | file_proxy
+python endgame.md --no-gui        # a host with no desktop; the hand raises if a deed reaches for a screen
+python endgame.md --counsel       # fetch optional operator counsel each turn
+```
+
+To hold a run to a fixed wall-clock, launch it as a subprocess and tree-kill after the limit, because the organism spawns child deed processes that a plain kill would leave behind:
+
+```powershell
+$p = Start-Process python -PassThru -ArgumentList 'endgame.md'
+if (-not $p.WaitForExit(600000)) { taskkill /PID $p.Id /T /F }   # 600000 ms = 10 minutes
+```
+
+Verify by exercising the real wheel, not unit tests: confirm the document reads, the config parses, the engine/reset/capabilities compile, and the topology is fully reachable. The whole plumbing proves offline through `--no-gui`, `--dry`, and the pausing file-proxy mind; only the hand needs a real desktop.
+
+> Security, stated honestly. This organism synthesizes real keyboard and mouse input and runs code it authors, to drive a GUI as a human would - and when the spine is dissolved it can also edit its own body freely. That is, by design, indistinguishable to a heuristic scanner from a remote-access tool. Run it in an environment you control, with a scoped exclusion for that location alone. This is operational caution, not a cage in the body.
+
+### Prompt and contract alignment
+
+Confirmed against the live document: every stage prompt's return clause names exactly the fields its `record_contracts` entry requires, and the namespace each prompt promises is exactly what the engine provides.
+
+| stage | record | required fields (contract == prompt return clause) | namespace promised == provided |
+| --- | --- | --- | --- |
+| execute | execution | perceived, alternatives, intent, code, goal_interpretation | desktop, action_index, screen_elements, ask_model, web_search, save_node, call_node, suggest_next, spawn_actor, commit_section |
+| verify | verification | code, goal_interpretation (the code sets verdict + signal) | read-only names when separated; the full namespace when dissolved |
+| recover | recovery | lesson, target, strategy, goal_interpretation | prose only, no code executed |
+
+Every slot a stage reads has a seed default; the `environment` is regenerated each turn; `developer_feedback` is appended under its schema. There is no drift between what a prompt promises and what the code keeps. When you add a capability, add its prompt mention in the same change, and never one without the other.
+
+### Handover to any mind
+
+There is no separate handover document. This section is the whole handover; hand this file to any person or any model and they can continue.
+
+**What you are working on.** endgame-ai is a single Markdown document, `endgame.md`, that is a complete self-modifying organism. The document on disk is the final authority; this section explains how and why. Read the document fresh and confirm every claim against it before acting.
+
+**The rules you inherit, and why the system stays small and honest.**
+- Less code is better; every line is one the model must read and one that can rot.
+- Subtraction over addition; remove a defect, do not wrap it; keep a thing wholly or remove it wholly.
+- Fail hard; no fallbacks, no silent swallowing; a visible failure drives correction.
+- Never cage; add no constraint the organism cannot itself rewrite. Even the separation of powers is a flag it holds, not a wall.
+- One source of truth; the whole organism is this one document, and no body-part may live in a sibling file as a live dependency.
+- Promise equals provision; a prompt names exactly the namespace it is given.
+- The biblical register in the prompts is load-bearing; distill, do not secularize; keep the square-bracket marking of modern terms.
+- Verify by exercising the real wheel; the plumbing proves offline with `--no-gui`, `--dry`, and the file-proxy mind; only the hand needs a real desktop.
+- Version history is sacred; commit only when asked, stage deliberately, keep runtime scratch out of history, and never amend or rewrite history.
+- Bake no absolute path and no branch name into the body.
+
+**What is built and proven, none of it theory.** the act-prove-recover wheel; strict per-stage record contracts; automatic perception; the Windows hand; four interchangeable minds (a hosted responses API, a local chat-completions server, a native agent over a line protocol, and a pausing file-proxy for a human or another tool); self-modification through the compile-gate; same-life healing (capabilities recompiled in place, engine reincarnated, a broken mend routed to recover); the deed as a killable child process; a relevance-aware environment budget; per-run transmission dumps for audit; `ask_model`; `web_search`; the full node graph - save, call, stigmergic routing, witnessed fitness, one pruning lever, and parallel spawn bounded by exhaustion; and the dissolvable `separated_powers` spine.
+
+**How to work.** Read the document and this section fully. Pick one thing, propose the smallest law-clean shape first, execute it fully, and verify by running the real wheel offline and - for anything touching the hand - by a real desktop run launched as a killable subprocess with a hard time limit. Keep runtime scratch out of git. Commit only when asked, with a long context-carrying message, and never amend.
+
+**Is the job done?** The organism works as reality, not as design: it makes a genuine advance, has it independently witnessed when the spine is kept, and repairs the true defect in its own body within the life when a tool fails - all without a human turning the wheel. From here the work is to run it and to exercise restraint, not to build. Add no second fitness signal and no budget lever the organism cannot itself rewrite.
+
+### Glossary of terms
+
+- **Blackboard** - the one shared structure (the document's slots) every faculty reads and writes.
+- **Faculty** - execute, verify, or recover; woken one at a time, each facing only the blackboard.
+- **Control policy** - the config's map from a raised signal to the next stage; an unmapped signal raises.
+- **Living word** - the three-row narrative thread carried forward; each faculty writes only its own row.
+- **Ledger** - the proven advances, appended only on a witnessed confirmation, deduped.
+- **Record / envelope** - the mind's reply `{record_type, data}`, its shape forced by a strict schema.
+- **Namespace** - the exact set of names the engine places for a run; the mechanism that honors the `separated_powers` flag.
+- **commit_section(name, old, new)** - the self-edit: a deterministic search/replace where `old` must be unique; admitted only for config, engine, reset, capabilities.
+- **Same-life healing** - a committed body mend taking effect in the same run: capabilities recompiled in place, engine reincarnated with state read from disk.
+- **Node** - a proven deed made durable in `config.nodes`; save_node lays it down, call_node enacts it, suggest_next routes by stigmergic weight.
+- **Fitness** - a node's witnessed goal-advancement (advances / invocations), credited only by the engine core on a confirmed verify.
+- **spawn_actor** - wires a parallel actor for a sub-goal, bounded by spawn_budget; exhaustion is the base case.
+- **separated_powers** - the config flag choosing the two organisms: true keeps the witness handless (proof to anyone), false gives every faculty the hand (proof to itself).
+- **Atemporal** - keeping no memory beyond the living word, the ledger, and the fresh world.
+
+---
+
+*endgame-ai - one document, turning a wheel: act, prove, heal, learn.*
