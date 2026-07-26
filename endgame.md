@@ -2009,6 +2009,19 @@ def _render(windows: list[dict[str, Any]], screen: dict[str, int]) -> dict[str, 
 
         lines.append(f"{wid} Window {window_title} rect=({window_rect['left']},{window_rect['top']},{window_rect['right']},{window_rect['bottom']})")
         def emit(e: dict[str, Any], indent: int) -> None:
+            # Reachability at the source: an element is offered as clickable ONLY where its
+            # rect truly meets the screen AND its owner window. Intersect the three; if the
+            # meeting is empty the element is unreachable (below the fold, scrolled out of a
+            # virtual container) and is dropped, so promise equals provision - every entry in
+            # action_index bears a click-point the hand will not refuse. The click guard stays.
+            er = e.get("rect") or {}
+            ix_l = max(int(er.get("left", 0)), int(window_rect["left"]), 0)
+            ix_t = max(int(er.get("top", 0)), int(window_rect["top"]), 0)
+            ix_r = min(int(er.get("right", 0)), int(window_rect["right"]), int(screen["width"]))
+            ix_b = min(int(er.get("bottom", 0)), int(window_rect["bottom"]), int(screen["height"]))
+            if ix_r <= ix_l or ix_b <= ix_t:
+                return
+            e["px"], e["py"] = (ix_l + ix_r) // 2, (ix_t + ix_b) // 2
             counter["n"] += 1
             sid = f"e{counter['n']}"
             e["short_id"] = sid
