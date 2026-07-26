@@ -15,9 +15,9 @@
       "url": "https://api.x.ai/v1/responses",
       "request": {
         "model": "grok-4.5",
-        "temperature": 0.2,
+        "temperature": 0.4,
         "reasoning": {
-          "effort": "low"
+          "effort": "high"
         },
         "store": false
       }
@@ -48,7 +48,7 @@
   "developer_feedback_schema": {
     "type": "string"
   },
-  "max_environment_chars": 16000,
+  "max_environment_chars": 20000,
   "observation": {
     "step_px": 64,
     "max_subtree_nodes_per_point": 120,
@@ -57,7 +57,7 @@
   },
   "transmission_log_dir": ".transmissions",
   "deed_subprocess": true,
-  "deed_timeout": 180,
+  "deed_timeout": 360,
   "nodes": {},
   "node_edges": {},
   "node_budget": 64,
