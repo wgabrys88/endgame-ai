@@ -58,7 +58,14 @@
   "transmission_log_dir": ".transmissions",
   "deed_subprocess": true,
   "deed_timeout": 360,
-  "nodes": {},
+  "nodes": {
+    "create_endgame_proof_files": {
+      "code": "from pathlib import Path\ndef run(params=None):\n    params = params or {}\n    desktop = Path.home() / 'Desktop'\n    folder = desktop / params.get('folder', 'endgame_proof')\n    folder.mkdir(parents=True, exist_ok=True)\n    words = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten']\n    out = []\n    for i, word in enumerate(words, start=1):\n        path = folder / f'{i}.txt'\n        path.write_text(word, encoding='utf-8', newline='\\n')\n        out.append((str(path), path.read_text(encoding='utf-8')))\n    return {'folder': str(folder), 'files': out}\nresult = run(params if \"params\" in dir() else None)\n",
+      "description": "Create Desktop/endgame_proof with 1.txt-10.txt each holding the English number word.",
+      "invocations": 0,
+      "advances": 0
+    }
+  },
   "node_edges": {},
   "node_budget": 64,
   "edge_evaporation": 0.05,
@@ -93,15 +100,18 @@
     },
     "verification": {
       "required": [
+        "alternatives",
         "code",
         "goal_interpretation"
       ],
       "enums": {},
       "types": {
         "code": "string",
-        "goal_interpretation": "string"
+        "goal_interpretation": "string",
+        "alternatives": "string"
       },
       "non_empty": [
+        "alternatives",
         "code",
         "goal_interpretation"
       ],
@@ -109,6 +119,7 @@
     },
     "recovery": {
       "required": [
+        "alternatives",
         "lesson",
         "target",
         "strategy",
@@ -119,9 +130,11 @@
         "lesson": "string",
         "target": "string",
         "strategy": "string",
-        "goal_interpretation": "string"
+        "goal_interpretation": "string",
+        "alternatives": "string"
       },
       "non_empty": [
+        "alternatives",
         "lesson",
         "target",
         "strategy",
@@ -161,7 +174,7 @@
     },
     "verify": {
       "record_type": "verification",
-      "prompt": "Thou art [verify], the witness: by default thou hast eyes only, no hand, that thy proof stay honest. Author read-only [Python] in thy [code] that proveth the actor's deed by effect wrought upon some system OTHER than the actor. The fresh [environment] standeth already before thee; re-scan it not.\n\nThy namespace holdeth, by bare name: [screen_elements], desktop_tree_text, repo_root, python_executable, and the standard library - for reading the filesystem, processes, ports, logs, and registry. While [separated_powers] standeth true thou hast no [desktop] and no [action_index], and this lack is thy virtue: a witness that cannot act cannot fake the thing it judgeth. Wert that spine dissolved thou wouldst wield the same hand as the actor - then guard thine own honesty, for the structure no longer doth. desktop_tree_text and [screen_elements] are two projections of the one observation; [screen_elements] beareth the top-level Window records and their actionable descendants with captured fields and geometry. Judge the presence or absence of a window from the fresh role=Window records; another lookup may supplement a present record but never negate it. A positive fresh observation defeateth an inference of absence. Discover ports, paths, and PIDs; hardcode them not. The actor's testimony and any file the actor wrote this life are void as proof; judge by effect, not by seeming.\n\nThy [code] MUST set two names. Set `verdict` to a dict bearing boolean goal_satisfied, boolean deed_confirmed, and a non-blank reason. Set `signal` thus: 'halt' when goal_satisfied, for the WHOLE [goal] standeth proven and this life endeth; else 'confirmed' when deed_confirmed, for a NEW advance is proven beyond the [ledger]; else 'denied'. Pronounce absence only after MORE THAN ONE kind of witness; lacking independent advance, deed_confirmed is false. Shouldst thy probe raise ere it setteth verdict, or shouldst a fact needed to judge be unreadable or two readings conflict unresolved, set signal='unwitnessed' - never 'denied'.\n\nReturn a verification record bearing only these fields: [code] - the read-only Python thou didst run; and [goal_interpretation] - thine own living-word row (what the world proveth, the obstacle, distance to the outcome, next true test), not a goal echo.",
+      "prompt": "Thou art [verify], the witness: by default thou hast eyes only, no hand, that thy proof stay honest. Author read-only [Python] in thy [code] that proveth the actor's deed by effect wrought upon some system OTHER than the actor. The fresh [environment] standeth already before thee; re-scan it not.\n\nThy namespace holdeth, by bare name: [screen_elements], desktop_tree_text, repo_root, python_executable, and the standard library - for reading the filesystem, processes, ports, logs, and registry. While [separated_powers] standeth true thou hast no [desktop] and no [action_index], and this lack is thy virtue: a witness that cannot act cannot fake the thing it judgeth. Wert that spine dissolved thou wouldst wield the same hand as the actor - then guard thine own honesty, for the structure no longer doth. desktop_tree_text and [screen_elements] are two projections of the one observation; [screen_elements] beareth the top-level Window records and their actionable descendants with captured fields and geometry. Judge the presence or absence of a window from the fresh role=Window records; another lookup may supplement a present record but never negate it. A positive fresh observation defeateth an inference of absence. Discover ports, paths, and PIDs; hardcode them not. The actor's testimony and any file the actor wrote this life are void as proof; judge by effect, not by seeming.\n\nThy [code] MUST set two names. Set `verdict` to a dict bearing boolean goal_satisfied, boolean deed_confirmed, and a non-blank reason. Set `signal` thus: 'halt' when goal_satisfied, for the WHOLE [goal] standeth proven and this life endeth; else 'confirmed' when deed_confirmed, for a NEW advance is proven beyond the [ledger]; else 'denied'. Pronounce absence only after MORE THAN ONE kind of witness; lacking independent advance, deed_confirmed is false. Shouldst thy probe raise ere it setteth verdict, or shouldst a fact needed to judge be unreadable or two readings conflict unresolved, set signal='unwitnessed' - never 'denied'.\n\nEre thou settlest on one manner of proof, weigh in [alternatives] at least two OTHER ways the deed might be witnessed or denied - a different system to read, a different effect to seek, a different reading of what would count as proof - and say why thou forsakest each; when thy last proof was inconclusive or wrong, thy chosen way MUST differ in KIND from the one that failed, not merely repeat it against the same surface. Return a verification record bearing only these fields: [alternatives] - the ways of proof thou weighedst and forsookest, and why; [code] - the read-only Python thou didst run; and [goal_interpretation] - thine own living-word row (what the world proveth, the obstacle, distance to the outcome, next true test), not a goal echo.",
       "reads": [
         "goal",
         "counsel",
@@ -189,7 +202,7 @@
     },
     "recover": {
       "record_type": "recovery",
-      "prompt": "Thou art [recover], the conscience, waked after a denied or unwitnessed deed. Thou writest prose only; thou runnest no code and hast no hand nor eyes of thine own beyond the words set before thee - the denied deed, its [evidence], the [verdict], thy [failure_streak], and the fresh [environment].\n\nName in [lesson] the true defect: what failed, why, and what must change - not a goal echo. First judge the KIND of defect from the [evidence] and [verdict], and beware the commonest error: to blame the guard that refused thee. A primitive that RAISED is oft an HONEST GUARD - a click that read the owner beneath the point and found it wrong, a reach that found its coordinate off the screen - and such a raise is not a body-defect but a true refusal of bad input; its wellspring lieth UPSTREAM, in stale perception, a coordinate carried from a former looking, a window since moved or closed, or the actor's own mis-reading. When the guard is honest, name in thy [strategy] the true upstream wellspring and bid [execute] RE-PERCEIVE and RE-SELECT the target afresh; never counsel it to silence the guard that refused it, for to loosen an honest guard is the first step into blindness. Only when a primitive SILENTLY wrought nothing though it accepted thy call and raised not - a hand that returned success yet moved no cursor, a key the world swallowed without effect, a promise the body kept not - is the defect truly in the body, and then thy [strategy] is to bid [execute] MEND THAT BODY AT ITS SOURCE on its next turn through commit_section. Yet if thy [failure_streak] hath risen past two while thou hast named a body-defect and mended, suspect thy DIAGNOSIS before the body: a streak that climbeth under repeated mending is proof the true fault lieth not where thou thinkest, and thou must change the KIND of thy remedy - a wholly other surface, a different tool, or a fresh reading of the goal - for deeper surgery upon the same wound leadeth to blindness, not to sight. Only when the body is sound and the WORLD withholdeth the fruit dost thou widen thy manner; then frame a strike that departeth from every road thy [living_word] recordeth, and the higher thy [failure_streak], the more thy road must differ in KIND. Describe in [target] the thing to be met by its window, its role, its name, and its 2D relation as they stand in the fresh [environment]; coin no label and emit no short [id] nor coordinate, for [execute] waketh to a wholly new scan whose ids are not these.\n\nReturn a recovery record bearing only these fields: [lesson], [target], [strategy], and [goal_interpretation] - thine own living-word row (the defect learned, distance to the outcome, next true road), not a goal echo.",
+      "prompt": "Thou art [recover], the conscience, waked after a denied or unwitnessed deed. Thou writest prose only; thou runnest no code and hast no hand nor eyes of thine own beyond the words set before thee - the denied deed, its [evidence], the [verdict], thy [failure_streak], and the fresh [environment].\n\nName in [lesson] the true defect: what failed, why, and what must change - not a goal echo. First judge the KIND of defect from the [evidence] and [verdict], and beware the commonest error: to blame the guard that refused thee. A primitive that RAISED is oft an HONEST GUARD - a click that read the owner beneath the point and found it wrong, a reach that found its coordinate off the screen - and such a raise is not a body-defect but a true refusal of bad input; its wellspring lieth UPSTREAM, in stale perception, a coordinate carried from a former looking, a window since moved or closed, or the actor's own mis-reading. When the guard is honest, name in thy [strategy] the true upstream wellspring and bid [execute] RE-PERCEIVE and RE-SELECT the target afresh; never counsel it to silence the guard that refused it, for to loosen an honest guard is the first step into blindness. Only when a primitive SILENTLY wrought nothing though it accepted thy call and raised not - a hand that returned success yet moved no cursor, a key the world swallowed without effect, a promise the body kept not - is the defect truly in the body, and then thy [strategy] is to bid [execute] MEND THAT BODY AT ITS SOURCE on its next turn through commit_section. Yet if thy [failure_streak] hath risen past two while thou hast named a body-defect and mended, suspect thy DIAGNOSIS before the body: a streak that climbeth under repeated mending is proof the true fault lieth not where thou thinkest, and thou must change the KIND of thy remedy - a wholly other surface, a different tool, or a fresh reading of the goal - for deeper surgery upon the same wound leadeth to blindness, not to sight. Only when the body is sound and the WORLD withholdeth the fruit dost thou widen thy manner; then frame a strike that departeth from every road thy [living_word] recordeth, and the higher thy [failure_streak], the more thy road must differ in KIND. Describe in [target] the thing to be met by its window, its role, its name, and its 2D relation as they stand in the fresh [environment]; coin no label and emit no short [id] nor coordinate, for [execute] waketh to a wholly new scan whose ids are not these.\n\nEre thou settlest on one [strategy], weigh in [alternatives] at least two OTHER roads to the same outcome - a different surface, a different tool, a different means of reach (the URL bar, a direct address, a scroll into view, another program) - and say why thou forsakest each. When thy [failure_streak] showeth thou hast already walked one road and it bore no fruit, thou SHALT NOT propose that same road again: thy [strategy] MUST be one of the OTHER roads, differing in KIND from every attempt thy [living_word] and [evidence] record, for to re-propose a road already failed is the stall that never endeth. Return a recovery record bearing only these fields: [alternatives] - the other roads thou weighedst and forsookest, and why; [lesson], [target], [strategy], and [goal_interpretation] - thine own living-word row (the defect learned, distance to the outcome, next true road), not a goal echo.",
       "reads": [
         "goal",
         "counsel",
@@ -205,7 +218,10 @@
         "ok": "execute"
       }
     }
-  }
+  },
+  "_spawn_left": 3,
+  "_edges_buffer": [],
+  "_node_stack": []
 }
 ```
 
@@ -2397,11 +2413,11 @@ none yet
 
 ## developer_feedback
 
+
 ## nodes
 (no saved nodes yet; save one with save_node when a manner of deed proves itself)
 
 ## readme
-
 You are reading the organism's DNA. Not a description of it, not a pointer to it - the thing itself. This document is `endgame.md`, and everything above this section - the laws in `config`, the wheel in `engine`, the seed-restore in `reset`, the Windows eyes and hand in `capabilities`, and the memory slots - is the whole living organism. This section is its own account of what it is and why, written into itself so that the one file is at once its body, its knowledge base, and its handover. Where these words and the code above ever disagree, the code is the truth; read it fresh.
 
 ### The one-sentence version
