@@ -6,3 +6,6 @@
 !endgame.md
 !guidance.txt
 !endgame.py
+!executor.py
+!verifier.py
+!recover.py

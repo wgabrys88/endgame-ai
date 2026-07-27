@@ -189,12 +189,17 @@ class Faculty(Node):
         WRITES  — record-field -> blackboard-section pushed back
         EXEC    — {field, namespace_kind, output_to} when the stage runs code, else None
         ROUTES  — signal -> next faculty name (next hop; 'halt' ends the run)
+        STAGE   — the stage name this faculty answers to (defaults to the module name)
     """
+    STAGE: str = ""
     RECORD: dict = {}
     READS: tuple = ()
     WRITES: dict = {}
     EXEC: dict | None = None
     ROUTES: dict = {}
+
+    def stage_name(self):
+        return self.STAGE or self.name
 
 
 class Loader:
@@ -223,7 +228,8 @@ class Loader:
             spec.loader.exec_module(module)
             fac_cls = self._faculty_class(module)
             if fac_cls is not None:
-                self._faculties[path.stem] = fac_cls(module)
+                fac = fac_cls(module)
+                self._faculties[fac.stage_name()] = fac
             else:
                 self._tools.append(Node(module))
 
@@ -597,14 +603,59 @@ class _AwaitProxy(Exception):
 # ════════════════════════════════════════════════════════════════════════════════════
 class Stigmergy:
     """Node-to-node edges reinforce on a proven advance and evaporate each turn; nodes below
-    threshold are pruned. Credit (backprop) flows to the nodes a confirmed deed invoked."""
+    threshold are pruned. Credit (backprop) flows to the nodes a confirmed deed invoked.
+    Operates on the blackboard's nodes/node_edges registry (distills _stigmergy_confirm/
+    _stigmergy_decay_only/_prune_graph and the pending_node_credit/pending_edges credit path)."""
 
-    def __init__(self, blackboard, config):
-        raise NotImplementedError("chunk 6")
+    def __init__(self, blackboard, config=CONFIG):
+        self.bb = blackboard
+        self.cfg = config
 
-    def confirm(self, invoked_nodes, edges): raise NotImplementedError("chunk 6: reinforce + decay + credit")
-    def decay_only(self): raise NotImplementedError("chunk 6")
-    def prune(self): raise NotImplementedError("chunk 6: drop weak edges, budget nodes")
+    def _edges(self):
+        return self.bb.get("node_edges") or {}
+
+    def _nodes(self):
+        return self.bb.get("nodes") or {}
+
+    def confirm(self, invoked_nodes, edges_buffer):
+        # backprop credit: a proven advance rewards the nodes the deed invoked
+        nodes = self._nodes()
+        for name in invoked_nodes or []:
+            if name in nodes:
+                nodes[name]["advances"] = int(nodes[name].get("advances", 0)) + 1
+        # reinforce the edges walked this deed, then evaporate all
+        edges = self._edges()
+        reinforce = float(self.cfg.get("edge_reinforcement", 1.0))
+        evap = float(self.cfg.get("edge_evaporation", 0.05))
+        for k in edges:
+            edges[k] = round(edges[k] * (1.0 - evap), 4)
+        for k in edges_buffer or []:
+            edges[k] = round(edges.get(k, 0.0) + reinforce, 4)
+        self.bb.set("node_edges", edges); self.bb.set("nodes", nodes)
+        self.prune()
+
+    def decay_only(self):
+        edges = self._edges()
+        evap = float(self.cfg.get("edge_evaporation", 0.05))
+        for k in edges:
+            edges[k] = round(edges[k] * (1.0 - evap), 4)
+        self.bb.set("node_edges", edges)
+        self.prune()
+
+    def prune(self):
+        edges = self._edges()
+        for k in [k for k, w in edges.items() if w < 0.01]:
+            del edges[k]
+        nodes = self._nodes()
+        cap = int(self.cfg.get("node_budget", 0))
+        if cap and len(nodes) > cap:
+            ranked = sorted(nodes.items(),
+                            key=lambda kv: (int(kv[1].get("advances", 0)), int(kv[1].get("invocations", 0))))
+            for name, _n in ranked[:len(nodes) - cap]:
+                del nodes[name]
+                for k in [k for k in edges if k.startswith(name + "->") or k.endswith("->" + name)]:
+                    del edges[k]
+        self.bb.set("node_edges", edges); self.bb.set("nodes", nodes)
 
 
 # ════════════════════════════════════════════════════════════════════════════════════
@@ -757,31 +808,330 @@ class Wheel:
     """One turn: address the current faculty, render its packet, ask the model, apply WRITES,
     run any EXEC in a namespace built from the seated nodes, judge the signal, forward to the
     next hop. Hot-reloads a NODE when its file changes (never the firmware). Spawns budgeted
-    parallel sub-actors on demand."""
+    parallel sub-actors on demand. (distills turn(), run_exec, _make_node_tools, spawn_actor,
+    heal_if_body_changed, main.)"""
 
-    def __init__(self, root=ROOT):
-        raise NotImplementedError("chunk 7: POST via Loader; wire Blackboard, Transport, Stigmergy, Prompt")
+    def __init__(self, root=ROOT, config=CONFIG):
+        self.root = pathlib.Path(root)
+        self.cfg = config
+        self.bb = Blackboard(root)
+        self.loader = Loader(root)
+        self.transport = Transport(config, root)
+        self.stigmergy = Stigmergy(self.bb, config)
+        self.prompt = Prompt(self.bb, self.loader, config)
+        self._edges_buffer = []
+        self._node_stack = []
+        self._spawn_left = int(config.get("spawn_budget", 0))
 
+    # ---- perception: any seated tool node may refresh the environment section ----
+    def _refresh_environment(self):
+        for node in self.loader.tools():
+            fn = getattr(node.module, "environment", None)
+            if callable(fn):
+                fn(self.bb, self.cfg)
+
+    # ---- namespace: stdlib + seated tool nodes + transport tools + node tools + spawn ----
     def build_namespace(self, kind) -> dict:
-        raise NotImplementedError("chunk 7: stdlib + every seated tool node's namespace + transport tools")
+        ns = {"json": json, "os": os, "sys": sys, "pathlib": pathlib, "re": re,
+              "subprocess": subprocess, "time": time, "io": io,
+              "repo_root": str(self.root), "python_executable": sys.executable}
+        context = {"kind": kind, "blackboard": self.bb, "config": self.cfg, "separated": True}
+        for node in self.loader.tools():
+            try:
+                ns.update(node.namespace(context))
+            except Exception:
+                pass  # a tool that cannot bind this turn simply is not offered (fail-hard is the deed's, not the wiring's)
+        ns["ask_model"] = self.transport.ask_model
+        ns["web_search"] = self.transport.web_search
+        save_node, call_node, suggest_next = self._node_tools(kind)
+        ns["save_node"] = save_node
+        ns["call_node"] = call_node
+        ns["suggest_next"] = suggest_next
+        ns["spawn_actor"] = self._make_spawn(kind)
+        return ns
 
+    # ---- nodes as reusable deeds on the blackboard (distills _make_node_tools) ----
+    def _node_tools(self, kind):
+        bb = self.bb
+
+        def _edge_key(a, b):
+            return "%s->%s" % (a, b)
+
+        def save_node(name, code, description):
+            if not isinstance(name, str) or not re.match(r"^[a-z][a-z0-9_]{1,40}$", name or ""):
+                raise RuntimeError("save_node name must be a short lower_snake identifier")
+            if not isinstance(code, str) or not code.strip():
+                raise RuntimeError("save_node needeth non-empty code")
+            if not isinstance(description, str) or not description.strip():
+                raise RuntimeError("save_node needeth a non-empty description of what the node doth and its params")
+            compile(code, "<node:%s>" % name, "exec")
+            nodes = bb.get("nodes") or {}
+            prior = nodes.get(name, {})
+            nodes[name] = {"code": code, "description": description.strip(),
+                           "invocations": int(prior.get("invocations", 0)),
+                           "advances": int(prior.get("advances", 0))}
+            bb.set("nodes", nodes)
+            return {"node": name, "saved": True, "total_nodes": len(nodes)}
+
+        def call_node(name, params=None):
+            nodes = bb.get("nodes") or {}
+            node = nodes.get(name)
+            if node is None:
+                raise RuntimeError("call_node knoweth no node %r; the saved nodes are %s" % (name, sorted(nodes)))
+            node["invocations"] = int(node.get("invocations", 0)) + 1
+            bb.set("nodes", nodes)
+            src = self._node_stack[-1] if self._node_stack else "__root__"
+            self._edges_buffer.append(_edge_key(src, name))
+            self._node_stack.append(name)
+            try:
+                sub = self.build_namespace(kind)
+                sub["params"] = params if params is not None else {}
+                sub["result"] = None
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    exec(node["code"], sub)
+                return sub.get("result")
+            finally:
+                if self._node_stack:
+                    self._node_stack.pop()
+
+        def suggest_next(from_node=None):
+            edges = bb.get("node_edges") or {}
+            nodes = bb.get("nodes") or {}
+            src = from_node or (self._node_stack[-1] if self._node_stack else "__root__")
+            prefix = src + "->"
+            succ = sorted(((k[len(prefix):], w) for k, w in edges.items() if k.startswith(prefix)),
+                          key=lambda kv: -kv[1])
+            return [{"node": n, "weight": round(w, 3),
+                     "proven": "%d/%d" % (int(nodes.get(n, {}).get("advances", 0)),
+                                          int(nodes.get(n, {}).get("invocations", 0)))}
+                    for n, w in succ if n in nodes]
+
+        return save_node, call_node, suggest_next
+
+    # ---- parallel recursion (distills spawn_actor) ----
+    def _make_spawn(self, kind):
+        def spawn_actor(subgoal, hint=""):
+            if not isinstance(subgoal, str) or not subgoal.strip():
+                raise RuntimeError("spawn_actor needeth a non-empty subgoal string")
+            if self._spawn_left <= 0:
+                raise RuntimeError("spawn_actor budget is exhausted this deed")
+            self._spawn_left -= 1
+            prompt = (Prompt.PREFIX + "\n\nThou art a SPAWNED parallel [actor], wired beside thy parent to "
+                      "pursue one narrow sub-quarry and return its fruit. Author ONE Python script that "
+                      "achieveth the sub-goal and setteth result to what thou didst produce. Thy work is "
+                      "counsel to thy parent and is not itself witnessed.\n\nSUB-GOAL: " + subgoal +
+                      (("\nHINT: " + hint) if hint else "") + "\n\nThe fresh environment before thee:\n" +
+                      (self.bb.get("environment") or "(none)") + "\n\nReturn only JSON {\"code\": \"<the python>\"}.")
+            reply = self.transport.ask_model(prompt, schema={"type": "object", "additionalProperties": False,
+                                             "properties": {"code": {"type": "string"}}, "required": ["code"]})
+            code = reply["code"] if isinstance(reply, dict) else str(reply)
+            sub = self.build_namespace(kind)
+            sub["result"] = None
+            buf = io.StringIO()
+            try:
+                with contextlib.redirect_stdout(buf):
+                    exec(code, sub)
+                return {"subgoal": subgoal, "result": sub.get("result"),
+                        "output": buf.getvalue().strip() or "(no output)", "spawns_left": self._spawn_left}
+            except Exception:
+                import traceback
+                return {"subgoal": subgoal, "result": None, "error": traceback.format_exc(),
+                        "spawns_left": self._spawn_left}
+        return spawn_actor
+
+    # ---- run a faculty's code in-process; signal defaults per faculty kind ----
     def run_exec(self, code, kind) -> tuple:
-        raise NotImplementedError("chunk 7: subprocess deed or in-process; signal default per kind")
+        ns = self.build_namespace(kind)
+        buf = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf):
+                exec(code, ns)
+            sig = str(ns.get("signal") or ("ok" if kind == "actor" else "unwitnessed"))
+            out = buf.getvalue()
+            verdict = ns.get("verdict")
+            if verdict is not None:
+                self.bb.set("verdict", verdict)
+                out = json.dumps(verdict, default=str) + ("\n" + out if out else "")
+            return sig, out.strip() or "(no output)"
+        except Exception:
+            import traceback
+            return "fault", traceback.format_exc()
 
-    def spawn(self, subgoal, hint=""):
-        raise NotImplementedError("chunk 7: parallel recursion, budgeted")
+    # ---- the turn (distills turn()) ----
+    def turn(self, dry=False, inject=None):
+        if self.loader.changed():
+            sys.stderr.write("heal: a node file changed on disk; re-seating the cards\n")
+            self.loader.reload()
+            self.prompt = Prompt(self.bb, self.loader, self.cfg)
+        state = self.bb.state
+        stage_name = state.get("stage") or self.cfg["start"]
+        faculties = self.loader.faculties()
+        if stage_name not in faculties:
+            raise RuntimeError("no faculty node seated for stage %r; seated: %s" % (stage_name, sorted(faculties)))
+        faculty = faculties[stage_name]
+        self.transport.turn_no = int(state.get("turn", 0))
+        self.bb.set("failure_streak", state.get("failure_streak", 0))
+        self._refresh_environment()
 
-    def turn(self) -> tuple:
-        raise NotImplementedError("chunk 7: the whole turn; returns (next_stage, stop)")
+        prompt_text = self.prompt.render(faculty)
+        if dry:
+            print(prompt_text)
+            return None, True
+        if inject:
+            reply = pathlib.Path(inject).read_text(encoding="utf-8-sig").strip()
+        else:
+            try:
+                reply = self.transport.call(faculty.RECORD, prompt_text)
+            except _AwaitProxy as ap:
+                sys.stderr.write("[endgame-ai] A mind is needed. Request at %s; write your record to %s "
+                                 "as {\"id\": \"%s\", \"record\": {\"record_type\": \"%s\", \"data\": {...}}} and re-run.\n"
+                                 % (ap.request_name, ap.response_name, ap.rid, ap.record_type))
+                return None, True
 
-    def run(self, once=False):
-        raise NotImplementedError("chunk 7: loop until halt")
+        if not (reply or "").strip():
+            raise RuntimeError("model returned no text at stage " + stage_name)
+        envelope = json.loads(_strip_fence(reply))
+        if not isinstance(envelope, dict) or not isinstance(envelope.get("data"), dict):
+            raise RuntimeError("model reply is not a {record_type, data} envelope at stage " + stage_name)
+        if envelope.get("record_type") != faculty.RECORD["record_type"]:
+            raise RuntimeError("record_type mismatch at stage %s: expected %r, got %r"
+                               % (stage_name, faculty.RECORD["record_type"], envelope.get("record_type")))
+        data = envelope["data"]
+        self._append_developer_feedback(stage_name, data)
+
+        for field, tag in (faculty.WRITES or {}).items():
+            if field in data:
+                self.bb.set(tag, str(data[field]))
+        if "goal_interpretation" in data:
+            self._set_living_word_row(stage_name, data["goal_interpretation"])
+        if stage_name == "recover":
+            self.bb.set("action_frame", {"target": data["target"], "strategy": data["strategy"], "lesson": data["lesson"]})
+        self.bb.save()
+
+        signal = "ok"
+        ex = faculty.EXEC
+        if ex and ex["field"] in data:
+            nodes_before = {n: int(v.get("invocations", 0)) for n, v in (self.bb.get("nodes") or {}).items()}
+            if stage_name == self.cfg["start"]:
+                self._spawn_left = int(self.cfg.get("spawn_budget", 0))
+                self._edges_buffer = []
+                self._node_stack = []
+            signal, out = self.run_exec(str(data[ex["field"]]), ex.get("namespace", "actor"))
+            self.bb.set(ex["output_to"], out)
+            invoked = [n for n, v in (self.bb.get("nodes") or {}).items()
+                       if int(v.get("invocations", 0)) > nodes_before.get(n, 0)]
+            state["pending_node_credit"] = invoked
+            state["pending_edges"] = list(self._edges_buffer)
+
+        signal = self._judge(stage_name, faculty, signal)
+
+        nxt = (faculty.ROUTES or {}).get(signal)
+        if nxt is None:
+            raise RuntimeError("unmapped signal %r at stage %s; routes: %s"
+                               % (signal, stage_name, list((faculty.ROUTES or {}).keys())))
+        state["stage"] = nxt
+        state["last_signal"] = signal
+        state["turn"] = int(state.get("turn", 0)) + 1
+        self.bb.save()
+        sys.stderr.write("turn %d: stage=%s signal=%s -> %s (streak=%s)\n"
+                         % (state["turn"], stage_name, signal, nxt, state.get("failure_streak", 0)))
+        return nxt, (nxt == "halt")
+
+    # ---- verify's ledger + stigmergy bookkeeping (distills the verify branch of turn()) ----
+    def _judge(self, stage_name, faculty, signal):
+        if stage_name != "verify":
+            return signal
+        state = self.bb.state
+        if signal in ("confirmed", "halt"):
+            for n in state.get("pending_node_credit", []) or []:
+                pass  # credit applied inside stigmergy.confirm
+            self.stigmergy.confirm(state.get("pending_node_credit", []) or [],
+                                   state.get("pending_edges", []) or [])
+            self._append_ledger()
+            state["pending_node_credit"] = []
+            state["pending_edges"] = []
+            state["failure_streak"] = 0
+        elif signal in ("denied", "unwitnessed"):
+            if signal == "denied":
+                state["failure_streak"] = int(state.get("failure_streak", 0)) + 1
+            self.stigmergy.decay_only()
+            state["pending_node_credit"] = []
+            state["pending_edges"] = []
+        return signal
+
+    def _append_ledger(self):
+        verdict = self.bb.get("verdict")
+        if isinstance(verdict, str):
+            try:
+                verdict = json.loads(verdict.split("\n", 1)[0])
+            except Exception:
+                verdict = None
+        reason = ""
+        if isinstance(verdict, dict):
+            reason = str(verdict.get("reason") or "").strip().replace("\n", " ")
+        frame = self.bb.get("action_frame")
+        deed = ""
+        if isinstance(frame, dict):
+            deed = str(frame.get("target") or "").strip()
+        elif isinstance(frame, str):
+            deed = frame.strip()
+        deed = deed.replace("\n", " ")
+        fact = ("%s - witnessed: %s" % (deed, reason)) if deed and deed != "(empty)" else reason
+        if not fact:
+            return
+        ledger = self.bb.get("ledger") or []
+        if fact not in ledger:
+            ledger.append(fact)
+            self.bb.set("ledger", ledger)
+
+    def _append_developer_feedback(self, stage_name, data):
+        if not self.cfg.get("developer_feedback_schema"):
+            return
+        feedback = data.get("developer_feedback")
+        if not isinstance(feedback, str):
+            raise RuntimeError("developer_feedback must be a string at stage " + stage_name)
+        if not feedback.strip():
+            return
+        prior = self.bb.get("developer_feedback") or ""
+        entry = json.dumps({stage_name: feedback}, ensure_ascii=False, separators=(",", ":"))
+        self.bb.set("developer_feedback", prior + ("\n" if prior else "") + entry)
+
+    def _set_living_word_row(self, faculty_name, sentence):
+        rows = self.bb.get("living_word") or {"execute": "", "verify": "", "recover": ""}
+        if isinstance(rows, str):
+            rows = {"execute": "", "verify": "", "recover": ""}
+        rows[faculty_name] = str(sentence or "").strip().replace("\n", " ")
+        self.bb.set("living_word", rows)
+
+    def run(self, once=False, dry=False, inject=None):
+        while True:
+            nxt, stop = self.turn(dry=dry, inject=inject)
+            if dry or once or inject or stop:
+                break
+
+
+def _strip_fence(s):
+    text = (s or "").strip()
+    m = re.fullmatch(r"```(?:\w+)?\s*(.*?)```", text, re.S)
+    return (m.group(1) if m else text).strip()
 
 
 def main():
-    # chunk 8: the firmware entry — parse argv (--once/--reset/--dry/--inject/--mode/<node>),
-    # boot the Wheel, or exercise a single named node as a test bus.
-    raise NotImplementedError("chunk 8")
+    # Ensure faculty files that `import endgame` bind to THIS running module, so their
+    # Faculty subclasses share our Faculty identity (issubclass holds across the boundary).
+    sys.modules.setdefault("endgame", sys.modules[__name__])
+    if "endgame" in sys.modules and sys.modules["endgame"] is not sys.modules[__name__]:
+        sys.modules["endgame"] = sys.modules[__name__]
+    argv = sys.argv
+    def flag(name): return name in argv
+    def opt(name): return argv[argv.index(name) + 1] if name in argv else None
+    wheel = Wheel(ROOT, CONFIG)
+    if flag("--reset"):
+        wheel.bb.seed()
+        sys.stderr.write("factory reset: machine memory cleared; goal.md and counsel.md left untouched\n")
+        return
+    wheel.run(once=flag("--once"), dry=flag("--dry"), inject=opt("--inject"))
 
 
 if __name__ == "__main__":
