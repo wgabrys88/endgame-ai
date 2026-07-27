@@ -995,7 +995,7 @@ class Wheel:
             return "fault", traceback.format_exc()
 
     # ---- the turn (distills turn()) ----
-    def turn(self, dry=False, inject=None):
+    def turn(self, dry=False):
         if self.loader.changed():
             sys.stderr.write("heal: a node file changed on disk; re-seating the cards\n")
             self.loader.reload()
@@ -1014,16 +1014,13 @@ class Wheel:
         if dry:
             print(prompt_text)
             return None, True
-        if inject:
-            reply = pathlib.Path(inject).read_text(encoding="utf-8-sig").strip()
-        else:
-            try:
-                reply = self.transport.call(faculty.record_type(), faculty.OUTPUT, prompt_text)
-            except _AwaitProxy as ap:
-                sys.stderr.write("[endgame-ai] A mind is needed. Request at %s; write your record to %s "
-                                 "as {\"id\": \"%s\", \"record\": {\"record_type\": \"%s\", \"data\": {...}}} and re-run.\n"
-                                 % (ap.request_name, ap.response_name, ap.rid, ap.record_type))
-                return None, True
+        try:
+            reply = self.transport.call(faculty.record_type(), faculty.OUTPUT, prompt_text)
+        except _AwaitProxy as ap:
+            sys.stderr.write("[endgame-ai] A mind is needed. Request at %s; write your record to %s "
+                             "as {\"id\": \"%s\", \"record\": {\"record_type\": \"%s\", \"data\": {...}}} and re-run.\n"
+                             % (ap.request_name, ap.response_name, ap.rid, ap.record_type))
+            return None, True
 
         if not (reply or "").strip():
             raise RuntimeError("model returned no text at stage " + stage_name)
@@ -1137,10 +1134,10 @@ class Wheel:
         rows[faculty_name] = str(sentence or "").strip().replace("\n", " ")
         self.bb.set("living_word", rows)
 
-    def run(self, once=False, dry=False, inject=None):
+    def run(self, once=False, dry=False):
         while True:
-            nxt, stop = self.turn(dry=dry, inject=inject)
-            if dry or once or inject or stop:
+            nxt, stop = self.turn(dry=dry)
+            if dry or once or stop:
                 break
 
 
@@ -1166,7 +1163,6 @@ def main():
         sys.modules["endgame"] = sys.modules[__name__]
     argv = sys.argv
     def flag(name): return name in argv
-    def opt(name): return argv[argv.index(name) + 1] if name in argv else None
     wheel = Wheel(ROOT, CONFIG)
     if flag("--reset"):
         wheel.bb.seed()
@@ -1174,14 +1170,13 @@ def main():
         return
     # A bare positional argument is the goal: write it to goal.md so the human's launch line still
     # works. The goal lives in the file (read fresh each turn); the CLI is just a convenience door.
-    inject = opt("--inject")
-    positional = [a for a in argv[1:] if not a.startswith("-") and a != inject]
+    positional = [a for a in argv[1:] if not a.startswith("-")]
     if positional:
         goal_text = positional[-1].strip()
         if goal_text:
             (ROOT / "goal.md").write_text(goal_text, encoding="utf-8")
             sys.stderr.write("goal set from command line into goal.md (%d chars)\n" % len(goal_text))
-    wheel.run(once=flag("--once"), dry=flag("--dry"), inject=inject)
+    wheel.run(once=flag("--once"), dry=flag("--dry"))
 
 
 if __name__ == "__main__":
