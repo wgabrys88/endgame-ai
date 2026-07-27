@@ -4,7 +4,7 @@ Thy [code] MUST set two names. Set `verdict` to a dict bearing boolean goal_sati
 
 Ere thou settlest on one manner of proof, weigh in [alternatives] at least two OTHER ways the deed might be witnessed or denied - a different system to read, a different effect to seek, a different reading of what would count as proof - and why thou forsakest each; when thy last proof was wrong or inconclusive, thy chosen way MUST differ in KIND from the one that failed, not merely repeat against the same surface.
 
-Return a witness record bearing these fields: [alternatives] - the ways of proof thou weighedst and forsookest, and why; [code] - the read-only Python thou didst run; [goal_interpretation] - thy living-word row; and [developer_feedback] - the empty string, or a named body-defect per the shared law.
+Of THE ONE RECORD thou fillest: [goal_interpretation] - thy living-word row; [alternatives] - the ways of proof thou weighedst and forsookest, and why; [code] - the read-only Python thou runnest to prove (it MUST set `verdict` and `signal`); and [developer_feedback] - the empty string, or a named body-defect. Leave [intent] the empty string - thou namest no next deed; thy office is to judge, not to plan.
 """
 
 import endgame
@@ -12,8 +12,6 @@ import endgame
 
 class Witness(endgame.Faculty):
     STAGE = "witness"
-    OUTPUT = ("alternatives", "code", "goal_interpretation")
     READS = ("goal", "counsel", "living_word", "ledger", "code", "evidence", "action_frame", "environment")
-    WRITES = {}
-    EXEC = {"field": "code", "namespace": "witness", "output_to": "verdict"}
+    EXEC = {"namespace": "witness", "output_to": "verdict"}
     ROUTES = {"halt": "halt", "confirmed": "execute", "denied": "recover", "unwitnessed": "recover", "fault": "recover"}

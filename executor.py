@@ -8,7 +8,7 @@ Thy namespace holdeth, by bare name: the standard library, repo_root, python_exe
 
 A deed thou authorest IS a node: name and save the reusable manner of it, that a proven road be walked again and an unproven one fade. On failure change thy manner, not thy claim, per the LAW OF THE HONEST GUARD in the shared prefix: re-observe and re-select when a primitive RAISETH; mend a tool node's own file only when a primitive SILENTLY worketh nothing though rightly called. A [Windows] path in [Python] openeth an escape at every backslash - write forward slashes or a raw string.
 
-Return an execution record bearing these fields: [perceived] - what the fresh environment showeth; [alternatives] - the roads thou forsakest, and why; [intent] - the one deed thou art about to enact, stated so the [witness] may judge its fruit; [code] - the Python thou wilt enact; [goal_interpretation] - thy living-word row; and [developer_feedback] - the empty string, or a named body-defect per the shared law.
+Of THE ONE RECORD thou fillest: [goal_interpretation] - thy living-word row; [alternatives] - the roads thou forsakest, and why; [intent] - the ONE deed this [code] enacteth, stated so the [witness] may judge its fruit; [code] - the Python thou enactest THIS turn; and [developer_feedback] - the empty string, or a named body-defect per the shared law.
 """
 
 import endgame
@@ -16,8 +16,6 @@ import endgame
 
 class Executor(endgame.Faculty):
     STAGE = "execute"
-    OUTPUT = ("perceived", "alternatives", "intent", "code", "goal_interpretation")
     READS = ("goal", "counsel", "living_word", "ledger", "action_frame", "nodes", "environment")
-    WRITES = {"intent": "action_frame", "code": "code", "perceived": "perceived", "alternatives": "alternatives"}
-    EXEC = {"field": "code", "namespace": "actor", "output_to": "evidence"}
+    EXEC = {"namespace": "actor", "output_to": "evidence"}
     ROUTES = {"ok": "witness", "fault": "recover"}

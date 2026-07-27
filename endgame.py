@@ -19,7 +19,7 @@ THE SWITCH / OSI VIEW  (skeleton contract every node fills)
   The kernel is a dumb layer-3 switch and each node is a packet:
       HEADER   name        — how the switch addresses it
                READS       — source sections it pulls off the blackboard   (src addr)
-               WRITES      — sections it pushes back onto the blackboard    (dst addr)
+               EXEC/ROUTES — whether it runs its code, and where each signal goes next
                ROUTES      — signal -> next node                            (next hop)
       PAYLOAD  __doc__      — injected into the prompt   (what this packet MEANS)
                callables    — injected into the namespace (what this packet DOES)
@@ -93,7 +93,7 @@ class Blackboard:
     SEED = {
         "state": {"stage": None, "last_signal": None, "turn": 0, "failure_streak": 0},
         "living_word": {"execute": "", "witness": "", "recover": ""},
-        "ledger": [], "action_frame": None, "perceived": "", "alternatives": "",
+        "ledger": [], "action_frame": None,
         "code": "", "evidence": "", "verdict": None,
         "nodes": {}, "node_edges": {},
     }
@@ -187,26 +187,26 @@ class Node:
 class Faculty(Node):
     """A node that IS a stage of the wheel — a packet with routing headers. Subclasses (in
     executor.py / witness.py / recover.py) set the header; __doc__ is the prompt payload.
-        OUTPUT  — the ordered field names this faculty must return (the WHOLE contract; every
-                  field is a required, non-empty string, and the record forbids any other field)
-        READS   — blackboard sections pulled in as source
-        WRITES  — record-field -> blackboard-section pushed back
-        EXEC    — {field, namespace_kind, output_to} when the stage runs code, else None
+
+    THE ONE UNIVERSAL RECORD (Faculty.RECORD): every faculty, and every saved deed-node, returns
+    the SAME five fields - goal_interpretation, alternatives, intent, code, developer_feedback - so
+    one schema serves the whole system, may be cached in the system prompt, and lets each node know
+    exactly what every other expects. A faculty fills the fields its office needeth and leaves the
+    rest empty; the docstring saith which. So the header carrieth only what DIFFERETH between offices:
+        READS   — blackboard sections this office pulls in as source
+        EXEC    — {namespace, output_to} when the office RUNS its [code], else None
         ROUTES  — signal -> next faculty name (next hop; 'halt' ends the run)
-        STAGE   — the stage name this faculty answers to (defaults to the module name)
+        STAGE   — the stage name this office answers to (defaults to the module name)
     """
+    RECORD = ("goal_interpretation", "alternatives", "intent", "code")  # + developer_feedback, appended
     STAGE: str = ""
-    OUTPUT: tuple = ()
     READS: tuple = ()
-    WRITES: dict = {}
     EXEC: dict | None = None
     ROUTES: dict = {}
 
     def stage_name(self):
         return self.STAGE or self.name
 
-    def record_type(self):
-        return self.stage_name() + "_record"
 
 
 class Loader:
@@ -265,7 +265,7 @@ class Loader:
 # ════════════════════════════════════════════════════════════════════════════════════
 class Transport:
     """Speaks to the model over responses(x.ai)/chat_completions/acp/file_proxy; builds a
-    strict json_schema response_format from a faculty's OUTPUT fields; tees every exchange to
+    strict json_schema response_format from the one universal record; tees every exchange to
     .transmissions AND to the screen in full (no truncation — the record is the proof)."""
 
     def __init__(self, config, root=ROOT):
@@ -275,46 +275,43 @@ class Transport:
         self._run_stamp = None
         self.turn_no = 0  # set by the Wheel each turn so dumps are addressable
 
-    # ---- strict response_format from a faculty's (record_type, output fields) ----
-    #      One shape, derived: every field is a required, non-empty string; developer_feedback
-    #      is appended as one more required string; no other field is permitted. No per-field
-    #      types/enums machinery - no faculty ever needed it, and the liar-paradox spine is served
-    #      by the fields alone.
-    def response_format(self, record_type, fields) -> dict:
+    # ---- the ONE strict schema, universal to every faculty and every saved deed-node ----
+    #      Five fields, all required strings; only developer_feedback may be empty. Because it is
+    #      the same every turn, it lives in the cached system prompt and needs no record_type wrapper
+    #      - the kernel knoweth which office it asked.
+    def response_format(self, fields):
         names = list(fields) + ["developer_feedback"]
         props = {name: {"type": "string"} for name in names}
-        props["developer_feedback"] = {"type": "string"}  # counsel may be empty; the rest may not
         for name in fields:
             props[name]["minLength"] = 1
         return {
-            "name": record_type,
+            "name": "record",
             "strict": True,
             "schema": {
                 "type": "object", "additionalProperties": False,
-                "properties": {
-                    "record_type": {"enum": [record_type]},
-                    "data": {
-                        "type": "object", "additionalProperties": False,
-                        "properties": props, "required": names,
-                    },
-                },
-                "required": ["record_type", "data"],
+                "properties": props, "required": names,
             },
         }
 
-    # ---- shared request builder  (the phase-4 dedup, carried over) ----
-    def _build_request(self, api, prompt_text, fmt):
+    # ---- shared request builder: STABLE system + VOLATILE user (KV-cache friendly) ----
+    def _build_request(self, api, system_text, user_text, fmt):
         transport = self.model[api]
         url, body = transport["url"], dict(transport["request"])
         headers = {"Content-Type": "application/json"}
         if api == "responses":
             body.pop("previous_response_id", None)
             body["store"] = False
-            body["input"] = prompt_text
+            if system_text:
+                body["instructions"] = system_text   # the cached, stage-independent law + schema + roles
+            body["input"] = user_text                # the volatile "I am [stage]" + fresh board
             body["text"] = {"format": {"type": "json_schema", **fmt}}
             headers["Authorization"] = "Bearer " + os.environ["XAI_API_KEY"]
         elif api == "chat_completions":
-            body["messages"] = [{"role": "user", "content": prompt_text}]
+            msgs = []
+            if system_text:
+                msgs.append({"role": "system", "content": system_text})
+            msgs.append({"role": "user", "content": user_text})
+            body["messages"] = msgs
             body["response_format"] = {"type": "json_schema", "json_schema": fmt}
         else:
             raise RuntimeError("unknown model api: " + str(api))
@@ -344,23 +341,23 @@ class Transport:
                          and item.get("type") != "reasoning"
                          for text in self._texts_from_parts(item.get("content")))
 
-    # ---- the faculty request  (distills call_llm) ----
-    def call(self, record_type, fields, prompt_text, api=None) -> str:
+    # ---- the faculty request: system (cached law+schema+roles) + user (fresh board) ----
+    def call(self, system_text, user_text, fields, api=None) -> str:
         api = api or self.model.get("api", "responses")
-        fmt = self.response_format(record_type, fields)
+        fmt = self.response_format(fields)
         if api == "acp":
             content, err = None, None
             try:
-                content = self._call_acp(prompt_text, fmt)
+                content = self._call_acp(system_text + "\n\n" + user_text, fmt)
                 return content
             except Exception as e:
                 err = repr(e); raise
             finally:
-                self._dump(api, record_type, {"command": self.model.get("acp", {}).get("command"),
-                                              "prompt": prompt_text}, None, content, err)
+                self._dump(api, "record", {"command": self.model.get("acp", {}).get("command"),
+                                           "system": system_text, "user": user_text}, None, content, err)
         if api == "file_proxy":
-            return self._file_proxy(record_type, fmt, prompt_text)
-        url, body, headers = self._build_request(api, prompt_text, fmt)
+            return self._file_proxy(fmt, system_text, user_text)
+        url, body, headers = self._build_request(api, system_text, user_text, fmt)
         raw, content, err = None, None, None
         try:
             raw = self._http(url, body, headers)
@@ -369,7 +366,7 @@ class Transport:
         except Exception as e:
             err = repr(e); raise
         finally:
-            self._dump(api, record_type, {"url": url, "headers": headers, "body": body}, raw, content, err)
+            self._dump(api, "record", {"url": url, "headers": headers, "body": body}, raw, content, err)
 
     # ---- reasoning tool  (distills ask_model) ----
     def ask_model(self, prompt, schema=None):
@@ -387,7 +384,7 @@ class Transport:
             if api == "acp":
                 content = self._call_acp(prompt, fmt)
             else:
-                url, body, headers = self._build_request(api, prompt, fmt)
+                url, body, headers = self._build_request(api, "", prompt, fmt)
                 raw = self._http(url, body, headers)
                 content = self._extract(json.loads(raw))
             parsed = json.loads(content)
@@ -518,7 +515,7 @@ class Transport:
                 proc.kill(); proc.wait(timeout=5)
 
     # ---- human-in-the-loop transport  (distills file_proxy) ----
-    def _file_proxy(self, record_type, fmt, prompt_text):
+    def _file_proxy(self, fmt, system_text, user_text):
         fp = self.model.get("file_proxy", {})
         request = (self.root / fp.get("request_path", "runtime_request.json")).resolve()
         response = (self.root / fp.get("response_path", "runtime_response.json")).resolve()
@@ -528,9 +525,9 @@ class Transport:
             else:
                 rid = "egai-%s-%s" % (os.getpid(), time.time_ns())
                 self._atomic_json(request, {
-                    "schema": "endgame-ai.file-proxy.request.v3", "record_type": record_type,
-                    "response_format": fmt, "prompt": prompt_text, "id": rid, "created_at": time.time()})
-            raise _AwaitProxy(request.name, response.name, rid, record_type)
+                    "schema": "endgame-ai.file-proxy.request.v4", "response_format": fmt,
+                    "system": system_text, "user": user_text, "id": rid, "created_at": time.time()})
+            raise _AwaitProxy(request.name, response.name, rid)
         pending = json.loads(request.read_text(encoding="utf-8"))
         obj = json.loads(response.read_text(encoding="utf-8"))
         if obj.get("id") != pending.get("id"):
@@ -586,9 +583,9 @@ class Transport:
 class _AwaitProxy(Exception):
     """Raised by the file_proxy transport when a human record is awaited; the Wheel catches it,
     prints the instruction, and stops this turn cleanly (distills the legacy stderr prompt)."""
-    def __init__(self, request_name, response_name, rid, record_type):
+    def __init__(self, request_name, response_name, rid):
         self.request_name, self.response_name = request_name, response_name
-        self.rid, self.record_type = rid, record_type
+        self.rid = rid
         super().__init__("awaiting human record %s" % rid)
 
 
@@ -733,9 +730,31 @@ class Prompt:
             return value
         return json.dumps(value, ensure_ascii=False, indent=2)
 
-    def render(self, faculty) -> str:
+    _SCHEMA_LAW = (
+        "THE ONE RECORD: whatsoever office thou art this turn, return a JSON object of exactly these "
+        "keys, each a string: [goal_interpretation] - thy living-word row (the world learned, the "
+        "obstacle, the distance, the next true deed); [alternatives] - the roads or proofs thou "
+        "weighedst and forsookest, and why; [intent] - the ONE deed to be enacted next, named for the "
+        "next reader (empty when thou thyself enactest it now as [code]); [code] - the Python thou "
+        "runnest THIS turn (empty when thine office runneth none); [developer_feedback] - the empty "
+        "string, or a named body-defect per the shared law. Fill the fields thine office useth and "
+        "leave the rest the empty string; thy role below saith which."
+    )
+
+    def render_system(self):
+        # STABLE across turns and offices -> cacheable: the shared law, the one schema, EVERY office's
+        # role (so each knoweth what the others expect), and the seated tools. It nameth no single stage.
+        roles = "\n\n".join("## the office of [%s]\n%s" % (f.stage_name(), f.doc)
+                            for _, f in sorted(self.loader.faculties().items()))
+        parts = [self.PREFIX, self._SCHEMA_LAW,
+                 "## THE OFFICES OF THE WHEEL (thou art assigned one below; know them all)\n" + roles,
+                 self._tool_manifest()]
+        return "\n\n".join(p for p in parts if p)
+
+    def render_user(self, faculty):
+        # VOLATILE: who thou art THIS turn, and the fresh board areas thine office readeth.
         limit = int(self.cfg.get("max_area_chars", 0))
-        parts = [self.PREFIX, faculty.doc, self._tool_manifest()]
+        parts = ["I am [%s] in the endgame-ai wheel this turn. Act in that office alone." % faculty.stage_name()]
         for tag in faculty.READS:
             if tag == "environment":
                 continue
@@ -1010,47 +1029,46 @@ class Wheel:
         self.bb.set("failure_streak", state.get("failure_streak", 0))
         self._refresh_environment()
 
-        prompt_text = self.prompt.render(faculty)
+        system_text = self.prompt.render_system()
+        user_text = self.prompt.render_user(faculty)
         if dry:
-            print(prompt_text)
+            print(system_text + "\n\n===== USER =====\n\n" + user_text)
             return None, True
         try:
-            reply = self.transport.call(faculty.record_type(), faculty.OUTPUT, prompt_text)
+            reply = self.transport.call(system_text, user_text, faculty.RECORD)
         except _AwaitProxy as ap:
             sys.stderr.write("[endgame-ai] A mind is needed. Request at %s; write your record to %s "
-                             "as {\"id\": \"%s\", \"record\": {\"record_type\": \"%s\", \"data\": {...}}} and re-run.\n"
-                             % (ap.request_name, ap.response_name, ap.rid, ap.record_type))
+                             "as {\"id\": \"%s\", \"record\": {...the five fields...}} and re-run.\n"
+                             % (ap.request_name, ap.response_name, ap.rid))
             return None, True
 
         if not (reply or "").strip():
             raise RuntimeError("model returned no text at stage " + stage_name)
-        envelope = json.loads(_strip_fence(reply))
-        if not isinstance(envelope, dict) or not isinstance(envelope.get("data"), dict):
-            raise RuntimeError("model reply is not a {record_type, data} envelope at stage " + stage_name)
-        if envelope.get("record_type") != faculty.record_type():
-            raise RuntimeError("record_type mismatch at stage %s: expected %r, got %r"
-                               % (stage_name, faculty.record_type(), envelope.get("record_type")))
-        data = envelope["data"]
+        data = json.loads(_strip_fence(reply))
+        if not isinstance(data, dict):
+            raise RuntimeError("model reply is not a JSON object at stage " + stage_name)
         self._append_developer_feedback(stage_name, data)
 
-        for field, tag in (faculty.WRITES or {}).items():
-            if field in data:
-                self.bb.set(tag, str(data[field]))
-        if "goal_interpretation" in data:
+        # THE UNIVERSAL WRITES - same for every office, so the kernel needeth no per-faculty WRITES map:
+        # the plan-row is the living word; the code authored is laid bare for the witness to judge; the
+        # named next deed is the action_frame the next actor readeth.
+        if data.get("goal_interpretation"):
             self._set_living_word_row(stage_name, data["goal_interpretation"])
-        if stage_name == "recover":
-            self.bb.set("action_frame", {"target": data["target"], "strategy": data["strategy"], "lesson": data["lesson"]})
+        if data.get("code"):
+            self.bb.set("code", data["code"])
+        if data.get("intent"):
+            self.bb.set("action_frame", data["intent"])
         self.bb.save()
 
         signal = "ok"
         ex = faculty.EXEC
-        if ex and ex["field"] in data:
+        if ex and data.get("code"):
             nodes_before = {n: int(v.get("invocations", 0)) for n, v in (self.bb.get("nodes") or {}).items()}
             if stage_name == self.cfg["start"]:
                 self._spawn_left = int(self.cfg.get("spawn_budget", 0))
                 self._edges_buffer = []
                 self._node_stack = []
-            signal, out = self.run_exec(str(data[ex["field"]]), ex.get("namespace", "actor"))
+            signal, out = self.run_exec(str(data["code"]), ex.get("namespace", "actor"))
             self.bb.set(ex["output_to"], out)
             invoked = [n for n, v in (self.bb.get("nodes") or {}).items()
                        if int(v.get("invocations", 0)) > nodes_before.get(n, 0)]
