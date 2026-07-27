@@ -64,6 +64,7 @@ CONFIG = {
         "file_proxy": {"request_path": "runtime_request.json", "response_path": "runtime_response.json"},
     },
     "max_environment_chars": 20000,
+    "max_section_chars": 24000,
     "observation": {"step_px": 64, "max_subtree_nodes_per_point": 120,
                     "depth_ceiling": 45, "min_window_area": 2500},
     "transmission_log_dir": ".transmissions",
@@ -83,6 +84,15 @@ CONFIG = {
 #  SPLIT PERSISTENCE: machine state lives in blackboard.json; the two human-edited
 #  surfaces live as plain files the human edits live between turns — goal.md and counsel.md.
 # ════════════════════════════════════════════════════════════════════════════════════
+class SectionOverflow(Exception):
+    """A deed's output would blow a blackboard section past its budget. The kernel refuses the
+    write (no silent truncation, no stored flood) and faults the deed to recover, which bids
+    execute NARROW THE LOOKING - read the one section, print the one field - not dump the world."""
+    def __init__(self, section, size, cap):
+        self.section, self.size, self.cap = section, size, cap
+        super().__init__("section %r overflowed budget: %d chars > %d cap" % (section, size, cap))
+
+
 class Blackboard:
     """Memory across turns. Machine sections persist to blackboard.json (atomic tmp+rename).
     goal.md and counsel.md are read FRESH each turn so a human may steer mid-run."""
@@ -114,9 +124,22 @@ class Blackboard:
             return (self.root / self.HUMAN_FILES[section]).read_text(encoding="utf-8")
         return self._m.get(section)
 
-    def set(self, section, value):
+    # Sections the kernel budgets as testimony: a deed's output that could flood. environment is
+    # perception (structurally budgeted at render, overwritten each turn - it cannot accumulate) and
+    # is exempt; state/nodes/node_edges/living_word/ledger are small kernel-managed structure.
+    BUDGETED = {"evidence", "verdict", "code", "perceived", "alternatives", "action_frame"}
+
+    def set(self, section, value, cap=0):
         if section in self.HUMAN_FILES:
             raise RuntimeError("%s is human-edited; the organism writes it not" % section)
+        if cap and section in self.BUDGETED:
+            size = len(value if isinstance(value, str) else json.dumps(value, ensure_ascii=False))
+            if size > cap:
+                # THE BLACKBOARD IS A HONEST GUARD. Do not silently truncate (that lie the no-
+                # truncation law forbids) and do not store the flood (destruction). Refuse the write,
+                # leave a short honest notice in its place, and let the deed fault so recover may bid
+                # execute NARROW THE LOOKING, not the thing.
+                raise SectionOverflow(section, size, cap)
         self._m[section] = value
 
     @property
@@ -1070,7 +1093,18 @@ class Wheel:
                 self._edges_buffer = []
                 self._node_stack = []
             signal, out = self.run_exec(str(data[ex["field"]]), ex.get("namespace", "actor"))
-            self.bb.set(ex["output_to"], out)
+            cap = int(self.cfg.get("max_section_chars", 0))
+            try:
+                self.bb.set(ex["output_to"], out, cap=cap)
+            except SectionOverflow as of:
+                # honest guard: refuse the flood, leave a short truthful notice, fault to recover
+                notice = ("(%s overflowed the blackboard budget: %d chars produced, cap %d. The deed "
+                          "dumped too much at once - it must NARROW THE LOOKING: read the one section, "
+                          "grep the one marker, print the one field, or save a node that returns only "
+                          "what is needed. The flood was NOT stored.)" % (of.section, of.size, of.cap))
+                self.bb.set(of.section, notice)
+                signal = "fault"
+                sys.stderr.write("overflow: %s\n" % notice)
             invoked = [n for n, v in (self.bb.get("nodes") or {}).items()
                        if int(v.get("invocations", 0)) > nodes_before.get(n, 0)]
             state["pending_node_credit"] = invoked
