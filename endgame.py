@@ -35,7 +35,7 @@ SOURCE OF TRUTH FOR THE REWRITE
   class names the legacy region it descends from so the chunk-by-chunk fill stays honest.
 """
 
-import json, os, re, sys, io, subprocess, urllib.request, contextlib, pathlib, queue, threading, time, importlib, inspect, types
+import json, os, re, sys, io, subprocess, urllib.request, contextlib, pathlib, queue, threading, time, importlib, importlib.util, inspect, types
 
 ROOT = pathlib.Path(__file__).resolve().parent
 KERNEL = pathlib.Path(__file__).name
@@ -1118,6 +1118,14 @@ def _strip_fence(s):
 
 
 def main():
+    # The world's text is UTF-8 (screen scans carry any codepoint); the Windows console is not.
+    # Force stdout/stderr to UTF-8 so the tee and --dry never die on a character (\u200e etc).
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
     # Ensure faculty files that `import endgame` bind to THIS running module, so their
     # Faculty subclasses share our Faculty identity (issubclass holds across the boundary).
     sys.modules.setdefault("endgame", sys.modules[__name__])
