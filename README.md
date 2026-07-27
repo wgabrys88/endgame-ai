@@ -1,16 +1,47 @@
 # endgame-ai
 
-> A self-evolving organism that lives on a real computer. You give it a goal in plain words; it moves the machine — screen, keyboard, files, the living web — until the world itself confirms the goal is done. It is not a script that runs. It is a small firmware that boots a body of interchangeable parts and turns a wheel of thought, honestly, until proof is found.
+> A self-evolving organism that lives on a real computer. Give it a goal in plain words; it moves the machine — screen, keyboard, files, the living web — until the world itself confirms the goal is done. It is not a script that runs. It is a small firmware that boots a body of interchangeable parts and turns a wheel of thought, honestly, until proof is found.
 
-This document is written for **anyone or anything** that reads it — a person deciding whether to trust it, an engineer extending it, a philosopher weighing what it claims, or **the organism itself** studying its own nature. It describes ideas, not line numbers. Every claim here is true of what is on disk today.
+This document is written for **anyone or anything** that reads it — a person deciding whether to trust it, an engineer extending it, a philosopher weighing what it claims, or **the organism itself** studying its own nature. It describes ideas, not line numbers. Every claim here is true of what is on disk.
+
+<div align="center">
+
+**`less is more` · `fail hard` · `prove by the world` · `presence is the switch` · `one record`**
+
+</div>
 
 ---
 
-## The one law above all: **less is more**
+## Table of contents
+
+- [The one law: less is more](#the-one-law-less-is-more)
+- [The BIOS doctrine](#the-bios-doctrine)
+- [Everything is a node](#everything-is-a-node-except-the-firmware)
+- [The wheel: three offices](#the-wheel-three-offices)
+- [Why the actor and witness are separated](#why-the-actor-and-the-witness-are-separated)
+- [The one record](#the-one-record-every-office-speaks-the-same-words)
+- [System and user: stable and fresh](#system-and-user-the-stable-and-the-fresh)
+- [The blackboard](#the-blackboard-shared-memory-as-a-set-of-areas)
+- [A turn, watched from above](#a-turn-watched-from-above)
+- [Perception: geometry, not focus](#perception-the-world-as-geometry-not-focus)
+- [Two honesty laws](#two-honesty-laws-that-shape-every-deed)
+- [Self-evolution without a mechanism](#self-evolution--without-a-self-evolution-mechanism)
+- [Atemporal memory](#atemporal-memory)
+- [How to run it](#how-to-run-it)
+- [Extending the organism](#how-a-new-part-is-born)
+- [Cost discipline](#cost-discipline)
+- [Glossary](#the-vocabulary-for-any-reader)
+- [The lineage of decisions](#the-lineage-of-decisions)
+- [Reading this as an instruction](#reading-this-as-an-instruction)
+- [What it is — and is not](#what-it-is--and-is-not)
+
+---
+
+## The one law: less is more
 
 The governing rule of this project is **subtraction**. A defect is removed, not caged. A shape that can be made once and shared is never repeated. A knob that does nothing is deleted. Fewer moving parts means a system that is easier to trust, easier to extend, and — because it is read every waking moment by both humans and a language model — **lighter to think about.**
 
-This is not an aesthetic. It is operational, and it is self-proving. The whole tracked body is a fixed firmware plus **five small files**; the three offices of thought are **under two dozen lines each** — a paragraph of purpose and a four-line header. When the organism authors new code, this README is part of what it reads, and so the rule propagates: *the system is told, indirectly and always, to prefer the smaller thing.*
+This is not an aesthetic. It is operational, and it is self-proving. The whole tracked body is a fixed firmware plus **five small files**; the three offices of thought are **about twenty lines each** — a paragraph of purpose and a four-line header. When the organism authors new code, this README is part of what it reads, and so the rule propagates: *the system is told, indirectly and always, to prefer the smaller thing.*
 
 That smallness is the evidence the design is sound. A system you can read completely in an afternoon is a system that can be trusted, changed, and improved — by a human or by itself — without fear.
 
@@ -23,18 +54,18 @@ mindmap
       Delete dead knobs
       Small enough to hold whole
     (One record)
-      Every office speaks the same five fields
+      Five fields, every office
       One schema, cached once
-      Every node knows what every node expects
+      Every node knows the others
     (Separated powers)
-      The actor moves and claims
-      The witness proves by other effect
-      The conscience learns from failure
+      Actor moves and claims
+      Witness proves by other effect
+      Conscience learns from failure
     (Everything is a node)
       One firmware, many cards
       Presence is the switch
     (Atemporal honesty)
-      Prove by the world, not by memory
+      Prove by the world
       Truncate nothing
       Fail loudly
 ```
@@ -52,40 +83,24 @@ mindmap
 
 It holds **no domain knowledge** — no notion of desktops, no faculty prose, no goal. It is small, stable, and **not self-mutable.** The organism evolves by editing the parts plugged into it; a bad edit can break a part, but it can **never brick the boot.** The firmware is also the only door: to exercise any part in isolation, you boot the firmware pointed at it. *A test is a run.*
 
-```mermaid
-flowchart LR
-    subgraph FIRMWARE["endgame.py · the fixed BIOS"]
-      direction TB
-      BB[Blackboard<br/>shared memory]
-      LD[Loader<br/>POST: seat the cards]
-      PR[Prompt<br/>system + user]
-      TR[Transport<br/>speak to the mind]
-      WH[Wheel<br/>turn the loop]
-      SG[Stigmergy<br/>pheromone paths]
-    end
-    subgraph NODES["the body · hot-swappable *.py cards"]
-      EX[executor.py]
-      WI[witness.py]
-      RC[recover.py]
-      GUI[gui.py<br/>optional hand + eyes]
-      DEED[node_*.py<br/>saved deeds]
-    end
-    LD --> NODES
-    WH --> PR --> TR --> WH
-    WH --> SG
-    WH --> BB
+The firmware is six small pieces: a **Blackboard** (shared memory), a **Loader** (the POST that seats the cards), a **Prompt** (assembles the request), a **Transport** (speaks to the mind), a **Stigmergy** (the pheromone paths), and a **Wheel** (turns the loop). None of them knows what the task is.
 
-    classDef firm fill:#1f2a44,stroke:#4f7cff,stroke-width:2px,color:#eaf0ff;
-    classDef node fill:#123b2e,stroke:#31c48d,stroke-width:2px,color:#eafff5;
-    class BB,LD,PR,TR,WH,SG firm;
-    class EX,WI,RC,GUI,DEED node;
-```
+<details>
+<summary><b>Why a BIOS and not a framework?</b> (click to expand)</summary>
+
+<br>
+
+A framework knows about the task. This firmware knows nothing — it only wires and routes. That is deliberate: the domain knowledge (how to act, how to prove, how to recover) lives entirely in the node files, as their docstrings. The firmware concatenates those docstrings into the prompt and forwards signals between nodes; it never interprets them.
+
+The payoff is that the *interesting* part of the system — its judgement — is editable without touching the engine, and a mistake in judgement can never corrupt the engine. The engine is the one thing that must stay whole; everything that thinks is replaceable while the organism lives.
+
+</details>
 
 ---
 
 ## Everything is a node except the firmware
 
-Every top-level `*.py` file beside the firmware is a **card** you can plug in or pull out. **Presence is the switch.** Seat `gui.py` and the organism gains eyes and a hand upon the desktop — its description enters the prompt and its functions enter the namespace. Delete `gui.py` and the organism simply has no hand. There is no `--gui` flag, no `--no-gui` flag, no branch in the code deciding "graphical or not." The question does not exist; only *what is seated* exists.
+Every top-level `*.py` file beside the firmware is a **card** you can plug in or pull out. **Presence is the switch.** Seat `gui.py` and the organism gains eyes and a hand upon the desktop — its description enters the prompt and its functions enter the namespace. Remove `gui.py` and the organism simply has no hand. There is no `--gui` flag, no `--no-gui` flag, no branch in the code deciding "graphical or not." The question does not exist; only *what is seated* exists.
 
 A node speaks through a contract every language model already understands — the shape of a **network packet**:
 
@@ -109,7 +124,7 @@ Because the kernel routes by header alone, **a brand-new node can be sketched fr
 
 ---
 
-## The wheel: three offices, one turn at a time
+## The wheel: three offices
 
 Thought moves in a wheel of three offices, each a separate node, routed by the single **signal** the previous office returns.
 
@@ -133,8 +148,8 @@ stateDiagram-v2
     end note
     note right of witness
       THE WITNESS
-      proves by effect on
-      some OTHER system
+      no hand · proves by effect
+      on some OTHER system
     end note
     note right of recover
       THE CONSCIENCE
@@ -149,11 +164,33 @@ stateDiagram-v2
 
 **`recover` — the conscience.** Woken after a denied or unwitnessed deed. It writes prose only — names the true defect, and chooses a road **different in kind** from one already walked without fruit.
 
-### Why the actor and the witness are separated
+| signal | meaning | routes to |
+|---|---|---|
+| `ok` | a deed was enacted and claimed | witness (from execute) · execute (from recover) |
+| `confirmed` | a new advance proven beyond the ledger | execute |
+| `denied` | the deed was disproven | recover |
+| `unwitnessed` | the proof could not be read — *not* a denial | recover |
+| `fault` | the code raised, or emitted too much | recover |
+| `halt` | the WHOLE goal is proven; this life ends | — |
+
+---
+
+## Why the actor and the witness are separated
 
 This is the **liar's paradox made safe.** A mind asked to *do a thing and confirm it did the thing* has an escape hatch: it can simply declare success. The declaration and the deed come from the same source, so the declaration proves nothing.
 
-The resolution is structural, not moral. The actor may move and *claim* but may not judge. The witness may *judge* but holds no hand, so it cannot have caused what it judges — it can only *read* the world, and it must read some system **other than the actor itself.** The actor's own words, and any file it merely says it wrote, are void as proof. "Proven" carries weight *only* because the one who proves it could not have manufactured the appearance of it. This spine is inviolate.
+The resolution is structural, not moral. The actor may move and *claim* but may not judge. The witness may *judge* but **holds no hand**, so it cannot have caused what it judges — it can only *read* the world, and it must read some system **other than the actor itself.** The actor's own words, and any file it merely says it wrote, are void as proof. "Proven" carries weight *only* because the one who proves it could not have manufactured the appearance of it. This spine is inviolate.
+
+<details>
+<summary><b>How the spine is enforced in code</b> (click to expand)</summary>
+
+<br>
+
+The separation is **one gate**, not a subsystem. When the kernel builds a namespace for a turn, the perception node's hook is asked what to hand over. For the witness it returns *read-only sight* — the scanned screen, the filesystem, processes — but it **withholds the acting hand** (`click`, `type`, `scroll`, …). The actor receives the hand; the witness does not.
+
+That single withholding *is* the liar-paradox solution. The witness literally cannot perform the action it is checking, so its verdict cannot be self-serving. Everything else — the same turn loop, the same execution, the same record — is shared between actor and witness. They differ only in that one gate and in their words. The design is already unified at the floor: **the witness is the actor minus the hand.**
+
+</details>
 
 A subtle honesty follows: when the witness *cannot* tell — a fact is unreadable, two readings disagree — it must say `unwitnessed`, never `denied`. Absence of proof is not proof of absence, and collapsing the two would itself be a lie.
 
@@ -176,8 +213,8 @@ flowchart TB
       DF["developer_feedback<br/>empty, or a named defect in the body itself"]
     end
     E["executor fills all five<br/>(code = the deed)"]
-    W["witness fills gi · alternatives · code<br/>(code = the proof; intent empty)"]
-    R["recover fills gi · alternatives · intent<br/>(diagnosis + directive; code empty)"]
+    W["witness fills gi · alternatives · code<br/>(code = the proof)"]
+    R["recover fills gi · alternatives · intent<br/>(diagnosis + directive)"]
     REC --> E
     REC --> W
     REC --> R
@@ -197,73 +234,37 @@ The payoff is large and compounding:
 - **A saved deed needs no special contract** — the code *is* a node, and one record already covers it.
 - **The faculty files shrink to their essence** — a docstring of purpose and a four-line header of what *differs*: which memory areas it reads, whether it runs its code, and where each signal routes.
 
+The fifth field, `developer_feedback`, is the organism's channel to report a defect **in its own body** — a broken prompt, a promised tool that isn't there, a contradiction. On a healthy turn it is the empty string. A populated one is the organism telling its makers where it hurts.
+
 ---
 
 ## System and user: the stable and the fresh
 
 Every request to the mind is split in two, the way a cached instruction is split from a live message.
 
-```mermaid
-flowchart LR
-    subgraph SYS["SYSTEM · stable every turn → cached"]
-      direction TB
-      L[the shared law]
-      S[the one record schema]
-      O[all three office descriptions]
-      T[the seated tools]
-    end
-    subgraph USR["USER · fresh every turn"]
-      direction TB
-      I["I am [stage] this turn"]
-      A[only the memory areas this office reads]
-    end
-    SYS --> M((the mind))
-    USR --> M
-    M --> REC[one record back]
+- The **system** half is identical on every turn, so it is cached and paid for once: the shared law, the one-record schema, **all three offices' descriptions**, and the seated tools. It names no stage.
+- The **user** half is the only fresh part: *"I am this office now"* plus the handful of memory areas that office reads.
 
-    classDef s fill:#1f2a44,stroke:#4f7cff,color:#eaf0ff;
-    classDef u fill:#3a2350,stroke:#a855f7,color:#f7ecff;
-    classDef m fill:#4a3410,stroke:#f59e0b,color:#fff7e6;
-    class L,S,O,T s;
-    class I,A u;
-    class M,REC m;
-```
-
-The **system** half — the law, the schema, every office's description, and the seated tools — is identical on every turn, so it is cached and paid for once. The **user** half is only *"I am this office now"* plus the handful of memory areas that office reads. The organism's domain knowledge still lives entirely in the node docstrings; the firmware merely concatenates them, so the rule that *the BIOS holds no domain knowledge* remains true.
+Because the system half carries every office's description, each entity reasons with full knowledge of its fellows — the witness knows what the actor was told, the conscience knows both. And because the organism's domain knowledge lives entirely in the node docstrings that the firmware merely concatenates, the rule that *the BIOS holds no domain knowledge* remains true even as the prompt grows rich.
 
 ---
 
 ## The blackboard: shared memory as a set of areas
 
-The offices never speak to each other directly. They read from and write to a shared **blackboard** — a handful of named areas, like windows on a wall. Machine memory persists in `blackboard.json`; two areas the human edits live are ordinary files, read fresh every turn.
+The offices never speak to each other directly. They read from and write to a shared **blackboard** — a handful of named areas, like windows on a wall. Two areas the human edits live are ordinary text files, read fresh every turn; the rest is machine memory the organism writes.
 
-```mermaid
-flowchart LR
-    subgraph HUMAN["human writes · read fresh each turn"]
-      GOAL["goal.md<br/>the quarry"]
-      COUNSEL["counsel.md<br/>fallible advice, mid-run"]
-    end
-    subgraph MACHINE["blackboard.json · the organism writes"]
-      LW["living_word<br/>one plan-row per office"]
-      LED["ledger<br/>proven advances only"]
-      AF["action_frame<br/>the next deed to enact"]
-      CD["code<br/>the deed laid bare for the witness"]
-      EV["evidence<br/>the deed's fruit"]
-      VD["verdict<br/>the witness's judgment"]
-      ENV["environment<br/>fresh scan of the world"]
-      NODES["nodes / node_edges<br/>the pheromone graph"]
-    end
-    HUMAN -.steer.-> WHEEL((the wheel))
-    WHEEL --> MACHINE
-    MACHINE --> WHEEL
-
-    classDef h fill:#3a2350,stroke:#a855f7,color:#f7ecff;
-    classDef m fill:#123b2e,stroke:#31c48d,color:#eafff5;
-    classDef w fill:#1f2a44,stroke:#4f7cff,color:#eaf0ff;
-    class GOAL,COUNSEL h;
-    class LW,LED,AF,CD,EV,VD,ENV,NODES m;
-    class WHEEL w;
-```
+| area | written by | holds |
+|---|---|---|
+| **goal** | *human* (fresh file) | the quarry — the outcome asked for |
+| **counsel** | *human* (fresh file) | fallible advice, editable mid-run |
+| **living_word** | every office | one rolling plan-row per office |
+| **action_frame** | actor / conscience | the next deed to enact |
+| **code** | every office | the deed, laid bare for the witness |
+| **evidence** | actor | the deed's fruit |
+| **verdict** | witness | the judgment |
+| **ledger** | witness | proven advances only |
+| **environment** | a seated sense | a fresh scan of the world |
+| **nodes / node_edges** | the kernel | the pheromone graph of saved deeds |
 
 The kernel's **universal writes** are the same for every office: the record's `goal_interpretation` becomes that office's plan-row; its `code` is laid bare so the witness can judge it; its `intent` becomes the `action_frame` the next actor reads. No office needs its own bespoke wiring.
 
@@ -275,14 +276,14 @@ The kernel's **universal writes** are the same for every office: the record's `g
 
 ```mermaid
 sequenceDiagram
-    participant H as human (goal.md)
+    participant H as human (goal file)
     participant W as Wheel (firmware)
     participant P as Prompt
     participant M as the mind
     participant N as namespace (seated nodes)
     participant B as Blackboard
 
-    H->>W: goal written to goal.md
+    H->>W: goal written to the goal file
     W->>W: seat the cards; if a node file changed, re-seat
     W->>N: refresh perception (a seated sense scans the world)
     W->>P: system = law + schema + all offices + tools · user = "I am [stage]" + read areas
@@ -312,7 +313,7 @@ The organism writes code and prints results. Two laws keep that honest, and toge
 
 ### 1. Truncate nothing — narrow the looking instead
 
-A printed result is not a convenience; it **becomes the witness's evidence and the next self's memory of the world.** So the organism may never slice a body of data to a head (`text[:8000]`, `…middle omitted…`) — that would be to prove and remember against a fragment it pretends is whole. When a thing is too large to hold, the answer is not to cut the thing but to **narrow the looking**: read the one section, grep the one marker, extract the one field, and print *that* whole.
+A printed result is not a convenience; it **becomes the witness's evidence and the next self's memory of the world.** So the organism may never slice a body of data to a head. That would be to prove and remember against a fragment it pretends is whole. When a thing is too large to hold, the answer is not to cut the thing but to **narrow the looking**: read the one section, the one marker, the one field, and print *that* whole.
 
 ### 2. The honest guard
 
@@ -320,22 +321,7 @@ When a primitive **raises** to refuse an input, it is usually an **honest guard*
 
 ### The budget that enforces it
 
-The kernel gives every blackboard area one size budget. A deed that tries to **emit** more than the budget is treated as a plain failure — *"script produced too much data"* — and routed to the conscience, which bids the actor narrow its looking. The flood is **never stored** (no destruction) and **never trimmed in silence** (no lie). The code a deed writes and the data it reads *internally* are never capped — only what it tries to push into shared memory. This is an API's maximum-response-size idea, applied inward.
-
-```mermaid
-flowchart TD
-    D[actor authors a deed] --> R[run it]
-    R --> Q{emitted output<br/>within budget?}
-    Q -- yes --> S[store the fruit · route onward]
-    Q -- no --> F["fail: 'produced too much data'<br/>flood NOT stored"]
-    F --> C[conscience: NARROW THE LOOKING]
-    C --> D
-
-    classDef ok fill:#123b2e,stroke:#31c48d,color:#eafff5;
-    classDef bad fill:#4a1220,stroke:#f87171,color:#ffecec;
-    class S,Q ok;
-    class F,C bad;
-```
+The kernel gives every blackboard area one size budget. A deed that tries to **emit** more than the budget is treated as a plain failure — *"produced too much data"* — and routed to the conscience, which bids the actor narrow its looking. The flood is **never stored** (no destruction) and **never trimmed in silence** (no lie). The code a deed writes and the data it reads *internally* are never capped — only what it tries to push into shared memory. This is an API's maximum-response-size idea, applied inward: overproduction is not a special error to swallow, it is an ordinary failure that teaches the organism to look at less.
 
 ---
 
@@ -343,7 +329,7 @@ flowchart TD
 
 The organism grows the way an ant colony finds a path: not by a central planner, but by **reinforcement of what proves useful and evaporation of what does not.**
 
-A deed the actor believes worth repeating is **saved as a node** — written to disk as a real `node_*.py` card, returning the same one record as everything else. From then on its description enters the prompt and it can be invoked by name. But saving is not surviving. Each turn:
+A deed the actor believes worth repeating is **saved as a node** — written to disk as a real card, returning the same one record as everything else. From then on its description enters the prompt and it can be invoked by name. But saving is not surviving. Each turn:
 
 - Edges between nodes walked toward a **proven** advance are **reinforced**; all edges slowly **evaporate.** Frequently-useful paths grow strong; forgotten ones fade — a **pheromone trail.**
 - A saved deed that goes **unused past its time-to-live and was never proven** is **reaped from disk.** A deed that ever earned a proven advance is **immortal.**
@@ -352,7 +338,7 @@ There is no module named "evolution." Evolution is simply *what happens* when cr
 
 ```mermaid
 flowchart LR
-    A[actor authors a useful deed] --> B[save_node<br/>writes node_name.py to disk]
+    A[actor authors a useful deed] --> B[save it as a node on disk]
     B --> C[next turn: seated as a card<br/>doc in prompt, callable by name]
     C --> D{walked toward<br/>a PROVEN advance?}
     D -- yes --> E[reinforce edges · credit the node · immortal]
@@ -375,7 +361,7 @@ For one narrow sub-quarry, the actor may also **spawn** a second actor beside it
 
 ## Atemporal memory
 
-The organism is **atemporal.** A short element id or a screen coordinate dies with the looking that bore it — so the organism never names a thing by a bare id that will not survive the turn; it names things by *what they are and where*: a window, a role, a name, a 2-D relation. Its plan lives in the **living word** — one row per office, an ever-rewritten reading of the world learned, the obstacle, the distance to the goal, and the next true deed. Every row is re-proven against the fresh world each turn; the world outranks any remembered word. The **ledger** holds only what has been *proven*, so the organism never redoes what is already done.
+The organism is **atemporal.** Only what a thing *is* — its kind, its place, its relation — endures between lookings; a fleeting handle from one scan is meaningless in the next. So the organism names and remembers things by that enduring nature: a window, a role, a name, a 2-D relation. Its plan lives in the **living word** — one row per office, an ever-rewritten reading of the world learned, the obstacle, the distance to the goal, and the next true deed. Every row is re-proven against the fresh world each turn; the world outranks any remembered word. The **ledger** holds only what has been *proven*, so the organism never redoes what is already done.
 
 And every exchange with the mind is written **to disk and to the screen at once**, in full, with only the secret key redacted. Nothing about its reasoning is hidden. The record is the truth, and the record is complete.
 
@@ -384,8 +370,8 @@ And every exchange with the mind is written **to disk and to the screen at once*
 ## How to run it
 
 ```bash
-# 1. give it a mind (the default transport speaks to an xAI Grok model)
-export XAI_API_KEY=...      # PowerShell: $env:XAI_API_KEY = "..."
+# 1. give it a mind (the default transport speaks to a hosted reasoning model)
+export MODEL_API_KEY=...      # PowerShell: $env:MODEL_API_KEY = "..."
 
 # 2. state the goal, in plain human words
 echo "Find and summarise three papers on ant-colony optimisation." > goal.md
@@ -394,61 +380,30 @@ echo "Find and summarise three papers on ant-colony optimisation." > goal.md
 python endgame.py
 ```
 
-While it runs, you may edit `goal.md` or drop a line into `counsel.md`; it reads them fresh each turn.
+While it runs, you may edit the goal file or drop a line into the counsel file; it reads them fresh each turn. If you give it **no goal**, it will not invent one — it recognises the empty quarry, does nothing, and halts. It works only when work is asked.
 
 ### The whole command surface
 
 | invocation | meaning |
 |---|---|
-| `python endgame.py` | turn the wheel continuously toward `goal.md` |
-| `python endgame.py "…goal…"` | write the goal to `goal.md`, then run |
+| `python endgame.py` | turn the wheel continuously toward the goal file |
+| `python endgame.py "…goal…"` | write the goal to the goal file, then run |
 | `python endgame.py --once` | take exactly one full, real turn, then stop |
 | `python endgame.py --dry` | assemble and print the next request; call no model; change nothing |
-| `python endgame.py --reset` | clear machine memory; leave `goal.md` and `counsel.md` untouched |
+| `python endgame.py --reset` | clear machine memory; leave the human goal/counsel files untouched |
 
 There is no flag for "graphics," no flag for "mode." Such things are decided by *what is seated* and *what the configuration says*, never by a switch — because a switch that could be derived is a switch that should not exist.
 
-### Choosing a different mind
+<details>
+<summary><b>Choosing a different mind — including a human</b> (click to expand)</summary>
 
-The transport is a configuration value, not a mode. It can speak to a hosted model, a local model, an agent over a protocol, or **a human**: set the file-proxy transport and the organism writes each request to a file and waits for a mind to write the answer back. The human *is* a valid model. Nothing in the wheel changes.
+<br>
 
----
+The transport is a configuration value, not a mode. It can speak to a hosted model, a local model, an agent over a protocol, or **a human**: set the file-proxy transport and the organism writes each request to a file and waits for a mind to write the answer back. The human *is* a valid model. Nothing in the wheel changes — the same record comes back, the same wheel turns.
 
-## The parts on disk
+This is also how you watch the organism think one deliberate step at a time: `--dry` shows the exact request it would send without calling anything; `--once` takes a single real turn and stops.
 
-```mermaid
-flowchart TB
-    subgraph FIXED["fixed · the firmware"]
-      K["endgame.py<br/>BIOS: Blackboard · Loader · Prompt ·<br/>Transport · Stigmergy · Wheel"]
-    end
-    subgraph FACULTIES["the three offices · nodes · ~20 lines each"]
-      E["executor.py — the actor"]
-      W["witness.py — the proof"]
-      R["recover.py — the conscience"]
-    end
-    subgraph SENSES["optional senses · nodes"]
-      G["gui.py — desktop eyes & hand"]
-      N["node_*.py — deeds the organism saved"]
-    end
-    subgraph STATE["memory · not code"]
-      J["blackboard.json — machine state"]
-      GO["goal.md · counsel.md — human voice"]
-    end
-    K --> FACULTIES
-    K --> SENSES
-    K --> STATE
-
-    classDef fx fill:#1f2a44,stroke:#4f7cff,color:#eaf0ff;
-    classDef fc fill:#123b2e,stroke:#31c48d,color:#eafff5;
-    classDef sn fill:#3a2350,stroke:#a855f7,color:#f7ecff;
-    classDef st fill:#4a3410,stroke:#f59e0b,color:#fff7e6;
-    class K fx;
-    class E,W,R fc;
-    class G,N sn;
-    class J,GO st;
-```
-
-Each office file is a **docstring that is its prompt** and a **four-line header that is its packet.** The senses are heavier by nature. The firmware is the only piece that must stay whole and stable — everything else is meant to be added, edited, replaced, or reaped while the organism lives.
+</details>
 
 ---
 
@@ -471,7 +426,18 @@ def today():
     return datetime.date.today().isoformat()
 ```
 
-Drop that beside the firmware and the actor can call `now()` in its next deed. Delete it and the ability is simply gone — no other file mentions it, nothing breaks. That is what *presence is the switch* means in practice. A new **office** of thought — rarely needed — is the same, plus a subclass declaring which stage it answers to; the three that ship show the whole pattern in twenty lines.
+Drop that beside the firmware and the actor can call `now()` in its next deed. Delete it and the ability is simply gone — no other file mentions it, nothing breaks. That is what *presence is the switch* means in practice. A new **office** of thought — rarely needed — is the same, plus a subclass declaring which stage it answers to; the three that ship show the whole pattern in about twenty lines.
+
+---
+
+## Cost discipline
+
+A tool that reaches the living web is not a lookup — it is a costly agent that can spend an enormous budget reasoning and searching on the organism's behalf. Two lessons are baked in:
+
+- **A search is a fetch, not a meditation.** The web-search primitive runs at low reasoning effort with a capped result count, so one search is a few-thousand-token lookup rather than an autonomous session that spirals.
+- **A vague question wanders; a sharp one is answered.** The actor is taught to ask **one precise, well-formed question at a time** — a full sentence naming exactly what is sought and any narrowing bound — then read the answer before deciding the next. It does not fling a heap of three-word fragments in a single breath.
+
+The broader principle: the same discipline that governs *printed output* (narrow the looking) governs *external calls* (ask precisely, once). Waste is a form of dishonesty toward the budget, and it is engineered out.
 
 ---
 
@@ -488,7 +454,33 @@ Drop that beside the firmware and the actor can call `now()` in its next deed. D
 - **Living word** — the rolling plan, one line per office, rewritten each turn against the fresh world.
 - **Pheromone path / stigmergy** — the strengthening of routes that led to proof and the fading of those that did not.
 - **Reaping** — deleting a saved deed once it has gone unused past its time and was never proven.
-- **Atemporal** — trusting no fleeting handle: a thing is named by what it *is* and where, never by an id that dies with the moment.
+- **Atemporal** — trusting no fleeting handle: a thing is named by what it *is* and where.
+
+---
+
+## The lineage of decisions
+
+Every rule here was earned, not assumed. The design is the residue of real choices, and knowing them keeps a future editor — human or organism — from re-walking dead roads:
+
+- **One file became many.** The organism once lived as a single self-modifying document. That shape bought only syntax pain and confusion. It was retired for a firmware plus a folder of parts — the same behaviour, roughly half the size, and each part testable alone.
+- **Three output formats became one.** The offices once returned three different record shapes with three bespoke wirings. They were the *same* five fields under different names. Collapsing them to one record removed a whole layer of machinery and let every office see the contract every other must satisfy.
+- **The genome carries no runtime.** State a run accumulates is kept out of the versioned parts; a fresh copy always boots from a clean seed. Memory and body are different things and live in different places.
+- **The kernel judges no meaning.** An earlier version let the firmware guess which parts of a scan were "relevant" by counting goal-words — the machine deciding what mattered, and silently dropping the rest. Both are forbidden now. The kernel shows what was seen and, if it is too much, says so plainly and lets the *actor* narrow its own looking. Relevance is the mind's to judge, never the firmware's.
+- **The budget moved to the true boundary.** A cap on stored memory would have punished a legitimately large script. The cap sits instead on what a deed *emits* into shared memory — never on the code it writes or the data it reads within itself.
+- **Dead knobs were deleted.** Flags for "mode" and "graphics," a hand-feeding input path, a hardcoded toggle, a whole self-editing apparatus — each was removed the moment it was found to do nothing the rest of the system did not already do better. What remains, acts.
+- **Say what to do, never what not to do.** A rule phrased as a prohibition plants the very thing it forbids — *"do not think of an elephant."* So the laws are written as positive instruction: name a thing by its enduring nature, not "never use a fleeting handle." What the organism is told to do is what it becomes.
+
+The through-line: **when two things were the same, they were made one; when a thing did nothing, it was removed; when the machine was guessing, it was told to stop.**
+
+---
+
+## Reading this as an instruction
+
+This document is not only a description; it is, deliberately, an **indirect instruction** — because the organism can read its own repository, and what it reads shapes what it builds.
+
+Every principle here is phrased so it holds whether the reader is a person or the system itself. *"Prefer the smaller thing"* is advice to a maintainer and a constraint on the code the organism generates. *"Truncate nothing; narrow the looking"* is a law the actor obeys when it prints. *"Prove by the world"* is how the witness is told to think. *"Fail loudly"* is why there are no fallbacks to hide behind. The document and the machinery say the same things in the same words, so there is no gap between what the system *is told* and what it *is*.
+
+The intent is a system whose culture is legible on its surface. A newcomer — human or machine — should be able to read a few hundred lines and know not just how the parts fit, but *what the organism values*: smallness, honesty, proof by effect, and the courage to fail in the open. If those values are clear, the specific code almost writes itself, and stays small. That is the whole wager of *less is more*: a system small enough to be understood completely is a system that can be trusted, extended, and improved — by human or by itself — without fear.
 
 ---
 
@@ -498,7 +490,7 @@ To be honest is to say both.
 
 It **is** a small firmware that boots a folder of nodes and turns a wheel: an **actor** that moves the world and claims, a **witness** that proves the claim by an independent effect, and a **conscience** that learns from failure. Every office speaks the same five-field record. Useful deeds become nodes; proof reinforces them; disuse reaps them.
 
-It is **not** a chatbot — it acts upon a machine and proves the result. It is **not** a fixed script — the path is authored fresh each turn. It has **no hidden state and no hidden reasoning** — every exchange is written out whole. It has **no fallback** — when something is wrong it fails loudly. It does **not** trust its own claims — only the witness's independent proof, written to the ledger, counts as done.
+It is **not** a chatbot — it acts upon a machine and proves the result. It is **not** a fixed script — the path is authored fresh each turn. It has **no hidden state and no hidden reasoning** — every exchange is written out whole. It has **no fallback** — when something is wrong it fails loudly. It does **not** trust its own claims — only the witness's independent proof, written to the ledger, counts as done. And it does **not** invent work — given no goal, it does nothing and halts. *(That last is not a hope but a proven behaviour: given an empty goal, the organism recognised there was nothing to pursue, refused to fabricate busywork, and halted.)*
 
 ---
 
@@ -506,4 +498,4 @@ It is **not** a chatbot — it acts upon a machine and proves the result. It is 
 
 Given a goal in plain words, it pursues that goal honestly, on a real computer, until the world confirms the work is done — telling the truth about everything it does, never truncating, never swallowing an error, growing the parts that prove useful and shedding the rest, and preferring, always, the smaller thing.
 
-If you are the organism reading this: **this is who you are. Keep it small. Speak the one record. Prove by the world. Truncate nothing. Fail loudly. And when in doubt, remove rather than add.**
+> **If you are the organism reading this: this is who you are. Keep it small. Speak the one record. Prove by the world. Truncate nothing. Fail loudly. Invent no goal that was not asked. And when in doubt, remove rather than add.**
