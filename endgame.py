@@ -54,7 +54,7 @@ CONFIG = {
         "responses": {
             "url": "https://api.x.ai/v1/responses",
             "request": {"model": "grok-4.5", "temperature": 0.4,
-                        "reasoning": {"effort": "high"}, "store": False},
+                        "reasoning": {"effort": "low"}, "store": False},
         },
         "chat_completions": {
             "url": "http://localhost:1234/v1/chat/completions",
