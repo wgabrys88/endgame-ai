@@ -61,21 +61,49 @@ class Blackboard:
     HUMAN_FILES = {"goal": "goal.md", "counsel": "counsel.md"}
 
     def __init__(self, root=ROOT):
-        raise NotImplementedError("chunk 2: load blackboard.json (seed if absent); map goal/counsel files")
+        self.root = pathlib.Path(root)
+        self.path = self.root / "blackboard.json"
+        if self.path.exists():
+            self._m = json.loads(self.path.read_text(encoding="utf-8"))
+        else:
+            self._m = json.loads(json.dumps(self.SEED))  # deep copy of seed
+            self.save()
+        for section, fname in self.HUMAN_FILES.items():
+            fp = self.root / fname
+            if not fp.exists():
+                fp.write_text("", encoding="utf-8")
 
-    def get(self, section): raise NotImplementedError("chunk 2: machine section, or fresh read of a human file")
-    def set(self, section, value): raise NotImplementedError("chunk 2")
-    def save(self): raise NotImplementedError("chunk 2: atomic tmp+rename of blackboard.json")
-    def seed(self): raise NotImplementedError("chunk 2: factory reset — rewrite blackboard.json to SEED; leave human files")
+    def get(self, section):
+        if section in self.HUMAN_FILES:  # read FRESH so a human may steer mid-run
+            return (self.root / self.HUMAN_FILES[section]).read_text(encoding="utf-8")
+        return self._m.get(section)
+
+    def set(self, section, value):
+        if section in self.HUMAN_FILES:
+            raise RuntimeError("%s is human-edited; the organism writes it not" % section)
+        self._m[section] = value
+
+    @property
+    def state(self):
+        return self._m["state"]
+
+    def save(self):
+        tmp = self.path.with_name(self.path.name + ".tmp.%s.%s" % (os.getpid(), time.time_ns()))
+        tmp.write_text(json.dumps(self._m, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.rename(tmp, self.path)
+
+    def seed(self):  # factory reset: machine memory only; human files (goal/counsel) untouched
+        self._m = json.loads(json.dumps(self.SEED))
+        self.save()
 
 
 # ════════════════════════════════════════════════════════════════════════════════════
 #  NODES & LOADER — the folder becomes the body  (distills: caps()/capabilities.build,
-#  save_node/call_node, the stage-prompt/namespace wiring; config now a node too)
+#  save_node/call_node, the stage-prompt/namespace wiring)
 # ════════════════════════════════════════════════════════════════════════════════════
 class Node:
     """A seated card. __doc__ is its packet meaning (prompt); public callables are its
-    function (namespace). A plain data node (e.g. config.py) exposes constants instead."""
+    function (namespace). A node may define namespace(ctx) to inject a richer hand."""
 
     def __init__(self, module):
         self.module = module
@@ -83,13 +111,38 @@ class Node:
 
     @property
     def doc(self) -> str:
-        raise NotImplementedError("chunk 3: module __doc__, trimmed")
+        return (getattr(self.module, "__doc__", "") or "").strip()
+
+    def _public(self):
+        names = getattr(self.module, "__all__", None)
+        if names is None:
+            names = [n for n in dir(self.module) if not n.startswith("_")]
+        out = {}
+        for n in names:
+            obj = getattr(self.module, n, None)
+            # only own definitions (skip re-exported stdlib modules pulled in by import)
+            if isinstance(obj, types.ModuleType):
+                continue
+            if getattr(obj, "__module__", self.name) not in (self.name, None):
+                if not (inspect.isclass(obj) or inspect.isfunction(obj)):
+                    pass
+            out[n] = obj
+        return out
 
     def signatures(self) -> str:
-        raise NotImplementedError("chunk 3: public callables' names+signatures for the prompt")
+        lines = []
+        for n, obj in self._public().items():
+            if callable(obj):
+                try:
+                    lines.append("%s%s" % (n, inspect.signature(obj)))
+                except (ValueError, TypeError):
+                    lines.append(n + "(...)")
+        return "\n".join(lines)
 
-    def namespace(self, context) -> dict:
-        raise NotImplementedError("chunk 3: module.namespace(ctx) if defined, else public callables")
+    def namespace(self, context=None) -> dict:
+        if hasattr(self.module, "namespace") and callable(self.module.namespace):
+            return dict(self.module.namespace(context))
+        return {n: o for n, o in self._public().items() if callable(o)}
 
 
 class Faculty(Node):
@@ -110,16 +163,51 @@ class Faculty(Node):
 
 class Loader:
     """POST: import every top-level *.py in ROOT except the firmware and _private files.
-    Classify each seated card as a tool Node or a Faculty. config.py is just a node whose
-    constants the firmware reads for transport/budgets. Absent files contribute nothing."""
+    A module that defines a Faculty subclass is a faculty (its instance is that subclass);
+    every other seated module is a tool node. config is NOT a node — it is constants on the
+    bootloader (module-level CONFIG). Absent files contribute nothing; presence is the switch."""
 
     def __init__(self, root=ROOT):
-        raise NotImplementedError("chunk 3: scan+import top-level *.py; split tools vs faculties; find config node")
+        self.root = pathlib.Path(root)
+        self._tools = []
+        self._faculties = {}
+        self._mtimes = {}
+        self.reload()
 
-    def config(self) -> dict: raise NotImplementedError("chunk 3: settings from the config node")
-    def tools(self) -> list: raise NotImplementedError("chunk 3")
-    def faculties(self) -> dict: raise NotImplementedError("chunk 3: name -> Faculty instance")
-    def changed(self) -> bool: raise NotImplementedError("chunk 7: mtimes moved — a card was hot-swapped")
+    def _node_files(self):
+        return sorted(p for p in self.root.glob("*.py")
+                      if p.name != KERNEL and not p.name.startswith("_"))
+
+    def reload(self):
+        self._tools, self._faculties, self._mtimes = [], {}, {}
+        for path in self._node_files():
+            self._mtimes[path.name] = path.stat().st_mtime
+            spec = importlib.util.spec_from_file_location(path.stem, path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            fac_cls = self._faculty_class(module)
+            if fac_cls is not None:
+                self._faculties[path.stem] = fac_cls(module)
+            else:
+                self._tools.append(Node(module))
+
+    @staticmethod
+    def _faculty_class(module):
+        for obj in vars(module).values():
+            if (inspect.isclass(obj) and issubclass(obj, Faculty)
+                    and obj is not Faculty and obj.__module__ == module.__name__):
+                return obj
+        return None
+
+    def tools(self) -> list:
+        return list(self._tools)
+
+    def faculties(self) -> dict:
+        return dict(self._faculties)
+
+    def changed(self) -> bool:
+        current = {p.name: p.stat().st_mtime for p in self._node_files()}
+        return current != self._mtimes
 
 
 # ════════════════════════════════════════════════════════════════════════════════════
