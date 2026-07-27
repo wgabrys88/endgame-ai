@@ -70,6 +70,7 @@ CONFIG = {
     "observation": {"step_px": 64, "max_subtree_nodes_per_point": 120,
                     "depth_ceiling": 45, "min_window_area": 2500},
     "transmission_log_dir": ".transmissions",
+    "web_search_max_results": 8,   # a web_search is a lean fetch, not an autonomous search session
     "deed_subprocess": True,
     "deed_timeout": 360,
     "node_budget": 64,
@@ -405,8 +406,12 @@ class Transport:
         body.pop("previous_response_id", None)
         body.pop("text", None)
         body["store"] = False
+        # A search is a FETCH, not a meditation: low effort and a capped search count keep one
+        # web_search a few-thousand-token lookup, not the 200k-token autonomous session that high
+        # effort spawned. It inheriteth the faculty's request no more.
+        body["reasoning"] = {"effort": "low"}
         body["input"] = [{"role": "user", "content": query}]
-        tool = {"type": "web_search"}
+        tool = {"type": "web_search", "max_search_results": int(self.cfg.get("web_search_max_results", 8))}
         if allowed_domains:
             tool["filters"] = {"allowed_domains": list(allowed_domains)[:5]}
         body["tools"] = [tool]
