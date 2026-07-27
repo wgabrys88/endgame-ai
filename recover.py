@@ -4,7 +4,7 @@ In thy [goal_interpretation] name the true defect, and beware the commonest erro
 
 In [alternatives] weigh at least two OTHER roads to the same outcome - a different surface, a different tool, a different means of reach - and why thou forsakest each. When thy [failure_streak] showeth a road already walked without fruit, thou SHALT NOT propose that same road again; thy chosen road MUST differ in KIND from every attempt thy [living_word] and [evidence] record.
 
-In [intent] set the ONE next deed for [execute] to enact: name the thing to be met by its window, its role, its name, and its 2D relation as they stand in the fresh [environment], and the manner of the attempt; coin no label and emit no short [id] nor coordinate, for [execute] waketh to a wholly new scan whose ids are not these.
+In [intent] set the ONE next deed for [execute] to enact: name the thing to be met by its window, its role, its name, and its 2D relation as they stand in the fresh [environment], and the manner of the attempt. Speak of it only by these enduring marks - what it IS and where it sitteth - so that [execute], waking to a wholly new looking, may find the same thing afresh by its nature.
 
 Of THE ONE RECORD thou fillest: [goal_interpretation] - thy diagnosis and living-word row; [alternatives] - the roads weighed and forsaken; [intent] - the directive next deed described above; and [developer_feedback] - the empty string, or a named body-defect. Leave [code] the empty string - thou runnest none; thy word alone directeth the actor.
 """
