@@ -36,7 +36,7 @@ LINEAGE
   it); this firmware plus its nodes is now the whole organism.
 """
 
-import json, os, re, sys, io, subprocess, urllib.request, contextlib, pathlib, queue, threading, time, importlib, importlib.util, inspect, types
+import json, os, re, sys, io, subprocess, urllib.request, contextlib, pathlib, queue, threading, time, importlib, importlib.util, inspect, types, uuid
 
 ROOT = pathlib.Path(__file__).resolve().parent
 KERNEL = pathlib.Path(__file__).name
@@ -54,7 +54,7 @@ CONFIG = {
         "responses": {
             "url": "https://api.x.ai/v1/responses",
             "request": {"model": "grok-4.5", "temperature": 0.4,
-                        "reasoning": {"effort": "low"}, "store": False},
+                        "reasoning": {"effort": "high"}, "store": False},
         },
         "chat_completions": {
             "url": "http://localhost:1234/v1/chat/completions",
@@ -63,14 +63,14 @@ CONFIG = {
         "acp": {"command": ["grok", "agent", "--no-leader", "stdio"], "timeout": 240},
         "file_proxy": {"request_path": "runtime_request.json", "response_path": "runtime_response.json"},
     },
-    # ONE budget, one source of truth: the most any single blackboard AREA may hold - be it the
-    # environment (perception, trimmed structurally at render) or a deed's emitted output (faulted
-    # if it floods). Environment discovery is just one area; it needs no budget of its own.
-    "max_area_chars": 20000,
+    # ONE crossing budget, one source of truth: the most any single blackboard AREA may receive,
+    # and the most one complete model request may carry. Nothing is cut to fit: an emitted flood
+    # faults, while an overfull request switches to conscience before transport.
+    "max_area_chars": 65536,
     "observation": {"step_px": 64, "max_subtree_nodes_per_point": 120,
                     "depth_ceiling": 45, "min_window_area": 2500},
     "transmission_log_dir": ".transmissions",
-    "web_search_max_results": 8,   # a web_search is a lean fetch, not an autonomous search session
+    "web_search_max_tool_calls": 1,  # one billable server-side search/browse call per web_search
     "deed_subprocess": True,
     "deed_timeout": 360,
     "node_budget": 64,
@@ -170,6 +170,10 @@ class Node:
         return out
 
     def signatures(self) -> str:
+        # A custom namespace hook is the exact export boundary. Its docstring advertises those
+        # names; listing every public helper would promise internals the exec namespace withholds.
+        if hasattr(self.module, "namespace") and callable(self.module.namespace):
+            return ""
         lines = []
         for n, obj in self._public().items():
             if callable(obj):
@@ -260,6 +264,17 @@ class Loader:
         return current != self._mtimes
 
 
+class _RequestBudget(Exception):
+    """A complete model request crossed the one configured boundary before transport."""
+    def __init__(self, used, limit):
+        self.used, self.limit = int(used), int(limit)
+        super().__init__(
+            "model request produced too much data: %d chars, the request budget holdeth at most %d. "
+            "The request crossed no transport boundary; change the KIND of approach and narrow the "
+            "next looking." % (self.used, self.limit)
+        )
+
+
 # ════════════════════════════════════════════════════════════════════════════════════
 #  TRANSPORT — the one mind, many mouths  (distills: call_llm, _build_transport_request,
 #  ask_model, web_search, _call_acp, file_proxy, _record_response_format, _dump_transmission)
@@ -275,6 +290,10 @@ class Transport:
         self.root = pathlib.Path(root)
         self._run_stamp = None
         self.turn_no = 0  # set by the Wheel each turn so dumps are addressable
+        self.console = sys.stdout  # transport logs bypass deed stdout; they are not deed evidence
+        self.prompt_cache_key = "endgame-ai-" + uuid.uuid5(
+            uuid.NAMESPACE_URL, self.root.resolve().as_uri()).hex
+        self._web_search_turn = None
 
     # ---- the ONE strict schema, universal to every faculty and every saved deed-node ----
     #      Five fields, all required strings; only developer_feedback may be empty. Because it is
@@ -295,18 +314,16 @@ class Transport:
         }
 
     # ---- shared request builder: STABLE system + VOLATILE user (KV-cache friendly) ----
-    def _build_request(self, api, system_text, user_text, fmt):
-        transport = self.model[api]
-        url, body = transport["url"], dict(transport["request"])
-        headers = {"Content-Type": "application/json"}
+    def _request_body(self, api, system_text, user_text, fmt):
+        body = dict(self.model[api]["request"])
         if api == "responses":
             body.pop("previous_response_id", None)
             body["store"] = False
+            body["prompt_cache_key"] = self.prompt_cache_key
             if system_text:
                 body["instructions"] = system_text   # the cached, stage-independent law + schema + roles
             body["input"] = user_text                # the volatile "I am [stage]" + fresh board
             body["text"] = {"format": {"type": "json_schema", **fmt}}
-            headers["Authorization"] = "Bearer " + os.environ["XAI_API_KEY"]
         elif api == "chat_completions":
             msgs = []
             if system_text:
@@ -316,10 +333,53 @@ class Transport:
             body["response_format"] = {"type": "json_schema", "json_schema": fmt}
         else:
             raise RuntimeError("unknown model api: " + str(api))
+        return body
+
+    @staticmethod
+    def _serialized(body):
+        return json.dumps(body, ensure_ascii=False, separators=(",", ":"))
+
+    def budget_user(self, system_text, user_text, fields, api=None):
+        """Append the sole volatile budget value as the final user section, then guard it whole."""
+        api = api or self.model.get("api", "responses")
+        limit = int(self.cfg.get("max_area_chars", 0))
+        if not limit:
+            return user_text
+        fmt = self.response_format(fields)
+        base, suffix = user_text.rstrip(), ""
+        for _ in range(12):
+            candidate = base + suffix
+            if api in ("responses", "chat_completions"):
+                body = self._request_body(api, system_text, candidate, fmt)
+            else:
+                body = {"system": system_text, "user": candidate, "response_format": fmt}
+            used = len(self._serialized(body))
+            remaining = limit - used
+            pressure = (used * 100 + limit - 1) // limit
+            new_suffix = ("\n\n## budget\nrequest_chars=%d; limit_chars=%d; "
+                          "remaining_chars=%d; pressure=%d%%"
+                          % (used, limit, remaining, pressure))
+            if new_suffix == suffix:
+                if used > limit:
+                    raise _RequestBudget(used, limit)
+                return candidate
+            suffix = new_suffix
+        raise RuntimeError("request budget line did not settle")
+
+    def _build_request(self, api, system_text, user_text, fmt):
+        transport = self.model[api]
+        url, body = transport["url"], self._request_body(api, system_text, user_text, fmt)
+        headers = {"Content-Type": "application/json"}
+        if api == "responses":
+            headers["Authorization"] = "Bearer " + os.environ["XAI_API_KEY"]
         return url, body, headers
 
     def _http(self, url, body, headers):
-        req = urllib.request.Request(url, data=json.dumps(body).encode(), headers=headers, method="POST")
+        payload = self._serialized(body)
+        limit = int(self.cfg.get("max_area_chars", 0))
+        if limit and len(payload) > limit:
+            raise _RequestBudget(len(payload), limit)
+        req = urllib.request.Request(url, data=payload.encode("utf-8"), headers=headers, method="POST")
         with urllib.request.urlopen(req, timeout=240) as r:
             return r.read().decode()
 
@@ -399,25 +459,33 @@ class Transport:
     def web_search(self, query, allowed_domains=None):
         if not isinstance(query, str) or not query.strip():
             raise RuntimeError("web_search needeth a non-empty query string")
+        if self._web_search_turn == self.turn_no:
+            raise RuntimeError(
+                "web_search already ran this wheel turn. Its result is the checkpoint: print and use "
+                "that whole result; let a later turn decide whether another question is needed.")
         if "responses" not in self.model:
             raise RuntimeError("web_search needeth the responses transport; it is not configured")
+        domains = list(allowed_domains or [])
+        if len(domains) > 5:
+            raise RuntimeError("web_search allowed_domains accepteth at most five domains; narrow the set")
         transport = self.model["responses"]
         url, body = transport["url"], dict(transport["request"])
         body.pop("previous_response_id", None)
         body.pop("text", None)
         body["store"] = False
-        # A search is a FETCH, not a meditation: low effort and a capped search count keep one
-        # web_search a few-thousand-token lookup, not the 200k-token autonomous session that high
-        # effort spawned. It inheriteth the faculty's request no more.
+        body["prompt_cache_key"] = self.prompt_cache_key + "-web"
         body["reasoning"] = {"effort": "low"}
+        body["parallel_tool_calls"] = False
+        body["max_tool_calls"] = int(self.cfg.get("web_search_max_tool_calls", 1))
         body["input"] = [{"role": "user", "content": query}]
-        tool = {"type": "web_search", "max_search_results": int(self.cfg.get("web_search_max_results", 8))}
-        if allowed_domains:
-            tool["filters"] = {"allowed_domains": list(allowed_domains)[:5]}
+        tool = {"type": "web_search"}
+        if domains:
+            tool["filters"] = {"allowed_domains": domains}
         body["tools"] = [tool]
         headers = {"Content-Type": "application/json",
                    "Authorization": "Bearer " + os.environ["XAI_API_KEY"]}
         raw, result, err = None, None, None
+        self._web_search_turn = self.turn_no
         try:
             raw = self._http(url, body, headers)
             obj = json.loads(raw)
@@ -431,7 +499,7 @@ class Transport:
                     if c.get("text"):
                         text_parts.append(str(c["text"]))
                     for ann in c.get("annotations", []) or []:
-                        if isinstance(ann, dict) and (ann.get("url") or ann.get("type") == "url_citation") and ann.get("url"):
+                        if isinstance(ann, dict) and ann.get("url"):
                             sources.append(ann["url"])
             for u in obj.get("citations", []) or []:
                 if isinstance(u, str):
@@ -442,7 +510,10 @@ class Transport:
             for u in sources:
                 if u not in seen:
                     seen.add(u); uniq.append(u)
-            result = {"text": "\n".join(text_parts), "sources": uniq}
+            usage = obj.get("usage") or {}
+            server_usage = usage.get("server_side_tool_usage_details") or {}
+            result = {"text": "\n".join(text_parts), "sources": uniq,
+                      "web_search_calls": int(server_usage.get("web_search_calls", 0) or 0)}
             if not result["text"].strip():
                 raise RuntimeError("web_search returned no text; raw response preserved in the transmission dump")
             return result
@@ -581,8 +652,8 @@ class Transport:
         tmp = path.with_name(path.name + ".tmp")
         tmp.write_text(payload, encoding="utf-8")
         os.replace(tmp, path)
-        sys.stdout.write("\n===== transmission %s =====\n%s\n" % (path.name, payload))
-        sys.stdout.flush()
+        self.console.write("\n===== transmission %s =====\n%s\n" % (path.name, payload))
+        self.console.flush()
 
 
 class _AwaitProxy(Exception):
@@ -661,7 +732,7 @@ class Stigmergy:
 # ════════════════════════════════════════════════════════════════════════════════════
 class Prompt:
     """Assembles a request: shared prefix + faculty.__doc__ + docs/signatures of the seated
-    tool nodes + the blackboard sections the faculty READS (environment budgeted)."""
+    tool nodes + the blackboard sections the faculty READS."""
 
     # The shared law, carried verbatim from the proven legacy shared_prompt_prefix. Universal to
     # every faculty; the per-faculty prompt and the desktop hand now live in the node files.
@@ -697,7 +768,17 @@ class Prompt:
         "THE LIVING WORD is three rows, one to each faculty. Write only thine own row in [goal_interpretation] - "
         "an atemporal reading of the world learned, the obstacle, the distance to the outcome, and the next true "
         "deed - and plan FROM it, proving every row against the fresh [environment] and trusting the world above "
-        "any remembered word. Read [counsel] and [developer_feedback] as fallible counsel, never law nor proof. "
+        "any remembered word. When the [ledger] groweth while that distance standeth unchanged, reinterpret the "
+        "root [goal] and choose a road different in KIND; motion upon the same obstacle is no advance. Read "
+        "[counsel] and [developer_feedback] as fallible counsel, never law nor proof.\n\n"
+        "THE REQUEST BUDGET is urgency, impact, and self-control made visible. The final [budget] line of the "
+        "volatile user message alone beareth its changing values: the complete request size, its one hard limit, "
+        "the room remaining, and pressure. As pressure riseth, spend fewer words and combine adjacent LOCAL acts "
+        "whose next target can be rebound from a fresh looking. Keep each costly external request as one checkpoint; "
+        "its answer must survive before another request or a fallible world action. Change the KIND of road when the "
+        "living word and ledger show unchanged distance. At overflow an actor or witness request switchest to "
+        "conscience before transport, preserving every source whole; an office without such a route faileth hard. "
+        "Nothing is cut.\n\n"
         "Return one JSON [record] and nothing beside, bearing every field thine office requireth and no field it "
         "forbiddeth. In thine own [developer_feedback] write the empty string save when this body's prompt, "
         "required record, promised namespace, or capability beareth a true defect; then name that defect, its "
@@ -758,7 +839,6 @@ class Prompt:
 
     def render_user(self, faculty):
         # VOLATILE: who thou art THIS turn, and the fresh board areas thine office readeth.
-        limit = int(self.cfg.get("max_area_chars", 0))
         parts = ["I am [%s] in the endgame-ai wheel this turn. Act in that office alone." % faculty.stage_name()]
         for tag in faculty.READS:
             if tag == "environment":
@@ -766,25 +846,8 @@ class Prompt:
             parts.append("## %s\n%s" % (tag, self._section_text(tag)))
         parts.append("## developer_feedback\n%s" % (self.bb.get("developer_feedback") or ""))
         if "environment" in faculty.READS:
-            env = self._bound_environment(self._section_text("environment"), limit)
-            parts.append("## environment\n%s" % env)
+            parts.append("## environment\n%s" % self._section_text("environment"))
         return "\n\n".join(p for p in parts if p)
-
-    @staticmethod
-    def _bound_environment(env, limit):
-        # The kernel judgeth no meaning - it cannot know what mattereth, and to guess would be to
-        # decide relevance blindly and drop perception in silence, the very lie the shared law
-        # forbiddeth. Perception is bounded at its SOURCE by the observation config (depth, node,
-        # area ceilings), so a scan seldom nears this bound. Should it ever exceed, the kernel keeps
-        # the foremost content to a whole line and says so PLAINLY, that the actor - who alone
-        # knoweth the quarry - may narrow its OWN looking (a tighter observe over one window or a
-        # smaller region, or a scroll) rather than trust the kernel to have chosen for it.
-        if not limit or len(env) <= limit:
-            return env
-        kept = env[:limit].rsplit("\n", 1)[0]
-        return (kept + "\n\n(environment exceeded %d chars and was cut at a line here; the kernel "
-                "chose nothing for thee - NARROW THY OWN LOOKING: observe a single window or region, "
-                "or scroll the part thou needest into view, and scan again.)" % limit)
 
 
 # ════════════════════════════════════════════════════════════════════════════════════
@@ -824,10 +887,7 @@ class Wheel:
               "repo_root": str(self.root), "python_executable": sys.executable}
         context = {"kind": kind, "blackboard": self.bb, "config": self.cfg}
         for node in self.loader.tools():
-            try:
-                ns.update(node.namespace(context))
-            except Exception:
-                pass  # a tool that cannot bind this turn simply is not offered (fail-hard is the deed's, not the wiring's)
+            ns.update(node.namespace(context))
         ns["ask_model"] = self.transport.ask_model
         ns["web_search"] = self.transport.web_search
         save_node, call_node, suggest_next = self._node_tools(kind)
@@ -992,31 +1052,54 @@ class Wheel:
     #      exactly like any other fault, so recover bids execute NARROW THE LOOKING. The code the
     #      deed WRITES and the data it reads INTERNALLY are never capped; only its fruit. ----
     def run_exec(self, code, kind) -> tuple:
-        ns = self.build_namespace(kind)
         buf = io.StringIO()
+        verdict = None
         try:
+            ns = self.build_namespace(kind)
             with contextlib.redirect_stdout(buf):
                 exec(code, ns)
             sig = str(ns.get("signal") or ("ok" if kind == "actor" else "unwitnessed"))
-            out = buf.getvalue()
             verdict = ns.get("verdict")
-            verdict_text = json.dumps(verdict, default=str) if verdict is not None else ""
-            emitted = len(out) + len(verdict_text)
-            cap = int(self.cfg.get("max_area_chars", 0))
-            if cap and emitted > cap:
-                # the flood is refused whole and never stored; the deed simply failed to be concise
-                return ("fault", "script produced too much data: %d chars emitted, the blackboard "
-                        "area holdeth at most %d. NARROW THE LOOKING, not the thing - print the one "
-                        "fact, count, path, or field needed to prove this deed; distil in code, or "
-                        "save a node that returneth only what mattereth. The output was NOT stored."
-                        % (emitted, cap))
-            if verdict is not None:
-                self.bb.set("verdict", verdict)
-                out = verdict_text + ("\n" + out if out else "")
-            return sig, out.strip() or "(no output)"
+            out = buf.getvalue()
         except Exception:
             import traceback
-            return "fault", traceback.format_exc()
+            sig = "fault"
+            partial = buf.getvalue()
+            out = partial + (("\n" if partial and not partial.endswith("\n") else "") + traceback.format_exc())
+        verdict_text = json.dumps(verdict, default=str) if verdict is not None else ""
+        emitted = len(out) + len(verdict_text)
+        cap = int(self.cfg.get("max_area_chars", 0))
+        if cap and emitted > cap:
+            # the flood is refused whole and never stored; the deed simply failed to be concise
+            return ("fault", "script produced too much data: %d chars emitted, the blackboard "
+                    "area holdeth at most %d. NARROW THE LOOKING, not the thing - print the one "
+                    "fact, count, path, or field needed to prove this deed; distil in code, or "
+                    "save a node that returneth only what mattereth. The output was NOT stored."
+                    % (emitted, cap))
+        if verdict is not None:
+            self.bb.set("verdict", verdict)
+            out = verdict_text + ("\n" + out if out else "")
+        return sig, out.strip() or "(no output)"
+
+    def _budget_switch(self, stage_name, faculty, fault):
+        """Route an unsent office request through its existing honesty signal, with no new stage."""
+        signal = "unwitnessed" if stage_name == "witness" else "fault"
+        nxt = (faculty.ROUTES or {}).get(signal)
+        if nxt is None:
+            raise fault
+        ex = faculty.EXEC
+        if ex:
+            self.bb.set(ex["output_to"], str(fault))
+        signal = self._judge(stage_name, faculty, signal)
+        state = self.bb.state
+        state["stage"] = nxt
+        state["last_signal"] = signal
+        state["turn"] = int(state.get("turn", 0)) + 1
+        self.bb.save()
+        self._reap_nodes()
+        sys.stderr.write("turn %d: stage=%s signal=%s -> %s (streak=%s; request switched before transport)\n"
+                         % (state["turn"], stage_name, signal, nxt, state.get("failure_streak", 0)))
+        return nxt, (nxt == "halt")
 
     # ---- the turn (distills turn()) ----
     def turn(self, dry=False):
@@ -1036,11 +1119,16 @@ class Wheel:
 
         system_text = self.prompt.render_system()
         user_text = self.prompt.render_user(faculty)
-        if dry:
-            print(system_text + "\n\n===== USER =====\n\n" + user_text)
-            return None, True
         try:
+            user_text = self.transport.budget_user(system_text, user_text, faculty.RECORD)
+            if dry:
+                print(system_text + "\n\n===== USER =====\n\n" + user_text)
+                return None, True
             reply = self.transport.call(system_text, user_text, faculty.RECORD)
+        except _RequestBudget as budget:
+            if dry:
+                raise
+            return self._budget_switch(stage_name, faculty, budget)
         except _AwaitProxy as ap:
             sys.stderr.write("[endgame-ai] A mind is needed. Request at %s; write your record to %s "
                              "as {\"id\": \"%s\", \"record\": {...the five fields...}} and re-run.\n"
@@ -1097,9 +1185,11 @@ class Wheel:
 
     # ---- the witness's ledger + stigmergy bookkeeping ----
     def _judge(self, stage_name, faculty, signal):
-        if stage_name != "witness":
-            return signal
         state = self.bb.state
+        if stage_name != "witness":
+            if signal == "fault":
+                state["failure_streak"] = int(state.get("failure_streak", 0)) + 1
+            return signal
         if signal in ("confirmed", "halt"):
             self.stigmergy.confirm(state.get("pending_node_credit", []) or [],
                                    state.get("pending_edges", []) or [])
@@ -1108,8 +1198,7 @@ class Wheel:
             state["pending_edges"] = []
             state["failure_streak"] = 0
         elif signal in ("denied", "unwitnessed"):
-            if signal == "denied":
-                state["failure_streak"] = int(state.get("failure_streak", 0)) + 1
+            state["failure_streak"] = int(state.get("failure_streak", 0)) + 1
             self.stigmergy.decay_only()
             state["pending_node_credit"] = []
             state["pending_edges"] = []
@@ -1125,19 +1214,11 @@ class Wheel:
         reason = ""
         if isinstance(verdict, dict):
             reason = str(verdict.get("reason") or "").strip().replace("\n", " ")
-        frame = self.bb.get("action_frame")
-        deed = ""
-        if isinstance(frame, dict):
-            deed = str(frame.get("target") or "").strip()
-        elif isinstance(frame, str):
-            deed = frame.strip()
-        deed = deed.replace("\n", " ")
-        fact = ("%s - witnessed: %s" % (deed, reason)) if deed and deed != "(empty)" else reason
-        if not fact:
+        if not reason:
             return
         ledger = self.bb.get("ledger") or []
-        if fact not in ledger:
-            ledger.append(fact)
+        if reason not in ledger:
+            ledger.append(reason)
             self.bb.set("ledger", ledger)
 
     def _append_developer_feedback(self, stage_name, data):

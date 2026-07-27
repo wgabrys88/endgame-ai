@@ -100,7 +100,7 @@ The payoff is that the *interesting* part of the system — its judgement — is
 
 ## Everything is a node except the firmware
 
-Every top-level `*.py` file beside the firmware is a **card** you can plug in or pull out. **Presence is the switch.** Seat `gui.py` and the organism gains eyes and a hand upon the desktop — its description enters the prompt and its functions enter the namespace. Remove `gui.py` and the organism simply has no hand. There is no `--gui` flag, no `--no-gui` flag, no branch in the code deciding "graphical or not." The question does not exist; only *what is seated* exists.
+Every top-level `*.py` file beside the firmware is a **card** you can plug in or pull out. **Presence is the switch.** Seat `gui.py` and the organism gains eyes and a hand upon the desktop — its description enters the prompt and its namespace hook exports the exact names the deed may wield. Remove `gui.py` and the organism simply has no hand. There is no `--gui` flag, no `--no-gui` flag, no branch in the code deciding "graphical or not." The question does not exist; only *what is seated* exists.
 
 A node speaks through a contract every language model already understands — the shape of a **network packet**:
 
@@ -109,7 +109,7 @@ flowchart TB
     subgraph PACKET["a NODE is a packet"]
       direction TB
       H["HEADER · what differs between nodes<br/>name = address<br/>READS = which memory areas it draws from<br/>EXEC = does it run its code?<br/>ROUTES = signal → next hop"]
-      P["PAYLOAD · what it is<br/>__doc__  = what it MEANS  → the prompt<br/>functions = what it DOES → the namespace"]
+      P["PAYLOAD · what it is<br/>__doc__ = what it MEANS → the prompt<br/>namespace hook or functions = what it DOES"]
     end
     K["the kernel is a dumb layer-3 switch:<br/>it forwards by HEADER and never reads PAYLOAD"]
     PACKET --> K
@@ -160,14 +160,14 @@ stateDiagram-v2
 
 **`execute` — the actor.** It reads the goal, the fresh world, and its own plan, then authors **one deed** as a Python script and runs it. It may install software, drive a browser, read the web, reason with the model, or act upon any tool that is seated. It only *claims* a result; it may not judge its own work.
 
-**`witness` — the proof.** It runs read-only code that proves the actor's deed **by effect upon some system other than the actor** — a file is proven by reading that file, a launched program by finding its process, a message by the record at its destination. The witness has **no hand**, and this is its virtue: *one who cannot act cannot fake the thing it judges.* It returns `confirmed`, `denied`, `unwitnessed`, or `halt` — the whole goal is proven and this life ends.
+**`witness` — the proof.** It runs read-only code that proves the actor's deed **by effect upon some system other than the actor** — a file is proven by reading that file, a launched program by finding its process, a message by the record at its destination. The witness has **no hand**, and this is its virtue: *one who cannot act cannot fake the thing it judges.* It returns `confirmed` only for a new durable fact that strictly shortens the distance to the root goal. A click whose post-state leaves the same prerequisite unmet is motion, not progress. It returns `denied`, `unwitnessed`, or `halt` otherwise — the whole goal is proven and this life ends.
 
-**`recover` — the conscience.** Woken after a denied or unwitnessed deed. It writes prose only — names the true defect, and chooses a road **different in kind** from one already walked without fruit.
+**`recover` — the conscience.** Woken after a fault, denied deed, or unwitnessed proof. It writes prose only — names the true defect, and chooses a road **different in kind** from one already walked without fruit.
 
 | signal | meaning | routes to |
 |---|---|---|
 | `ok` | a deed was enacted and claimed | witness (from execute) · execute (from recover) |
-| `confirmed` | a new advance proven beyond the ledger | execute |
+| `confirmed` | a new durable advance beyond the ledger that shortens root-goal distance | execute |
 | `denied` | the deed was disproven | recover |
 | `unwitnessed` | the proof could not be read — *not* a denial | recover |
 | `fault` | the code raised, or emitted too much | recover |
@@ -242,8 +242,9 @@ The fifth field, `developer_feedback`, is the organism's channel to report a def
 
 Every request to the mind is split in two, the way a cached instruction is split from a live message.
 
-- The **system** half is identical on every turn, so it is cached and paid for once: the shared law, the one-record schema, **all three offices' descriptions**, and the seated tools. It names no stage.
-- The **user** half is the only fresh part: *"I am this office now"* plus the handful of memory areas that office reads.
+- The **system** half is identical on every turn: the shared law, the one-record schema, **all three offices' descriptions**, the seated tools, and the meaning of the request budget. It names no stage and contains no changing budget number.
+- The **user** half is the only fresh part: *"I am this office now"* plus the handful of memory areas that office reads. Its final section is the changing budget value — exact request size, hard limit, remaining room, and pressure.
+- Responses requests carry one deterministic `prompt_cache_key` derived from the repository place. xAI uses that key to route the repeated stable prefix toward the same cache-bearing server. Caching is an optimization, never a dependency: the organism behaves identically on a miss.
 
 Because the system half carries every office's description, each entity reasons with full knowledge of its fellows — the witness knows what the actor was told, the conscience knows both. And because the organism's domain knowledge lives entirely in the node docstrings that the firmware merely concatenates, the rule that *the BIOS holds no domain knowledge* remains true even as the prompt grows rich.
 
@@ -284,17 +285,19 @@ sequenceDiagram
     participant B as Blackboard
 
     H->>W: goal written to the goal file
-    W->>W: seat the cards if a node file changed, re-seat
+    W->>W: seat the cards; if a node file changed, re-seat
     W->>N: refresh perception (a seated sense scans the world)
-    W->>P: system = law + schema + all offices + tools · user = "I am [stage]" + read areas
-    P->>M: send (the exchange is teed to disk AND screen, whole)
+    W->>P: system = stable law + schema + offices + tools · user = stage + read areas + final budget value
+    P->>W: guard the complete request size before transport
+    W->>M: send (the exchange is teed to disk AND screen, whole)
     M-->>W: one record (the same five fields)
     W->>B: write plan-row, code, next-deed
     W->>N: if this office runs code, run it in the built namespace
     N-->>W: emitted output (checked against the area budget)
-    W->>B: store the fruit the witness's verdict writes the ledger
+    Note over N,W: transport transmissions bypass deed stdout; if code raises, prior printed fruit remains before the traceback
+    W->>B: store the fruit; the witness's verdict writes the ledger
     W->>W: route by signal → next office
-    W-->>H: state persisted the wheel turns again
+    W-->>H: state persisted; the wheel turns again
 ```
 
 Every turn is the same shape, whether the deed is a web search, a click, a file written, or a new node saved.
@@ -321,7 +324,11 @@ When a primitive **raises** to refuse an input, it is usually an **honest guard*
 
 ### The budget that enforces it
 
-The kernel gives every blackboard area one size budget. A deed that tries to **emit** more than the budget is treated as a plain failure — *"produced too much data"* — and routed to the conscience, which bids the actor narrow its looking. The flood is **never stored** (no destruction) and **never trimmed in silence** (no lie). The code a deed writes and the data it reads *internally* are never capped — only what it tries to push into shared memory. This is an API's maximum-response-size idea, applied inward: overproduction is not a special error to swallow, it is an ordinary failure that teaches the organism to look at less.
+The kernel has **one crossing budget**. It governs both boundaries where material leaves a private computation: what a deed emits into one blackboard area, and the complete request assembled for the mind.
+
+A deed that tries to **emit** more than the budget is treated as a plain failure — *"produced too much data"* — and routed to the conscience, which bids the actor narrow its looking. The flood is never stored. Code written and data read internally remain whole.
+
+The request is also measured whole **before transport**. Its changing value appears only at the very end of the user message; the explanation remains in the stable system prompt for cache reuse. The value acts as urgency and self-control: as pressure rises, the organism uses fewer words and combines adjacent **local** acts whose next target can be rebound from fresh observation. Costly external requests remain checkpoints, because combining two searches or hiding a completed search behind a later fragile click destroys both cost control and memory. If the hard boundary is crossed, the oversized request is not sent. An actor request becomes a `fault`; a witness request becomes `unwitnessed`; the existing routes switch the wheel to conscience. The environment is never sliced to make a request fit. Conscience narrows the next looking instead.
 
 ---
 
@@ -409,7 +416,7 @@ This is also how you watch the organism think one deliberate step at a time: `--
 
 ## How a new part is born
 
-Because the kernel routes by header and never reads a payload, adding a sense or a skill is the same act whether a human does it in an editor or the organism does it mid-run with a saved deed: **write one `*.py` file with a docstring and some functions, and drop it in the folder.** On the next turn the Loader seats it, its docstring joins the prompt, and its functions join the namespace. Nothing in the firmware changes.
+Because the kernel routes by header and never reads a payload, adding a sense or a skill is the same act whether a human does it in an editor or the organism does it mid-run with a saved deed: **write one `*.py` file with a docstring and some functions, and drop it in the folder.** On the next turn the Loader seats it, its docstring joins the prompt, and either its namespace hook or its public functions supply the exact executable names. Nothing in the firmware changes.
 
 ```python
 """A reader of the local clock. Offers, by bare name:
@@ -432,12 +439,18 @@ Drop that beside the firmware and the actor can call `now()` in its next deed. D
 
 ## Cost discipline
 
-A tool that reaches the living web is not a lookup — it is a costly agent that can spend an enormous budget reasoning and searching on the organism's behalf. Two lessons are baked in:
+The living-web primitive is an **agentic server request**, not a search box and not a lean fetch. One local `web_search(...)` call may cause the provider to issue several billable searches and page reads before returning. The transmission log is the source of truth: the failed regression run made two overlapping local calls, which expanded into 11 and 8 successful server-side web calls, then a later GUI exception erased their printed answers from evidence and prompted a third search.
 
-- **A search is a fetch, not a meditation.** The web-search primitive runs at low reasoning effort with a capped result count, so one search is a few-thousand-token lookup rather than an autonomous session that spirals.
-- **A vague question wanders; a sharp one is answered.** The actor is taught to ask **one precise, well-formed question at a time** — a full sentence naming exactly what is sought and any narrowing bound — then read the answer before deciding the next. It does not fling a heap of three-word fragments in a single breath.
+The correction has one shape:
 
-The broader principle: the same discipline that governs *printed output* (narrow the looking) governs *external calls* (ask precisely, once). Waste is a form of dishonesty toward the budget, and it is engineered out.
+- **One web checkpoint per deed.** The runtime refuses a second `web_search` in the same wheel turn before transport. The actor prints the first result immediately; a later turn can form a genuinely new question from that answer.
+- **One server-side tool call per checkpoint.** Search runs at low reasoning effort with `parallel_tool_calls=false` and `max_tool_calls=1`. The former undocumented `max_search_results` knob is gone because it did not bound the observed billable calls.
+- **A precise bounded question.** Ask the complete question needed for the present decision. When the authoritative place is known, pass up to five exact `allowed_domains`; too many domains fail hard rather than being silently sliced.
+- **Completed work survives a later fault.** Transport dumps still go whole to disk and the real console, but bypass deed stdout. If code prints a search result and a later local action raises, the evidence contains that result followed by the traceback, so conscience reuses the result instead of paying again.
+- **The organism reasons at medium effort; search remains low.** Root-goal reinterpretation keeps its depth without reopening an expensive web-search loop.
+- **The stable prefix is routed for reuse.** Responses requests carry a deterministic `prompt_cache_key`; the static system prompt stays first and the dynamic budget remains the final user line.
+
+The practical rule is exact: **ask once, print immediately, act from what survived, and ask again only on a later turn when the previous answer proves a different question necessary.**
 
 ---
 
@@ -466,7 +479,7 @@ Every rule here was earned, not assumed. The design is the residue of real choic
 - **Three output formats became one.** The offices once returned three different record shapes with three bespoke wirings. They were the *same* five fields under different names. Collapsing them to one record removed a whole layer of machinery and let every office see the contract every other must satisfy.
 - **The genome carries no runtime.** State a run accumulates is kept out of the versioned parts; a fresh copy always boots from a clean seed. Memory and body are different things and live in different places.
 - **The kernel judges no meaning.** An earlier version let the firmware guess which parts of a scan were "relevant" by counting goal-words — the machine deciding what mattered, and silently dropping the rest. Both are forbidden now. The kernel shows what was seen and, if it is too much, says so plainly and lets the *actor* narrow its own looking. Relevance is the mind's to judge, never the firmware's.
-- **The budget moved to the true boundary.** A cap on stored memory would have punished a legitimately large script. The cap sits instead on what a deed *emits* into shared memory — never on the code it writes or the data it reads within itself.
+- **The budget moved to the true boundaries.** A cap on stored memory would have punished a legitimately large script. The one cap now sits on crossings: what a deed *emits* into shared memory and the complete request before transport. Neither code nor internally-read data is cut.
 - **Dead knobs were deleted.** Flags for "mode" and "graphics," a hand-feeding input path, a hardcoded toggle, a whole self-editing apparatus — each was removed the moment it was found to do nothing the rest of the system did not already do better. What remains, acts.
 - **Say what to do, never what not to do.** A rule phrased as a prohibition plants the very thing it forbids — *"do not think of an elephant."* So the laws are written as positive instruction: name a thing by its enduring nature, not "never use a fleeting handle." What the organism is told to do is what it becomes.
 

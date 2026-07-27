@@ -3,7 +3,7 @@ hands upon the real Windows desktop; remove it and the organism simply has no ha
 
 It offers, by bare name in the actor namespace:
   desktop.observe(config=None) - a fresh in-process looking; returns the action_index and tree
-  desktop.open_url(browser='default', url='') - the direct road to a known address
+  desktop.open_url(browser='default', url='') - open a known address in the Windows default browser; any other browser value is an exact executable path
   desktop.click(x, y, hwnd) - move and press upon an owned point
   desktop.type_text(text) / desktop.paste_clipboard(text) / desktop.set_clipboard(text)
   desktop.press_key(key) / desktop.hotkey(*keys) / desktop.scroll(x, y, amount|clicks, hwnd)
