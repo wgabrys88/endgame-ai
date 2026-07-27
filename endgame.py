@@ -126,7 +126,7 @@ class Blackboard:
     def save(self):
         tmp = self.path.with_name(self.path.name + ".tmp.%s.%s" % (os.getpid(), time.time_ns()))
         tmp.write_text(json.dumps(self._m, ensure_ascii=False, indent=2), encoding="utf-8")
-        os.rename(tmp, self.path)
+        os.replace(tmp, self.path)  # atomic overwrite on Windows AND POSIX (os.rename fails on Windows if target exists)
 
     def seed(self):  # factory reset: machine memory only; human files (goal/counsel) untouched
         self._m = json.loads(json.dumps(self.SEED))
@@ -549,7 +549,7 @@ class Transport:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(path.name + ".tmp.%s.%s" % (os.getpid(), time.time_ns()))
         tmp.write_text(json.dumps(obj, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-        os.rename(tmp, path)
+        os.replace(tmp, path)
 
     # ---- the tee: same object to disk AND screen, whole  (distills _dump_transmission) ----
     def _transmission_root(self):
@@ -583,7 +583,7 @@ class Transport:
         payload = json.dumps(dump, ensure_ascii=False, indent=2, default=str)
         tmp = path.with_name(path.name + ".tmp")
         tmp.write_text(payload, encoding="utf-8")
-        os.rename(tmp, path)
+        os.replace(tmp, path)
         sys.stdout.write("\n===== transmission %s =====\n%s\n" % (path.name, payload))
         sys.stdout.flush()
 
