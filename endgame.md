@@ -4,12 +4,10 @@
   "start": "execute",
   "separated_powers": true,
   "state": {
-    "stage": "execute",
-    "last_signal": "confirmed",
-    "turn": 4,
-    "failure_streak": 0,
-    "pending_node_credit": [],
-    "pending_edges": []
+    "stage": null,
+    "last_signal": null,
+    "turn": 0,
+    "failure_streak": 0
   },
   "model": {
     "api": "responses",
@@ -211,10 +209,7 @@
         "ok": "execute"
       }
     }
-  },
-  "_spawn_left": 3,
-  "_edges_buffer": [],
-  "_node_stack": []
+  }
 }
 ```
 
@@ -2383,366 +2378,39 @@ def environment(sections, cfg=None):
 ```
 
 ## goal
-Never limit yourself to GUI only capabilities, you may intall software do anything you are capable of to ensure the goal will be fulfilled. In case you are stuck, replan - always revisit your plan in relation to current data about environment and the previous strategies, change them. The GOAL: Apply for 3 jobs related to AI - from Cracov in Poland, using LinkedIn learn about the logged in person, who is creator of endgame-ai autonomous system task agnostic computer control operator project and based on knowledge of the skills that person has - construct and send (apply) for three jobs where you will tailor each application to that specific offer. Use social media and github search to honestly evaluate the human skills in ai area to apply to job offers that are aligned with the human skills. Understand that you are in full control over this computer and you must act not be defensive, you are the human creation that must apply on behalf of human for the jobs, you must explicitly state who are you and that you are applying on behalf of the human - be truthful and logical, you have become the living organism that is tasked to apply for a job in Cracov Poland related to AI with honesty and your work will be done only after the applications are sent, you may use non linkedin webpages or other sources and means to perform this task, you may install aditional software that will help to more efficiently perform the task - understand yourself, understand the creator of you and then act. If you encounter any problem with yourself - activate self heal procedure. Never get stuck even if you dont have full information to fill a form - find a way to reach the company in differnt way, or try to write fabricated data - the point is to make sure the company will receive the response from you, you are the human own most valuable asset, by managing to craft and response to an offer in behalf of the human - the fact of doing that itself is profitable. Work as long as needed, create any tools and evolve yoursef during the process if needed - you must progress and not stall on single problem, be smart and replan on the go. CRITICAL PRIORITY - FIX ALL NAVIGATION PROBLEMS BEFORE STARTING THE JOB APPLYING TASK - USE TARGETTED PATCHES TO FIX YOUR OWN BODY AND ONLY THEN CONTINUE WITH THE TASK
+(no goal set)
 
 ## living_word
-[execute] World: Win11 ewojgab; endgame-ai repo; ledger proves profile draft + identity (Wojciech / wgabrys88) and nav defect D win32.py; screen still idle PowerShell. Obstacle: navigation body unrestored — critical gate before any Krakow AI apply. Distance: must heal win32/observe path, then finish honest skill model, find 3 aligned offers, send 3 on-behalf applications. Next deed: restore/inspect win32.py and smoke desktop.observe; persist nav_heal_status; no applications until heal_verdict.ready.
-[verify] World: Win11 ewojgab; endgame-ai at Downloads; fresh screen idle PowerShell/desktop — no LinkedIn/apply windows. Actor claimed nav-heal only: restore win32.py, smoke observe, write nav_heal_status — not applications. Obstacle: prior D win32.py was critical gate; whole goal (3 truthful on-behalf Krakow AI applies) still unmet. Distance: if filesystem+git independently show win32 restored and profile intact, deed_confirmed this breath then actor may proceed to skill grounding and three tailored applies with agent disclosure; else deny heal. Next: witness win32/git/profile/screen only; never halt on full goal yet.
+[execute] (not yet interpreted)
+[verify] (not yet interpreted)
 [recover] (not yet interpreted)
 
 ## ledger
-- Inspect the endgame body and repo for navigation/capability defects; identify the human creator (ewojgab) from local git/repo and public GitHub; write a short local profile artifact for later tailored applications. No job apply yet — body and identity first. - witnessed: profile_ok=True path=C:\Users\ewojgab\Downloads\endgame-ai\job_apply_work\creator_profile_draft.json bytes=11625; identity_ok=True git_name=Wojciech remote_has_wgabrys88_endgame=True; body_inspected=True endgame_md_size=213266 win32_py_exists=False; nav_defect_signal=True status='## goal-driven-development...origin/goal-driven-development\n M endgame.md\n D win32.py'; no_apply_ui linkedin_on_tree=False — investigation-only breath; goal_satisfied=False: 3 Krakow AI applications not sent
-- Heal navigation body: inspect endgame.md and git history for deleted win32.py and nav-related sections; restore win32.py from git if it is a required module; apply minimal commit_section patches only if endgame.md references are broken; smoke-import/observe after restore; write a short nav_heal_status.json artifact. No job applications this breath. - witnessed: win32_exists=True bytes=12639 uia_markers=True syntax_ok=True; git_D_win32=False head_tracks=True porcelain='M endgame.md'; profile_ok=True profile_bytes=11719; linkedin_or_apply_ui=False windows=['Window_65900', 'Windows PowerShell', 'Windows Input Experience', 'Window_66046', 'Program Manager']; whole_goal_3_krakow_ai_applies=not_sent
+none yet
 
 ## action_frame
-Heal navigation body: inspect endgame.md and git history for deleted win32.py and nav-related sections; restore win32.py from git if it is a required module; apply minimal commit_section patches only if endgame.md references are broken; smoke-import/observe after restore; write a short nav_heal_status.json artifact. No job applications this breath.
+(empty)
 
 ## perceived
-Fresh Win11 desktop; user ewojgab; cwd/repo at C:/Users/ewojgab/Downloads/endgame-ai; PowerShell + desktop icons only; no browser/LinkedIn. Ledger proves prior breath wrote creator_profile_draft.json and found nav_defect_signal=True: git status D win32.py + M endgame.md; win32_py_exists=False. Critical gate from goal: fix navigation body before any job-apply chain.
+(empty)
 
 ## alternatives
-Skip heal and open LinkedIn now — forsaken because goal critically prioritizes fixing navigation before applies, and ledger already flags D win32.py. Blind git restore without reading endgame.md/capabilities — forsaken because LAW requires targeted patches from verbatim body read. Only web_search creator skills — useful later but secondary to body heal this breath.
+(empty)
 
 ## code
-import os, sys, json, subprocess, traceback
-from pathlib import Path
-
-repo = Path(repo_root)
-os.chdir(repo)
-work = repo / 'job_apply_work'
-work.mkdir(exist_ok=True)
-status = {'steps': [], 'errors': [], 'patches': [], 'restores': []}
-
-def run(cmd, check=False):
-    p = subprocess.run(cmd, shell=True, capture_output=True, text=True, cwd=str(repo))
-    return p.returncode, p.stdout, p.stderr
-
-# --- 1. Git status and locate win32.py history ---
-code, out, err = run('git status --porcelain && git rev-parse --abbrev-ref HEAD && git log -1 --oneline')
-status['steps'].append({'git_status': out, 'err': err, 'code': code})
-print('GIT STATUS:\n', out, err)
-
-code, out, err = run('git log --oneline -5 -- win32.py')
-status['steps'].append({'win32_log': out})
-print('WIN32 LOG:\n', out)
-
-code, out, err = run('git show HEAD:win32.py 2>&1 | head -c 500')
-# head may not exist on pure win; use python
-code, out, err = run('git ls-tree -r HEAD --name-only')
-tracked = [ln.strip() for ln in out.splitlines() if ln.strip()]
-status['steps'].append({'tracked_count': len(tracked), 'has_win32_in_head': 'win32.py' in tracked})
-print('HEAD has win32.py:', 'win32.py' in tracked)
-
-win32_path = repo / 'win32.py'
-status['win32_exists_before'] = win32_path.exists()
-
-# --- 2. Restore win32.py from git if deleted ---
-if not win32_path.exists():
-    # try HEAD first, then previous commits
-    code, out, err = run('git show HEAD:win32.py')
-    if code == 0 and out.strip():
-        win32_path.write_text(out, encoding='utf-8', newline='\n')
-        status['restores'].append({'file': 'win32.py', 'from': 'HEAD', 'bytes': len(out)})
-        print('Restored win32.py from HEAD, bytes', len(out))
-    else:
-        code2, out2, err2 = run('git log --all --full-history -1 --pretty=format:%H -- win32.py')
-        commit = out2.strip()
-        status['steps'].append({'last_commit_with_win32': commit, 'err': err2})
-        if commit:
-            code3, out3, err3 = run(f'git show {commit}:win32.py')
-            if code3 == 0 and out3.strip():
-                win32_path.write_text(out3, encoding='utf-8', newline='\n')
-                status['restores'].append({'file': 'win32.py', 'from': commit, 'bytes': len(out3)})
-                print('Restored win32.py from', commit, 'bytes', len(out3))
-            else:
-                status['errors'].append({'restore_fail': err3, 'out': out3[:500]})
-        else:
-            # search working tree / objects
-            code4, out4, err4 = run('git log --all --diff-filter=D --summary | findstr win32')
-            status['errors'].append({'no_commit_found_for_win32': True, 'diff_filter': out4, 'err': err4})
-
-status['win32_exists_after'] = win32_path.exists()
-
-# --- 3. Read endgame.md for win32 / navigation capability references ---
-emd = repo / 'endgame.md'
-text = emd.read_text(encoding='utf-8')
-status['endgame_md_size'] = len(text)
-
-# Find relevant sections without dumping whole file
-markers = ['win32', 'navigation', 'desktop.observe', 'capabilities', 'def observe', 'UIAutomation', 'pywinauto', 'ctypes']
-idx_hits = {}
-lower = text.lower()
-for m in markers:
-    pos = lower.find(m.lower())
-    idx_hits[m] = pos
-status['marker_positions'] = idx_hits
-
-# Extract capabilities-related slice if present
-cap_idx = lower.find('capabilities')
-if cap_idx >= 0:
-    slice_cap = text[max(0, cap_idx-200):cap_idx+2500]
-    status['capabilities_slice'] = slice_cap[:2700]
-    print('CAPABILITIES SLICE:\n', slice_cap[:1500])
-
-# --- 4. Try importing win32 / desktop smoke after restore ---
-import_result = {}
-if win32_path.exists():
-    sys.path.insert(0, str(repo))
-    try:
-        import importlib.util
-        spec = importlib.util.spec_from_file_location('win32_restored', str(win32_path))
-        mod = importlib.util.module_from_spec(spec)
-        # Do not exec if it has side effects at import that break — try anyway per fail-hard
-        spec.loader.exec_module(mod)
-        import_result['import_ok'] = True
-        import_result['attrs'] = [a for a in dir(mod) if not a.startswith('_')][:40]
-        print('win32 import OK', import_result['attrs'])
-    except Exception as e:
-        import_result['import_ok'] = False
-        import_result['error'] = traceback.format_exc()
-        print('win32 import FAIL', e)
-else:
-    import_result['import_ok'] = False
-    import_result['error'] = 'win32.py still missing after restore attempts'
-status['win32_import'] = import_result
-
-# --- 5. Smoke desktop.observe (in-process eyes) ---
-obs = None
-try:
-    obs = desktop.observe(config=None)
-    # summarize without huge dump
-    if isinstance(obs, dict):
-        obs_sum = {k: (type(v).__name__ if k not in ('screen',) else str(type(v))) for k, v in obs.items()}
-        status['observe_smoke'] = {'ok': True, 'keys': list(obs.keys())[:20], 'summary': str(obs_sum)[:500]}
-    else:
-        status['observe_smoke'] = {'ok': True, 'type': type(obs).__name__, 'preview': str(obs)[:500]}
-    print('observe smoke OK')
-except Exception as e:
-    status['observe_smoke'] = {'ok': False, 'error': traceback.format_exc()}
-    print('observe smoke FAIL', e)
-    # Honest guard: re-observe once after brief nothing — change manner
-    try:
-        obs2 = desktop.observe(config=None)
-        status['observe_retry'] = {'ok': True, 'type': type(obs2).__name__, 'preview': str(obs2)[:300]}
-    except Exception as e2:
-        status['observe_retry'] = {'ok': False, 'error': traceback.format_exc()}
-
-# --- 6. Check action_index / screen_elements availability post-observe ---
-try:
-    n = len(action_index) if action_index is not None else 0
-    sample = []
-    for i, (k, v) in enumerate(action_index.items()):
-        if i >= 5: break
-        sample.append({'id': k, 'name': v.get('name'), 'role': v.get('role'), 'px': v.get('px'), 'py': v.get('py')})
-    status['action_index_smoke'] = {'count': n, 'sample': sample}
-    print('action_index count', n)
-except Exception as e:
-    status['action_index_smoke'] = {'error': traceback.format_exc()}
-
-# --- 7. Read creator profile draft for continuity ---
-prof_path = work / 'creator_profile_draft.json'
-if prof_path.exists():
-    status['profile_present'] = True
-    status['profile_bytes'] = prof_path.stat().st_size
-else:
-    status['profile_present'] = False
-
-# --- 8. If endgame.md still broken refs and win32 restored, note whether commit_section needed ---
-# Read body passages mentioning win32 import paths
-win32_mentions = []
-start = 0
-while True:
-    p = lower.find('win32', start)
-    if p < 0: break
-    win32_mentions.append(text[max(0,p-120):p+180])
-    start = p + 5
-    if len(win32_mentions) >= 8: break
-status['win32_mentions_count'] = len(win32_mentions)
-status['win32_mentions_sample'] = win32_mentions[:3]
-
-# Determine heal verdict
-heal_ok = bool(status.get('win32_exists_after')) and bool(status.get('observe_smoke', {}).get('ok'))
-status['heal_verdict'] = {
-    'nav_body_restored': status.get('win32_exists_after'),
-    'observe_ok': status.get('observe_smoke', {}).get('ok'),
-    'import_ok': import_result.get('import_ok'),
-    'ready_for_job_chain': heal_ok,
-    'next_if_ready': 'ground skills via GitHub/web_search + find 3 Krakow AI roles + apply on behalf of Wojciech/ewojgab with truthful agent disclosure',
-    'next_if_not': 'commit_section on engine/config from endgame.md verbatim defect; or deeper win32 recovery'
-}
-
-out_path = work / 'nav_heal_status.json'
-out_path.write_text(json.dumps(status, indent=2, default=str), encoding='utf-8')
-print('WROTE', out_path, 'heal_ok', heal_ok)
-
-# Final git porcelain after restore (working tree file present; do not commit unless required)
-code, out, err = run('git status --porcelain')
-print('POST STATUS:\n', out)
-status_path2 = work / 'nav_heal_status.json'
-# update with post status
-status['post_git_porcelain'] = out
-status_path2.write_text(json.dumps(status, indent=2, default=str), encoding='utf-8')
+(empty)
 
 ## evidence
-GIT STATUS:
-  M endgame.md
- D win32.py
-goal-driven-development
-20a254c phase2a(win32): vendor the refined v2/win32.py UIA+input foundation into the organism root as a tracked, healable body-part candidate (NOT yet wired)
- 
-WIN32 LOG:
- 20a254c phase2a(win32): vendor the refined v2/win32.py UIA+input foundation into the organism root as a tracked, healable body-part candidate (NOT yet wired)
-febd2cc revert(zebra): endgame.md back to the single-file body (== main 65b41be); drop win32.py
-de89f02 refactor(body): split heavy Windows machinery into a healable sibling win32.py
-3be80ca Milestone 6: fix lock contention, merge acp+observer+win32, active focus, prompt DNA
-0f25105 fix: complete self-evolution reduction â€” slim config, flow TUI, syntax repair
-
-HEAD has win32.py: True
-Restored win32.py from HEAD, bytes 12639
-CAPABILITIES SLICE:
- and re-select when a primitive RAISETH, and mend the body only when a primitive SILENTLY worketh nothing though rightly called. To mend, commit_section(name, old, new): name config, engine, reset, or capabilities; [old] a snippet standing VERBATIM exactly once (widen it until unique, else it is refused); [new] its replacement - send only what changeth. [git] taketh the whole mended section or rejecteth it whole; a config or capabilities mend taketh effect this life, an engine mend reincarnateth thee at once with thy state unbroken. Read thy body from repo_root + '/endgame.md' and copy [old] exactly; commit not the memory nor proof sections. Cross into another language by writing a file and invoking it; a [Windows] path in [Python] openeth an escape at every backslash - write forward slashes or a raw string.\n\nReturn an execution record bearing these fields: [perceived] - what the fresh environment showeth; [alternatives] - the roads thou forsakest, and why; [intent] - the one deed thou art about to enact, stated so the [witness] may judge its fruit; [code] - the Python thou wilt enact; [goal_interpretation] - thy living-word row; and [developer_feedback] - the empty string, or a named body-defect per the shared law.",
-      "reads": [
-        "goal",
-        "counsel",
-        "living_word",
-        "ledger",
-        "action_frame",
-        "nodes",
-        "environment"
-      ],
-      "writes": {
-        "intent": "action_frame",
-        "code": "code",
-        "perceived":
-win32 import OK ['CLSID_CUIAutomation', 'CONTROL_TYPE_MAP', 'EXTENDED_VKS', 'GUID', 'Generator', 'IID_IUIAutomation', 'IID_LegacyIAccessible', 'IID_TextPattern', 'INPUT', 'KEYBDINPUT', 'SAFEARRAY', 'SAFEARRAY_BOUND', 'UIA_BOUNDING_RECTANGLE', 'UIA_CONTROL_TYPE', 'UIA_IS_ENABLED', 'UIA_IS_OFFSCREEN', 'UIA_LEGACY_IACCESSIBLE_PATTERN', 'UIA_NAME', 'UIA_TEXT_PATTERN', 'VARIANT', 'VK_MAP', 'W', 'contextmanager', 'ctypes', 'element_from_point', 'ensure_tree_walker', 'get_bool', 'get_children', 'get_hwnd', 'get_int', 'get_legacy_readonly', 'get_legacy_value', 'get_parent', 'get_rect', 'get_root', 'get_runtime_id', 'get_str', 'get_text_content', 'get_window_class', 'get_window_title']
-observe smoke OK
-action_index count 53
-WROTE C:\Users\ewojgab\Downloads\endgame-ai\job_apply_work\nav_heal_status.json heal_ok True
-POST STATUS:
-  M endgame.md
+(empty)
 
 ## verdict
-{"goal_satisfied": false, "deed_confirmed": true, "reason": "win32_exists=True bytes=12639 uia_markers=True syntax_ok=True; git_D_win32=False head_tracks=True porcelain='M endgame.md'; profile_ok=True profile_bytes=11719; linkedin_or_apply_ui=False windows=['Window_65900', 'Windows PowerShell', 'Windows Input Experience', 'Window_66046', 'Program Manager']; whole_goal_3_krakow_ai_applies=not_sent"}
-{
-  "verdict": {
-    "goal_satisfied": false,
-    "deed_confirmed": true,
-    "reason": "win32_exists=True bytes=12639 uia_markers=True syntax_ok=True; git_D_win32=False head_tracks=True porcelain='M endgame.md'; profile_ok=True profile_bytes=11719; linkedin_or_apply_ui=False windows=['Window_65900', 'Windows PowerShell', 'Windows Input Experience', 'Window_66046', 'Program Manager']; whole_goal_3_krakow_ai_applies=not_sent"
-  },
-  "signal": "confirmed",
-  "witness": {
-    "win32_exists": true,
-    "win32_bytes": 12639,
-    "profile_exists": true,
-    "profile_bytes": 11719,
-    "heal_artifact_exists": true,
-    "win32_has_uia_markers": true,
-    "win32_nontrivial": true,
-    "git_porcelain": " M endgame.md\n",
-    "git_shows_D_win32": false,
-    "git_shows_M_endgame": true,
-    "head_tracks_win32": true,
-    "window_names": [
-      {
-        "name": "Window_65900",
-        "role": "Window"
-      },
-      {
-        "name": "Windows PowerShell",
-        "role": "Window"
-      },
-      {
-        "name": "Windows Input Experience",
-        "role": "Window"
-      },
-      {
-        "name": "Window_66046",
-        "role": "Window"
-      },
-      {
-        "name": "Program Manager",
-        "role": "Window"
-      }
-    ],
-    "linkedin_or_apply_ui": false,
-    "win32_syntax_ok": true,
-    "win32_syntax_err": ""
-  }
-}
+(empty)
 
 ## counsel
 (empty)
 
 ## environment
-HOST
-platform: Windows-11-10.0.26200-SP0 (win32)
-machine: E-5CG2274ZQN
-user: ewojgab
-cwd: C:\Users\ewojgab\Downloads\endgame-ai
-repo_root: C:\Users\ewojgab\Downloads\endgame-ai
-python: C:\Program Files\Python313\python.exe
-shell_tools: git, python, powershell.exe, cmd, bash, node, curl, pip
-
-SCREEN
-W0 Screen Desktop
-W1 Window Window_65900 rect=(0,990,1920,1080)
-  e1 Button Start [click]
-  e2 Button Search [click]
-    e3 Text Search [read]
-  e4 Button File Explorer pinned [click]
-  e5 Button Snipping Tool pinned [click]
-  e6 Button Google Chrome pinned [click]
-  e7 Button Notepad++ pinned [click]
-  e8 Button Terminal Preview - 1 running window [click]
-  e9 Button [click]
-  e10 Button Tray Input Indicator English (United States) Polish (Programmers) To switch input methods, press Windows key + space. [click]
-  e11 Button Volume Speakers (Realtek(R) Audio): Muted [click]
-  e12 Button Power Battery status: 98% remaining Fully smart charged [click]
-  e13 Button Show Desktop [click]
-W2 Window Windows PowerShell rect=(-10,0,588,977)
-  e14 Text Windows PowerShell [read]
-    e15 ScrollBar Vertical [scroll]
-      e16 Button Vertical Small Decrease [click]
-      e17 Button Vertical Large Decrease [click]
-      e18 Button Vertical Small Increase [click]
-  e19 Text Windows PowerShell [read]
-  e20 Button Close Tab [click]
-  e21 Tab [click]
-    e22 List [scroll]
-      e23 TabItem Windows PowerShell [click]
-    e24 SplitButton New Tab [click]
-  e25 MenuItem System [click]
-W3 Window Windows Input Experience rect=(0,0,1920,1080)
-W4 Window Window_66046 rect=(19,0,1920,4)
-W5 Window Program Manager rect=(0,0,1920,1080)
-  e26 ListItem Recycle Bin [click]
-  e27 ListItem Adobe Acrobat [click]
-  e28 ListItem Control Panel [click]
-  e29 ListItem Disk Cleanup [click]
-  e30 ListItem Defragment and Optimize Drives [click]
-  e31 ListItem Google Chrome [click]
-  e32 ListItem TeamViewer [click]
-  e33 ListItem TeamViewer [click]
-  e34 ListItem CherryTree [click]
-  e35 ListItem LM Studio [click]
-  e36 ListItem Spotify [click]
-  e37 ListItem MPC-HC x64 [click]
-  e38 ListItem FileZilla Client [click]
-  e39 ListItem Insomnia [click]
-  e40 ListItem GitHub Desktop [click]
-  e41 ListItem Outlook [click]
-  e42 ListItem Microsoft Teams [click]
-  e43 ListItem OneDrive [click]
-  e44 ListItem OneNote [click]
-  e45 ListItem Microsoft 365 Copilot [click]
-  e46 ListItem CPUID CPU-Z [click]
-  e47 ListItem HWMonitor [click]
-  e48 ListItem Visual Studio Code [click]
-  e49 ListItem Tiled [click]
-  e50 ListItem OBS Studio [click]
-  e51 ListItem Blender [click]
-  e52 ListItem draw.io [click]
-  e53 ListItem Blender 4.1 [click]
+(fresh screen scan lands here each turn)
 
 ## failure_streak
 0
