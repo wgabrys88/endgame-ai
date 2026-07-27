@@ -284,7 +284,7 @@ sequenceDiagram
     participant B as Blackboard
 
     H->>W: goal written to the goal file
-    W->>W: seat the cards; if a node file changed, re-seat
+    W->>W: seat the cards if a node file changed, re-seat
     W->>N: refresh perception (a seated sense scans the world)
     W->>P: system = law + schema + all offices + tools · user = "I am [stage]" + read areas
     P->>M: send (the exchange is teed to disk AND screen, whole)
@@ -292,9 +292,9 @@ sequenceDiagram
     W->>B: write plan-row, code, next-deed
     W->>N: if this office runs code, run it in the built namespace
     N-->>W: emitted output (checked against the area budget)
-    W->>B: store the fruit; the witness's verdict writes the ledger
+    W->>B: store the fruit the witness's verdict writes the ledger
     W->>W: route by signal → next office
-    W-->>H: state persisted; the wheel turns again
+    W-->>H: state persisted the wheel turns again
 ```
 
 Every turn is the same shape, whether the deed is a web search, a click, a file written, or a new node saved.
