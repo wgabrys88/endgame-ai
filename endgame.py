@@ -30,9 +30,10 @@ ENTRY POINT / TEST BUS
   endgame.py is also the only way to reach a node: to exercise one in isolation you boot
   the firmware pointed at it. A test is a run; the switch is the probe.
 
-SOURCE OF TRUTH FOR THE REWRITE
-  Every behaviour here is distilled from the legacy single-file board endgame.md; each
-  class names the legacy region it descends from so the chunk-by-chunk fill stays honest.
+LINEAGE
+  Every behaviour here was distilled from the retired single-file board endgame.md; each class
+  names the legacy region it descends from. That board is gone from the tree (git history keeps
+  it); this firmware plus its nodes is now the whole organism.
 """
 
 import json, os, re, sys, io, subprocess, urllib.request, contextlib, pathlib, queue, threading, time, importlib, importlib.util, inspect, types
@@ -850,7 +851,12 @@ class Wheel:
         ns["spawn_actor"] = self._make_spawn(kind)
         return ns
 
-    # ---- nodes as reusable deeds on the blackboard (distills _make_node_tools) ----
+    # ---- nodes as reusable deeds ON DISK (distills _make_node_tools; a saved deed becomes a
+    #      real node_<name>.py card - auto-seated, its doc entering the prompt - and survives by
+    #      usage: the reaper deletes unproven deeds unused past node_ttl_seconds) ----
+    def _deed_path(self, name):
+        return self.root / ("node_%s.py" % name)
+
     def _node_tools(self, kind):
         bb = self.bb
 
@@ -865,20 +871,42 @@ class Wheel:
             if not isinstance(description, str) or not description.strip():
                 raise RuntimeError("save_node needeth a non-empty description of what the node doth and its params")
             compile(code, "<node:%s>" % name, "exec")
+            # the deed becomes a real, importable card: docstring -> prompt manifest; CODE -> the
+            # verbatim deed, run in the full actor namespace by call_node('%s'). Import is side-
+            # effect-free (only a string is assigned), so auto-seating cannot crash the boot.
+            doc = description.strip().replace('"""', "'''")
+            body = ('"""%s\n\nA saved deed-node. Invoke with call_node(%r, params). It fadeth if left\n'
+                    'unused and unproven; a deed that earneth an advance is kept.\n"""\n\nCODE = %r\n'
+                    % (doc, name, code))
+            path = self._deed_path(name)
+            tmp = path.with_name(path.name + ".tmp.%s.%s" % (os.getpid(), time.time_ns()))
+            tmp.write_text(body, encoding="utf-8")
+            os.replace(tmp, path)
             nodes = bb.get("nodes") or {}
             prior = nodes.get(name, {})
-            nodes[name] = {"code": code, "description": description.strip(),
+            now = time.time()
+            nodes[name] = {"description": description.strip(),
                            "invocations": int(prior.get("invocations", 0)),
-                           "advances": int(prior.get("advances", 0))}
-            bb.set("nodes", nodes)
-            return {"node": name, "saved": True, "total_nodes": len(nodes)}
+                           "advances": int(prior.get("advances", 0)),
+                           "created_at": float(prior.get("created_at", now)),
+                           "last_used": now}
+            bb.set("nodes", nodes); bb.save()
+            return {"node": name, "file": path.name, "saved": True, "total_nodes": len(nodes)}
 
         def call_node(name, params=None):
             nodes = bb.get("nodes") or {}
-            node = nodes.get(name)
-            if node is None:
+            if name not in nodes:
                 raise RuntimeError("call_node knoweth no node %r; the saved nodes are %s" % (name, sorted(nodes)))
-            node["invocations"] = int(node.get("invocations", 0)) + 1
+            path = self._deed_path(name)
+            if not path.exists():
+                raise RuntimeError("call_node: the deed-node file for %r is gone from disk (reaped or never written)" % name)
+            scope = {}
+            exec(compile(path.read_text(encoding="utf-8"), str(path), "exec"), scope)
+            code = scope.get("CODE")
+            if not isinstance(code, str) or not code.strip():
+                raise RuntimeError("deed-node %r beareth no CODE string" % name)
+            nodes[name]["invocations"] = int(nodes[name].get("invocations", 0)) + 1
+            nodes[name]["last_used"] = time.time()
             bb.set("nodes", nodes)
             src = self._node_stack[-1] if self._node_stack else "__root__"
             self._edges_buffer.append(_edge_key(src, name))
@@ -889,7 +917,7 @@ class Wheel:
                 sub["result"] = None
                 buf = io.StringIO()
                 with contextlib.redirect_stdout(buf):
-                    exec(node["code"], sub)
+                    exec(code, sub)
                 return sub.get("result")
             finally:
                 if self._node_stack:
@@ -908,6 +936,38 @@ class Wheel:
                     for n, w in succ if n in nodes]
 
         return save_node, call_node, suggest_next
+
+    # ---- BIOS survival: reap deed-node files unused past node_ttl_seconds and never proven.
+    #      A proven deed (advances>0) is immortal; throwaway code is truly thrown away from disk.
+    def _reap_nodes(self):
+        ttl = float(self.cfg.get("node_ttl_seconds", 0))
+        if ttl <= 0:
+            return
+        now = time.time()
+        nodes = self.bb.get("nodes") or {}
+        edges = self.bb.get("node_edges") or {}
+        reaped = []
+        for path in self.root.glob("node_*.py"):
+            name = path.stem[len("node_"):]
+            meta = nodes.get(name)
+            if meta is None:  # orphan file with no registry memory: reap by its own mtime
+                if now - path.stat().st_mtime > ttl:
+                    path.unlink(missing_ok=True); reaped.append(name)
+                continue
+            if int(meta.get("advances", 0)) > 0:
+                continue  # proven: immortal
+            last = float(meta.get("last_used") or meta.get("created_at") or 0)
+            if now - last > ttl:
+                path.unlink(missing_ok=True)
+                nodes.pop(name, None)
+                for k in [k for k in edges if k.startswith(name + "->") or k.endswith("->" + name)]:
+                    del edges[k]
+                reaped.append(name)
+        if reaped:
+            self.bb.set("nodes", nodes); self.bb.set("node_edges", edges); self.bb.save()
+            sys.stderr.write("reap: unused unproven deed-nodes deleted from disk: %s\n" % reaped)
+            self.loader.reload()
+            self.prompt = Prompt(self.bb, self.loader, self.cfg)
 
     # ---- parallel recursion (distills spawn_actor) ----
     def _make_spawn(self, kind):
@@ -1034,6 +1094,7 @@ class Wheel:
         state["last_signal"] = signal
         state["turn"] = int(state.get("turn", 0)) + 1
         self.bb.save()
+        self._reap_nodes()  # BIOS survival: throwaway deed-nodes fade from disk; proven ones stay
         sys.stderr.write("turn %d: stage=%s signal=%s -> %s (streak=%s)\n"
                          % (state["turn"], stage_name, signal, nxt, state.get("failure_streak", 0)))
         return nxt, (nxt == "halt")

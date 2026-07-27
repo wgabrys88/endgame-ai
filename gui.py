@@ -21,7 +21,6 @@ import time
 from ctypes import wintypes
 from typing import Any
 
-NO_GUI = False  # gui.py present == a hand is seated; presence is the switch (no flag)
 user32 = ole32 = oleaut32 = None
 AUTOMATION = None
 
@@ -912,91 +911,6 @@ def restore_observation(snap):
 # binds only when the hand is actually used (on the real Windows target). No import-time POST.
 
 
-def _no_gui_hand():
-    def _absent(*_a, **_k):
-        raise RuntimeError("no GUI on this host (--no-gui): the desktop hand cannot act here")
-    return _types.SimpleNamespace(
-        click=_absent, type_text=_absent, paste_clipboard=_absent,
-        set_clipboard=_absent, press_key=_absent, hotkey=_absent,
-        scroll=_absent, open_url=_absent, observe=_absent,
-    )
-
-
-_SELF_DIR = ROOT / ".self"
-_EDITABLE = {"config", "engine", "reset", "capabilities"}
-_SECTION_LANG = {"config": "json", "engine": "python", "reset": "python", "capabilities": "python"}
-
-
-def _ensure_self_repo():
-    import subprocess, sys as _sys
-    if (_SELF_DIR / ".git").is_dir():
-        return _SELF_DIR
-    _SELF_DIR.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["git", "init", str(_SELF_DIR)], capture_output=True, text=True, check=True)
-    for k, v in (("user.email", "endgame-ai@localhost"), ("user.name", "endgame-ai")):
-        subprocess.run(["git", "-C", str(_SELF_DIR), "config", k, v], capture_output=True, text=True, check=True)
-    (_SELF_DIR / "_gate.py").write_text(
-        "import sys, json, py_compile\n"
-        "f = sys.argv[1]\n"
-        "if f.endswith('.py'):\n"
-        "    py_compile.compile(f, doraise=True)\n"
-        "elif f.endswith('.json'):\n"
-        "    json.load(open(f, encoding='utf-8'))\n",
-        encoding="utf-8")
-    py = _sys.executable.replace(chr(92), "/")
-    hook = _SELF_DIR / ".git" / "hooks" / "pre-commit"
-    hook.write_text(
-        "#!/bin/sh\n"
-        "for f in $(git diff --cached --name-only --diff-filter=ACM); do\n"
-        '  "' + py + '" _gate.py "$f" || exit 1\n'
-        "done\n",
-        encoding="utf-8")
-    hook.chmod(0o755)
-    return _SELF_DIR
-
-
-def _fenced_payload(section_body):
-    import re
-    _bt = chr(96) * 3
-    m = re.search(_bt + r"(?:\w+)?\s*\n(.*)\n" + _bt + r"\s*\Z", section_body.strip(), re.S)
-    if not m:
-        raise RuntimeError("section body is not a single fenced block; cannot locate its code")
-    return m.group(1)
-
-
-def _commit_section(sections, name, old, new):
-    import subprocess
-    if name not in _EDITABLE:
-        raise RuntimeError("commit_section editeth only genome sections %s, not %r; memory and proof are engine-owned"
-                           % (sorted(_EDITABLE), name))
-    lang = _SECTION_LANG[name]
-    payload = _fenced_payload(sections[name])
-    if not isinstance(old, str) or old == "":
-        raise RuntimeError("commit_section needeth a non-empty [old] snippet that standeth verbatim in the %s payload" % name)
-    hits = payload.count(old)
-    if hits == 0:
-        raise RuntimeError("commit_section found no [old] snippet in the %s payload; read thy current body from repo_root + '/endgame.md' and copy it exactly" % name)
-    if hits > 1:
-        raise RuntimeError("commit_section found [old] %d times in the %s payload; widen it with surrounding lines until it standeth exactly once" % (hits, name))
-    new_payload = payload.replace(old, new, 1)
-    new_body = chr(96) * 3 + lang + "\n" + new_payload.rstrip("\n") + "\n" + chr(96) * 3
-    repo = _ensure_self_repo()
-    ext = {"python": "py", "json": "json"}[lang]
-    fname = name + "." + ext
-    (repo / fname).write_text(new_payload.rstrip("\n") + "\n", encoding="utf-8")
-    add = subprocess.run(["git", "-C", str(repo), "add", "--", fname], capture_output=True, text=True)
-    if add.returncode != 0:
-        raise RuntimeError("git add failed for %s:\n%s" % (fname, add.stderr.strip()))
-    if subprocess.run(["git", "-C", str(repo), "diff", "--cached", "--quiet"]).returncode == 0:
-        sections[name] = new_body
-        return {"section": name, "file": fname, "changed": False}
-    r = subprocess.run(["git", "-C", str(repo), "commit", "-m", "section:" + name], capture_output=True, text=True)
-    if r.returncode != 0:
-        raise RuntimeError("git rejected %r (syntax gate):\n%s\n%s" % (name, r.stdout.strip(), r.stderr.strip()))
-    sections[name] = new_body
-    return {"section": name, "file": fname, "committed": r.stdout.strip().split("\n")[0]}
-
-
 def _read_element(sid):
     """Reveal the WHOLE text an element beareth in the current observation, untruncated -
     the depth-on-demand companion to the budgeted tree. Fail hard on a stale/unknown id."""
@@ -1005,30 +919,6 @@ def _read_element(sid):
     if e is None:
         raise KeyError("read: no element %r in the fresh scan; a short id dieth with the looking that bore it" % (sid,))
     return e.get("text_full") or e.get("value") or e.get("name") or ""
-
-
-def build(kind, sections, separated=True):
-    common = {
-        "screen_elements": _LAST_OBS["screen_elements"],
-        "desktop_tree_text": _LAST_OBS["desktop_tree_text"],
-        "repo_root": str(ROOT),
-        "python_executable": __import__("sys").executable,
-    }
-    if kind == "witness" and separated:
-        return common
-    common["action_index"] = _LAST_OBS["action_index"]
-    common["read"] = _read_element
-    common["commit_section"] = lambda name, old, new: _commit_section(sections, name, old, new)
-    if NO_GUI:
-        common["desktop"] = _no_gui_hand()
-        return common
-    d = get_desktop()
-    common["desktop"] = _types.SimpleNamespace(
-        click=d.click, type_text=d.type_text, paste_clipboard=d.paste_clipboard,
-        set_clipboard=d.set_clipboard, press_key=d.press_key, hotkey=d.hotkey,
-        scroll=d.scroll, open_url=d.open_url, observe=d.observe,
-    )
-    return common
 
 
 def _host_facts():
@@ -1049,23 +939,6 @@ def _host_facts():
         "shell_tools: %s" % (", ".join(tools) or "(none found)"),
     ])
 
-
-def environment(sections, cfg=None):
-    facts = _host_facts()
-    if NO_GUI:
-        _LAST_OBS["action_index"] = {}
-        _LAST_OBS["screen_elements"] = []
-        _LAST_OBS["desktop_tree_text"] = ""
-        sections["environment"] = facts + "\n\nSCREEN\n(no GUI on this host: --no-gui; no screen observed)"
-        return
-    d = get_desktop()
-    obs_cfg = (cfg or {}).get("observation", {})
-    obs_result = d.observe(obs_cfg)
-    _LAST_OBS["action_index"] = obs_result.get("action_index", {}) or {}
-    _LAST_OBS["screen_elements"] = obs_result.get("screen_elements", []) or []
-    _LAST_OBS["desktop_tree_text"] = str(obs_result.get("desktop_tree_text") or "").strip()
-    tree = _LAST_OBS["desktop_tree_text"] or "(no interactable elements observed)"
-    sections["environment"] = facts + "\n\nSCREEN\n" + tree
 
 # ──────────────────────────────────────────────────────────────────────────────────────
 #  NODE HOOKS — how the kernel seats this card (the OSI payload: what it MEANS + what it DOES)

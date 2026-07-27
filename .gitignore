@@ -3,8 +3,6 @@
 
 !.gitattributes
 !.gitignore
-!endgame.md
-!guidance.txt
 !endgame.py
 !executor.py
 !verifier.py
