@@ -1139,6 +1139,15 @@ def main():
         wheel.bb.seed()
         sys.stderr.write("factory reset: machine memory cleared; goal.md and counsel.md left untouched\n")
         return
+    # A bare positional argument is the goal: write it to goal.md so the human's launch line still
+    # works. The goal lives in the file (read fresh each turn); the CLI is just a convenience door.
+    positional = [a for a in argv[1:] if not a.startswith("-")
+                  and a != (opt("--inject") or "\0") and a != (opt("--mode") or "\0")]
+    if positional:
+        goal_text = positional[-1].strip()
+        if goal_text:
+            (ROOT / "goal.md").write_text(goal_text, encoding="utf-8")
+            sys.stderr.write("goal set from command line into goal.md (%d chars)\n" % len(goal_text))
     wheel.run(once=flag("--once"), dry=flag("--dry"), inject=opt("--inject"))
 
 
