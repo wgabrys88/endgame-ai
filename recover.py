@@ -12,14 +12,7 @@ import endgame
 
 class Recover(endgame.Faculty):
     STAGE = "recover"
-    RECORD = {
-        "name": "recovery_record",
-        "record_type": "recovery",
-        "required": ["alternatives", "lesson", "target", "strategy", "goal_interpretation"],
-        "types": {k: "string" for k in ("alternatives", "lesson", "target", "strategy", "goal_interpretation")},
-        "non_empty": ["alternatives", "lesson", "target", "strategy", "goal_interpretation"],
-        "additional_properties": False,
-    }
+    OUTPUT = ("alternatives", "lesson", "target", "strategy", "goal_interpretation")
     READS = ("goal", "counsel", "living_word", "ledger", "evidence", "verdict", "failure_streak", "environment")
     WRITES = {}
     EXEC = None

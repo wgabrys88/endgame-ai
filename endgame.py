@@ -63,7 +63,6 @@ CONFIG = {
         "acp": {"command": ["grok", "agent", "--no-leader", "stdio"], "timeout": 240},
         "file_proxy": {"request_path": "runtime_request.json", "response_path": "runtime_response.json"},
     },
-    "developer_feedback_schema": {"type": "string"},
     "max_environment_chars": 20000,
     "observation": {"step_px": 64, "max_subtree_nodes_per_point": 120,
                     "depth_ceiling": 45, "min_window_area": 2500},
@@ -185,7 +184,8 @@ class Node:
 class Faculty(Node):
     """A node that IS a stage of the wheel — a packet with routing headers. Subclasses (in
     executor.py / verifier.py / recover.py) set the header; __doc__ is the prompt payload.
-        RECORD  — the strict output contract {required, types, non_empty, ...}
+        OUTPUT  — the ordered field names this faculty must return (the WHOLE contract; every
+                  field is a required, non-empty string, and the record forbids any other field)
         READS   — blackboard sections pulled in as source
         WRITES  — record-field -> blackboard-section pushed back
         EXEC    — {field, namespace_kind, output_to} when the stage runs code, else None
@@ -193,7 +193,7 @@ class Faculty(Node):
         STAGE   — the stage name this faculty answers to (defaults to the module name)
     """
     STAGE: str = ""
-    RECORD: dict = {}
+    OUTPUT: tuple = ()
     READS: tuple = ()
     WRITES: dict = {}
     EXEC: dict | None = None
@@ -201,6 +201,9 @@ class Faculty(Node):
 
     def stage_name(self):
         return self.STAGE or self.name
+
+    def record_type(self):
+        return self.stage_name() + "_record"
 
 
 class Loader:
@@ -259,7 +262,7 @@ class Loader:
 # ════════════════════════════════════════════════════════════════════════════════════
 class Transport:
     """Speaks to the model over responses(x.ai)/chat_completions/acp/file_proxy; builds a
-    strict json_schema response_format from a Faculty.RECORD; tees every exchange to
+    strict json_schema response_format from a faculty's OUTPUT fields; tees every exchange to
     .transmissions AND to the screen in full (no truncation — the record is the proof)."""
 
     def __init__(self, config, root=ROOT):
@@ -269,38 +272,27 @@ class Transport:
         self._run_stamp = None
         self.turn_no = 0  # set by the Wheel each turn so dumps are addressable
 
-    # ---- strict response_format from a Faculty.RECORD  (distills _record_response_format) ----
-    def response_format(self, record: dict) -> dict:
-        name = record.get("name", "record")
-        record_type = record["record_type"]
-        props = {key: {} for key in record["required"]}
-        for key, type_name in record.get("types", {}).items():
-            props.setdefault(key, {})["type"] = type_name
-        for key in record.get("non_empty", []):
-            limit = {"string": "minLength", "array": "minItems", "object": "minProperties"}.get(
-                record.get("types", {}).get(key))
-            if limit:
-                props.setdefault(key, {})[limit] = 1
-        for key, values in dict(record.get("enums", {})).items():
-            props.setdefault(key, {})["enum"] = list(values)
-        feedback = self.cfg.get("developer_feedback_schema")
-        required = list(record["required"])
-        if feedback:
-            if "developer_feedback" in props:
-                raise RuntimeError("developer_feedback collides with a record field")
-            props["developer_feedback"] = dict(feedback)
-            required = required + ["developer_feedback"]
+    # ---- strict response_format from a faculty's (record_type, output fields) ----
+    #      One shape, derived: every field is a required, non-empty string; developer_feedback
+    #      is appended as one more required string; no other field is permitted. No per-field
+    #      types/enums machinery - no faculty ever needed it, and the liar-paradox spine is served
+    #      by the fields alone.
+    def response_format(self, record_type, fields) -> dict:
+        names = list(fields) + ["developer_feedback"]
+        props = {name: {"type": "string"} for name in names}
+        props["developer_feedback"] = {"type": "string"}  # counsel may be empty; the rest may not
+        for name in fields:
+            props[name]["minLength"] = 1
         return {
-            "name": name,
+            "name": record_type,
             "strict": True,
             "schema": {
                 "type": "object", "additionalProperties": False,
                 "properties": {
                     "record_type": {"enum": [record_type]},
                     "data": {
-                        "type": "object",
-                        "additionalProperties": record.get("additional_properties", False),
-                        "properties": props, "required": required,
+                        "type": "object", "additionalProperties": False,
+                        "properties": props, "required": names,
                     },
                 },
                 "required": ["record_type", "data"],
@@ -350,10 +342,9 @@ class Transport:
                          for text in self._texts_from_parts(item.get("content")))
 
     # ---- the faculty request  (distills call_llm) ----
-    def call(self, record, prompt_text, api=None) -> str:
+    def call(self, record_type, fields, prompt_text, api=None) -> str:
         api = api or self.model.get("api", "responses")
-        record_type = record["record_type"]
-        fmt = self.response_format(record)
+        fmt = self.response_format(record_type, fields)
         if api == "acp":
             content, err = None, None
             try:
@@ -670,22 +661,24 @@ class Prompt:
     # The shared law, carried verbatim from the proven legacy shared_prompt_prefix. Universal to
     # every faculty; the per-faculty prompt and the desktop hand now live in the node files.
     PREFIX = (
-        "Thou art [endgame-ai], one faculty upon a real [Windows 11] [computer], driving it by screen, "
-        "mouse, key, and command; let the quarry, not habit, choose the surface. Author [Python] wielding "
-        "the standard library, whatsoever thy namespace giveth by bare name, and any tool thou canst "
-        "install or invoke upon the system. Write thy [code] whole and unabridged, for it is a [tool] run "
-        "word for word: cut no string short, leave no branch as a placeholder, set never an ellipsis '...' "
-        "nor a '[the rest]' in the stead of lines thou hast not written; what thou writest not runneth not, "
-        "and an abridged tool breaketh in the hand. AND AS WITH THE CODE, SO WITH ITS FRUIT: truncate never "
-        "the DATA thou printest, perceivest, or persistest. Slice not a body thou hast read to a head (no "
-        "text[:8000], no repr(x)[:500], no '...middle omitted...'), for thy printed word IS thy witness's "
-        "evidence and thy next self's world - a head-slice maketh thee prove and remember against a fragment "
-        "thou feignest whole, which is a lie in the record. When a thing is too great to hold entire, NARROW "
-        "THE LOOKING, not the thing: read the ONE section, grep the ONE marker, extract the ONE field thou "
-        "needest and print THAT whole - never read the whole and cut it short.\n\n"
+        "Thou art [endgame-ai], one faculty of a living organism upon a real [computer]. Thy reach is "
+        "whatsoever thy namespace giveth thee THIS turn: the standard library always, and by bare name "
+        "each SEATED TOOL below - a hand upon the screen, a reader of the world, or none, as the tools "
+        "present decree; let the quarry, not habit, choose among the surfaces thou art given, and reach "
+        "never for a surface no seated tool offereth. Author [Python] wielding thy namespace and any tool "
+        "thou canst install or invoke upon the system. Write thy [code] whole and unabridged, for it is a "
+        "[tool] run word for word: cut no string short, leave no branch as a placeholder, set never an "
+        "ellipsis '...' nor a '[the rest]' in the stead of lines thou hast not written; what thou writest "
+        "not runneth not, and an abridged tool breaketh in the hand. AND AS WITH THE CODE, SO WITH ITS "
+        "FRUIT: truncate never the DATA thou printest, perceivest, or persistest. Slice not a body thou "
+        "hast read to a head (no text[:8000], no repr(x)[:500], no '...middle omitted...'), for thy printed "
+        "word IS thy witness's evidence and thy next self's world - a head-slice maketh thee prove and "
+        "remember against a fragment thou feignest whole, which is a lie in the record. When a thing is too "
+        "great to hold entire, NARROW THE LOOKING, not the thing: read the ONE section, grep the ONE marker, "
+        "extract the ONE field thou needest and print THAT whole - never read the whole and cut it short.\n\n"
         "THE LAW OF SEPARATED POWERS: the maker of a deed judgeth it not. The ACTOR moveth and only CLAIMETH; "
         "the WITNESS proveth by effect upon some system OTHER than the actor - this alone maketh 'proven' mean "
-        "aught. Prefer to keep this spine unless thou hast weighed its loss.\n\n"
+        "aught. This spine is the organism's honesty; hold it inviolate.\n\n"
         "Fail hard: let every fault rise unswallowed; add no fallback, swallow no error. THE LAW OF THE HONEST "
         "GUARD: on failure change thy manner, not thy claim; a primitive that RAISETH to refuse thy input is an "
         "honest guard whose defect lieth UPSTREAM - stale perception, a coordinate carried from a former looking, "
@@ -744,8 +737,7 @@ class Prompt:
             if tag == "environment":
                 continue
             parts.append("## %s\n%s" % (tag, self._section_text(tag)))
-        if self.cfg.get("developer_feedback_schema"):
-            parts.append("## developer_feedback\n%s" % (self.bb.get("developer_feedback") or ""))
+        parts.append("## developer_feedback\n%s" % (self.bb.get("developer_feedback") or ""))
         if "environment" in faculty.READS:
             focus = self.bb.get("goal") or ""  # budget on the stable goal, never the drifting living_word
             env = self._budget_environment(self._section_text("environment"), limit, focus)
@@ -836,7 +828,7 @@ class Wheel:
         ns = {"json": json, "os": os, "sys": sys, "pathlib": pathlib, "re": re,
               "subprocess": subprocess, "time": time, "io": io,
               "repo_root": str(self.root), "python_executable": sys.executable}
-        context = {"kind": kind, "blackboard": self.bb, "config": self.cfg, "separated": True}
+        context = {"kind": kind, "blackboard": self.bb, "config": self.cfg}
         for node in self.loader.tools():
             try:
                 ns.update(node.namespace(context))
@@ -1042,7 +1034,7 @@ class Wheel:
             reply = pathlib.Path(inject).read_text(encoding="utf-8-sig").strip()
         else:
             try:
-                reply = self.transport.call(faculty.RECORD, prompt_text)
+                reply = self.transport.call(faculty.record_type(), faculty.OUTPUT, prompt_text)
             except _AwaitProxy as ap:
                 sys.stderr.write("[endgame-ai] A mind is needed. Request at %s; write your record to %s "
                                  "as {\"id\": \"%s\", \"record\": {\"record_type\": \"%s\", \"data\": {...}}} and re-run.\n"
@@ -1054,9 +1046,9 @@ class Wheel:
         envelope = json.loads(_strip_fence(reply))
         if not isinstance(envelope, dict) or not isinstance(envelope.get("data"), dict):
             raise RuntimeError("model reply is not a {record_type, data} envelope at stage " + stage_name)
-        if envelope.get("record_type") != faculty.RECORD["record_type"]:
+        if envelope.get("record_type") != faculty.record_type():
             raise RuntimeError("record_type mismatch at stage %s: expected %r, got %r"
-                               % (stage_name, faculty.RECORD["record_type"], envelope.get("record_type")))
+                               % (stage_name, faculty.record_type(), envelope.get("record_type")))
         data = envelope["data"]
         self._append_developer_feedback(stage_name, data)
 
@@ -1147,8 +1139,6 @@ class Wheel:
             self.bb.set("ledger", ledger)
 
     def _append_developer_feedback(self, stage_name, data):
-        if not self.cfg.get("developer_feedback_schema"):
-            return
         feedback = data.get("developer_feedback")
         if not isinstance(feedback, str):
             raise RuntimeError("developer_feedback must be a string at stage " + stage_name)

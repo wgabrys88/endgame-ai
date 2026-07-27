@@ -14,14 +14,7 @@ import endgame
 
 class Executor(endgame.Faculty):
     STAGE = "execute"
-    RECORD = {
-        "name": "execution_record",
-        "record_type": "execution",
-        "required": ["perceived", "alternatives", "intent", "code", "goal_interpretation"],
-        "types": {k: "string" for k in ("perceived", "alternatives", "intent", "code", "goal_interpretation")},
-        "non_empty": ["perceived", "alternatives", "intent", "code", "goal_interpretation"],
-        "additional_properties": False,
-    }
+    OUTPUT = ("perceived", "alternatives", "intent", "code", "goal_interpretation")
     READS = ("goal", "counsel", "living_word", "ledger", "action_frame", "nodes", "environment")
     WRITES = {"intent": "action_frame", "code": "code", "perceived": "perceived", "alternatives": "alternatives"}
     EXEC = {"field": "code", "namespace": "actor", "output_to": "evidence"}

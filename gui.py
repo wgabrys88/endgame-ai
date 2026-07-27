@@ -957,18 +957,19 @@ def environment(bb, cfg=None):
 
 
 def namespace(context=None):
-    """Kernel namespace hook: the hand and eyes injected into the exec namespace. The witness
-    (separated) receives eyes-only reads; the actor receives the full desktop hand."""
+    """Kernel namespace hook: the eyes and hand injected into the exec namespace. The WITNESS
+    receives eyes-only reads of the screen it did not itself paint - it may weigh screen state as
+    one surface among many, but it holds no hand and so cannot fake the effect it judges. The
+    ACTOR receives the full desktop hand. This is the separated-powers spine, not a toggle."""
     ctx = context or {}
     kind = ctx.get("kind", "actor")
-    separated = ctx.get("separated", True)
     ns = {
         "screen_elements": _LAST_OBS["screen_elements"],
         "desktop_tree_text": _LAST_OBS["desktop_tree_text"],
         "action_index": _LAST_OBS["action_index"],
         "read": _read_element,
     }
-    if kind == "witness" and separated:
+    if kind == "witness":
         return ns
     d = get_desktop()
     ns["desktop"] = _types.SimpleNamespace(
