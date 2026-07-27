@@ -655,7 +655,7 @@ class Stigmergy:
 
 # ════════════════════════════════════════════════════════════════════════════════════
 #  PROMPT — the board rebuilt from what is seated  (distills: render_request,
-#  shared_prompt_prefix, _budget_environment, per-stage reads)
+#  shared_prompt_prefix, per-stage reads; environment bounded honestly, not by guessed relevance)
 # ════════════════════════════════════════════════════════════════════════════════════
 class Prompt:
     """Assembles a request: shared prefix + faculty.__doc__ + docs/signatures of the seated
@@ -742,58 +742,25 @@ class Prompt:
             parts.append("## %s\n%s" % (tag, self._section_text(tag)))
         parts.append("## developer_feedback\n%s" % (self.bb.get("developer_feedback") or ""))
         if "environment" in faculty.READS:
-            focus = self.bb.get("goal") or ""  # budget on the stable goal, never the drifting living_word
-            env = self._budget_environment(self._section_text("environment"), limit, focus)
+            env = self._bound_environment(self._section_text("environment"), limit)
             parts.append("## environment\n%s" % env)
         return "\n\n".join(p for p in parts if p)
 
     @staticmethod
-    def _budget_environment(env, limit, focus_text):
+    def _bound_environment(env, limit):
+        # The kernel judgeth no meaning - it cannot know what mattereth, and to guess would be to
+        # decide relevance blindly and drop perception in silence, the very lie the shared law
+        # forbiddeth. Perception is bounded at its SOURCE by the observation config (depth, node,
+        # area ceilings), so a scan seldom nears this bound. Should it ever exceed, the kernel keeps
+        # the foremost content to a whole line and says so PLAINLY, that the actor - who alone
+        # knoweth the quarry - may narrow its OWN looking (a tighter observe, a focused window, a
+        # scroll) rather than trust the kernel to have chosen for it.
         if not limit or len(env) <= limit:
             return env
-        head, sep, screen = env.partition("\nSCREEN\n")
-        if not sep:
-            return env[:limit] + "\n(environment truncated at %d chars)" % limit
-        fixed = head + "\nSCREEN\n"
-        budget = limit - len(fixed)
-        lines = screen.split("\n")
-        blocks, cur = [], []
-        for ln in lines:
-            if re.match(r"^W\d+ ", ln) and cur:
-                blocks.append(cur); cur = [ln]
-            else:
-                cur.append(ln)
-        if cur:
-            blocks.append(cur)
-        if budget <= 0 or not blocks:
-            return (fixed + screen)[:limit] + "\n(environment budgeted to %d chars)" % limit
-        focus = set(re.findall(r"[a-z0-9]{3,}", (focus_text or "").lower()))
-        text = ["\n".join(b) for b in blocks]
-        size = [len(t) + 1 for t in text]
-        score = [sum(t.lower().count(w) for w in focus) for t in text]
-        n = len(blocks)
-        floor = budget // n
-        alloc = [min(size[i], floor) for i in range(n)]
-        slack = budget - sum(alloc)
-        for i in sorted(range(n), key=lambda i: (-score[i], size[i], i)):
-            if slack <= 0:
-                break
-            want = size[i] - alloc[i]
-            take = min(want, slack)
-            alloc[i] += take; slack -= take
-        out = []
-        for i, b in enumerate(blocks):
-            if alloc[i] >= size[i]:
-                out.append(text[i]); continue
-            header = b[0]
-            kept = header
-            for ln in b[1:]:
-                if len(kept) + 1 + len(ln) > alloc[i]:
-                    kept += "\n  (window trimmed to fit budget)"
-                    break
-                kept += "\n" + ln
-            out.append(kept)
-        return fixed + "\n".join(out)
+        kept = env[:limit].rsplit("\n", 1)[0]
+        return (kept + "\n\n(environment exceeded %d chars and was cut at a line here; the kernel "
+                "chose nothing for thee - NARROW THY OWN LOOKING: observe a single window or region, "
+                "or scroll the part thou needest into view, and scan again.)" % limit)
 
 
 # ════════════════════════════════════════════════════════════════════════════════════
