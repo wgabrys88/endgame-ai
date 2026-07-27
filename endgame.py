@@ -12,8 +12,8 @@ EVERYTHING IS A NODE EXCEPT THIS FILE
   Every other *.py in this folder is a hot-swappable card. Plug one in and it works; pull
   it out and the system simply lacks that faculty — no flag, no branch. Presence IS the
   switch. So there is no "gui mode": if gui.py is seated, a desktop hand appears in the
-  namespace and its doc in the prompt; if not, it does not. config is a node. The faculties
-  (executor, verifier, recover) are nodes. Only the firmware is fixed.
+  namespace and its doc in the prompt; if not, it does not. The faculties (executor, witness,
+  recover) are nodes. Config is constants on the firmware, not a node. Only the firmware is fixed.
 
 THE SWITCH / OSI VIEW  (skeleton contract every node fills)
   The kernel is a dumb layer-3 switch and each node is a packet:
@@ -92,7 +92,7 @@ class Blackboard:
 
     SEED = {
         "state": {"stage": None, "last_signal": None, "turn": 0, "failure_streak": 0},
-        "living_word": {"execute": "", "verify": "", "recover": ""},
+        "living_word": {"execute": "", "witness": "", "recover": ""},
         "ledger": [], "action_frame": None, "perceived": "", "alternatives": "",
         "code": "", "evidence": "", "verdict": None,
         "nodes": {}, "node_edges": {},
@@ -186,7 +186,7 @@ class Node:
 
 class Faculty(Node):
     """A node that IS a stage of the wheel — a packet with routing headers. Subclasses (in
-    executor.py / verifier.py / recover.py) set the header; __doc__ is the prompt payload.
+    executor.py / witness.py / recover.py) set the header; __doc__ is the prompt payload.
         OUTPUT  — the ordered field names this faculty must return (the WHOLE contract; every
                   field is a required, non-empty string, and the record forbids any other field)
         READS   — blackboard sections pulled in as source
@@ -753,8 +753,8 @@ class Prompt:
         # forbiddeth. Perception is bounded at its SOURCE by the observation config (depth, node,
         # area ceilings), so a scan seldom nears this bound. Should it ever exceed, the kernel keeps
         # the foremost content to a whole line and says so PLAINLY, that the actor - who alone
-        # knoweth the quarry - may narrow its OWN looking (a tighter observe, a focused window, a
-        # scroll) rather than trust the kernel to have chosen for it.
+        # knoweth the quarry - may narrow its OWN looking (a tighter observe over one window or a
+        # smaller region, or a scroll) rather than trust the kernel to have chosen for it.
         if not limit or len(env) <= limit:
             return env
         kept = env[:limit].rsplit("\n", 1)[0]
@@ -1075,14 +1075,12 @@ class Wheel:
                          % (state["turn"], stage_name, signal, nxt, state.get("failure_streak", 0)))
         return nxt, (nxt == "halt")
 
-    # ---- verify's ledger + stigmergy bookkeeping (distills the verify branch of turn()) ----
+    # ---- the witness's ledger + stigmergy bookkeeping ----
     def _judge(self, stage_name, faculty, signal):
-        if stage_name != "verify":
+        if stage_name != "witness":
             return signal
         state = self.bb.state
         if signal in ("confirmed", "halt"):
-            for n in state.get("pending_node_credit", []) or []:
-                pass  # credit applied inside stigmergy.confirm
             self.stigmergy.confirm(state.get("pending_node_credit", []) or [],
                                    state.get("pending_edges", []) or [])
             self._append_ledger()
@@ -1133,9 +1131,9 @@ class Wheel:
         self.bb.set("developer_feedback", prior + ("\n" if prior else "") + entry)
 
     def _set_living_word_row(self, faculty_name, sentence):
-        rows = self.bb.get("living_word") or {"execute": "", "verify": "", "recover": ""}
+        rows = self.bb.get("living_word") or {"execute": "", "witness": "", "recover": ""}
         if isinstance(rows, str):
-            rows = {"execute": "", "verify": "", "recover": ""}
+            rows = {"execute": "", "witness": "", "recover": ""}
         rows[faculty_name] = str(sentence or "").strip().replace("\n", " ")
         self.bb.set("living_word", rows)
 

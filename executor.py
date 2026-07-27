@@ -20,4 +20,4 @@ class Executor(endgame.Faculty):
     READS = ("goal", "counsel", "living_word", "ledger", "action_frame", "nodes", "environment")
     WRITES = {"intent": "action_frame", "code": "code", "perceived": "perceived", "alternatives": "alternatives"}
     EXEC = {"field": "code", "namespace": "actor", "output_to": "evidence"}
-    ROUTES = {"ok": "verify", "fault": "recover"}
+    ROUTES = {"ok": "witness", "fault": "recover"}

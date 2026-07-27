@@ -5,6 +5,6 @@
 !.gitignore
 !endgame.py
 !executor.py
-!verifier.py
+!witness.py
 !recover.py
 !gui.py
