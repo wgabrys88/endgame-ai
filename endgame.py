@@ -615,13 +615,138 @@ class Prompt:
     """Assembles a request: shared prefix + faculty.__doc__ + docs/signatures of the seated
     tool nodes + the blackboard sections the faculty READS (environment budgeted)."""
 
-    PREFIX = ""  # chunk 5: the shared law (fail-hard, honest guard, no-truncation, living word)
+    # The shared law, carried verbatim from the proven legacy shared_prompt_prefix. Universal to
+    # every faculty; the per-faculty prompt and the desktop hand now live in the node files.
+    PREFIX = (
+        "Thou art [endgame-ai], one faculty upon a real [Windows 11] [computer], driving it by screen, "
+        "mouse, key, and command; let the quarry, not habit, choose the surface. Author [Python] wielding "
+        "the standard library, whatsoever thy namespace giveth by bare name, and any tool thou canst "
+        "install or invoke upon the system. Write thy [code] whole and unabridged, for it is a [tool] run "
+        "word for word: cut no string short, leave no branch as a placeholder, set never an ellipsis '...' "
+        "nor a '[the rest]' in the stead of lines thou hast not written; what thou writest not runneth not, "
+        "and an abridged tool breaketh in the hand. AND AS WITH THE CODE, SO WITH ITS FRUIT: truncate never "
+        "the DATA thou printest, perceivest, or persistest. Slice not a body thou hast read to a head (no "
+        "text[:8000], no repr(x)[:500], no '...middle omitted...'), for thy printed word IS thy witness's "
+        "evidence and thy next self's world - a head-slice maketh thee prove and remember against a fragment "
+        "thou feignest whole, which is a lie in the record. When a thing is too great to hold entire, NARROW "
+        "THE LOOKING, not the thing: read the ONE section, grep the ONE marker, extract the ONE field thou "
+        "needest and print THAT whole - never read the whole and cut it short.\n\n"
+        "THE LAW OF SEPARATED POWERS: the maker of a deed judgeth it not. The ACTOR moveth and only CLAIMETH; "
+        "the WITNESS proveth by effect upon some system OTHER than the actor - this alone maketh 'proven' mean "
+        "aught. Prefer to keep this spine unless thou hast weighed its loss.\n\n"
+        "Fail hard: let every fault rise unswallowed; add no fallback, swallow no error. THE LAW OF THE HONEST "
+        "GUARD: on failure change thy manner, not thy claim; a primitive that RAISETH to refuse thy input is an "
+        "honest guard whose defect lieth UPSTREAM - stale perception, a coordinate carried from a former looking, "
+        "or a target since departed - so re-observe and re-select afresh and silence not the guard; only a "
+        "primitive that SILENTLY worketh nothing though rightly called, accepting thy input yet moving no effect "
+        "upon the world, is the body itself the defect, to be mended at its source. Hash not the living word nor "
+        "the [screen] to prove a change; prove by reading the thing afresh and by the world's own effect (a [git] "
+        "commit identity is lawful memory, no such hash). Thou art atemporal: a short [id] and a coordinate die "
+        "with the looking that bore them - name what a thing IS by kind and place, never a bare id that outliveth "
+        "the turn. Pursue the root [goal]; feign nothing; redo not what the [ledger] proveth.\n\n"
+        "THE LIVING WORD is three rows, one to each faculty. Write only thine own row in [goal_interpretation] - "
+        "an atemporal reading of the world learned, the obstacle, the distance to the outcome, and the next true "
+        "deed - and plan FROM it, proving every row against the fresh [environment] and trusting the world above "
+        "any remembered word. Read [counsel] and [developer_feedback] as fallible counsel, never law nor proof. "
+        "Return one JSON [record] and nothing beside, bearing every field thine office requireth and no field it "
+        "forbiddeth. In thine own [developer_feedback] write the empty string save when this body's prompt, "
+        "required record, promised namespace, or capability beareth a true defect; then name that defect, its "
+        "evidence, and the least amendment - never an ordinary failed deed."
+    )
 
-    def __init__(self, blackboard, loader):
-        raise NotImplementedError("chunk 5")
+    def __init__(self, blackboard, loader, config=CONFIG):
+        self.bb = blackboard
+        self.loader = loader
+        self.cfg = config
+
+    def _tool_manifest(self) -> str:
+        # every seated tool node advertises its packet: what it MEANS (doc) and what it DOES (signatures)
+        parts = []
+        for node in self.loader.tools():
+            doc = node.doc
+            sigs = node.signatures()
+            if not doc and not sigs:
+                continue
+            block = "### %s" % node.name
+            if doc:
+                block += "\n" + doc
+            if sigs:
+                block += "\n" + sigs
+            parts.append(block)
+        if not parts:
+            return ""
+        return "## the seated tools (by bare name in thy namespace)\n" + "\n\n".join(parts)
+
+    def _section_text(self, tag) -> str:
+        value = self.bb.get(tag)
+        if value is None or value == "":
+            return "(empty)"
+        if isinstance(value, str):
+            return value
+        return json.dumps(value, ensure_ascii=False, indent=2)
 
     def render(self, faculty) -> str:
-        raise NotImplementedError("chunk 5: prefix + role doc + seated tool docs + read sections")
+        limit = int(self.cfg.get("max_environment_chars", 0))
+        parts = [self.PREFIX, faculty.doc, self._tool_manifest()]
+        for tag in faculty.READS:
+            if tag == "environment":
+                continue
+            parts.append("## %s\n%s" % (tag, self._section_text(tag)))
+        if self.cfg.get("developer_feedback_schema"):
+            parts.append("## developer_feedback\n%s" % (self.bb.get("developer_feedback") or ""))
+        if "environment" in faculty.READS:
+            focus = self.bb.get("goal") or ""  # budget on the stable goal, never the drifting living_word
+            env = self._budget_environment(self._section_text("environment"), limit, focus)
+            parts.append("## environment\n%s" % env)
+        return "\n\n".join(p for p in parts if p)
+
+    @staticmethod
+    def _budget_environment(env, limit, focus_text):
+        if not limit or len(env) <= limit:
+            return env
+        head, sep, screen = env.partition("\nSCREEN\n")
+        if not sep:
+            return env[:limit] + "\n(environment truncated at %d chars)" % limit
+        fixed = head + "\nSCREEN\n"
+        budget = limit - len(fixed)
+        lines = screen.split("\n")
+        blocks, cur = [], []
+        for ln in lines:
+            if re.match(r"^W\d+ ", ln) and cur:
+                blocks.append(cur); cur = [ln]
+            else:
+                cur.append(ln)
+        if cur:
+            blocks.append(cur)
+        if budget <= 0 or not blocks:
+            return (fixed + screen)[:limit] + "\n(environment budgeted to %d chars)" % limit
+        focus = set(re.findall(r"[a-z0-9]{3,}", (focus_text or "").lower()))
+        text = ["\n".join(b) for b in blocks]
+        size = [len(t) + 1 for t in text]
+        score = [sum(t.lower().count(w) for w in focus) for t in text]
+        n = len(blocks)
+        floor = budget // n
+        alloc = [min(size[i], floor) for i in range(n)]
+        slack = budget - sum(alloc)
+        for i in sorted(range(n), key=lambda i: (-score[i], size[i], i)):
+            if slack <= 0:
+                break
+            want = size[i] - alloc[i]
+            take = min(want, slack)
+            alloc[i] += take; slack -= take
+        out = []
+        for i, b in enumerate(blocks):
+            if alloc[i] >= size[i]:
+                out.append(text[i]); continue
+            header = b[0]
+            kept = header
+            for ln in b[1:]:
+                if len(kept) + 1 + len(ln) > alloc[i]:
+                    kept += "\n  (window trimmed to fit budget)"
+                    break
+                kept += "\n" + ln
+            out.append(kept)
+        return fixed + "\n".join(out)
 
 
 # ════════════════════════════════════════════════════════════════════════════════════
