@@ -5,21 +5,26 @@ It offers, by bare name in the actor namespace:
   desktop.observe(config=None) - take a fresh looking, refresh the live bare observation, and
     return {"action_index", "screen_elements", "desktop_tree_text"}
   desktop.open_url(browser='default', url='') - open a known address in the Windows default browser; any other browser value is an exact executable path
-  desktop.click(x, y, hwnd) - move and press upon an owned point
+  desktop.click(id) - press upon the element bearing that short id in the CURRENT looking
+  desktop.scroll(id, amount|clicks=...) - scroll upon that element
   desktop.type_text(text) / desktop.paste_clipboard(text) / desktop.set_clipboard(text)
-  desktop.press_key(key) / desktop.hotkey(*keys) / desktop.scroll(x, y, amount|clicks, hwnd)
+  desktop.press_key(key) / desktop.hotkey(*keys)
   action_index - the live short-id -> element DICTIONARY map of the last looking
   read(id) - the same element DICTIONARY, bearing its WHOLE untruncated body in ["text_full"]
   screen_elements, desktop_tree_text - the raw fruit of the turn-opening scan
 
-Each action_index value is a dictionary, and read(id) returneth that very dictionary. Select by
-e["role"], e["name"], e["action"], e["window_title"], or e["value"]; take the whole body from
-e["text_full"]; act with e["px"], e["py"], and e["owner_hwnd"].
+Each action_index value is a dictionary, and read(id) returneth that very dictionary. Select an
+element by its e["role"], e["name"], e["action"], e["window_title"], or e["value"], and ACT upon
+it by its short id (e.g. desktop.click("e42")) - the hand resolveth the point and window from the
+CURRENT looking at act-time, so thou never carriest a pixel or a handle thyself. A short id is
+atemporal-safe within one deed only: it dieth with the looking that bore it, so bind it from a
+FRESH scan and never store nor emit it. Should the id be stale, the hand faileth hard - re-observe
+and bind anew, never force a coordinate.
 The compact tree is an index: body_chars=N means read("eN")["text_full"] beareth N whole characters.
 After desktop.observe(), use its returned desktop_tree_text when thou needest the new tree;
 the live action_index, screen_elements, and read(id) are refreshed in place.
 
-Bind an id, coordinate, or owner ONLY from a fresh scan; a short id dieth with the looking that
+Bind an id ONLY from a fresh scan; a short id dieth with the looking that
 bore it. The kernel calls environment(bb, cfg) each turn to refresh the [environment] section,
 and namespace(context) to inject the hand into the actor's exec namespace.
 """
@@ -790,21 +795,34 @@ class Desktop:
             cfg = self.config
         return observe(self, cfg)
 
-    def click(self, x: int, y: int, hwnd: int) -> dict[str, Any]:
+    def _resolve(self, element_id: str) -> dict[str, Any]:
+        """Resolve a short id to its element in the CURRENT looking, at act-time. The id is
+        atemporal-safe: it never leaves the deed, and a stale one fails hard here rather than
+        clicking whatever pixel it once named. Fail hard on an unknown/dead id."""
+        idx = _LAST_OBS.get("action_index") or {}
+        e = idx.get(str(element_id))
+        if e is None:
+            raise KeyError("act: no element %r in the fresh scan; re-observe and bind the id anew "
+                           "(a short id dieth with the looking that bore it)" % (element_id,))
+        return e
+
+    def click(self, element_id: str) -> dict[str, Any]:
+        e = self._resolve(element_id)
+        x, y, hwnd = int(e["px"]), int(e["py"]), int(e["owner_hwnd"])
         width, height = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
         if not 0 <= x < width or not 0 <= y < height:
-            raise RuntimeError(f"click coordinates ({x}, {y}) outside physical screen {width}x{height}")
-        expected = int(user32.GetAncestor(wintypes.HWND(int(hwnd)), 2) or 0)
+            raise RuntimeError(f"click point of {element_id} ({x}, {y}) outside physical screen {width}x{height}")
+        expected = int(user32.GetAncestor(wintypes.HWND(hwnd), 2) or 0)
         if not expected:
-            raise RuntimeError(f"click target hwnd {hwnd} is no longer valid")
+            raise RuntimeError(f"click target hwnd {hwnd} of {element_id} is no longer valid")
         if not user32.SetCursorPos(x, y):
             raise ctypes.WinError()
         actual = int(user32.GetAncestor(user32.WindowFromPoint(wintypes.POINT(int(x), int(y))), 2) or 0)
         if actual != expected:
-            raise RuntimeError(f"click point ({x}, {y}) belongs to hwnd {actual}, expected {expected}")
+            raise RuntimeError(f"click point of {element_id} ({x}, {y}) belongs to hwnd {actual}, expected {expected}; re-observe")
         user32.mouse_event(0x0002, 0, 0, 0, 0)
         user32.mouse_event(0x0004, 0, 0, 0, 0)
-        return {"ok": True, "action": "click", "x": x, "y": y, "hwnd": hwnd, "screen": {"width": width, "height": height}}
+        return {"ok": True, "action": "click", "id": str(element_id), "x": x, "y": y, "hwnd": hwnd, "screen": {"width": width, "height": height}}
 
     def set_clipboard(self, text: str) -> dict[str, Any]:
         command = ["powershell.exe", "-NoProfile", "-Command", "$in=[Console]::In.ReadToEnd(); Set-Clipboard -Value $in"]
@@ -868,17 +886,19 @@ class Desktop:
             user32.keybd_event(vk, 0, 2, 0)
         return {"ok": True, "action": "hotkey", "keys": parts}
 
-    def scroll(self, x: int, y: int, amount: int | None = None, hwnd: int = 0, *, clicks: int | None = None) -> dict[str, Any]:
+    def scroll(self, element_id: str, amount: int | None = None, *, clicks: int | None = None) -> dict[str, Any]:
         if (amount is None) == (clicks is None):
             raise TypeError("scroll requires exactly one of amount or clicks")
         amount = clicks if amount is None else amount
+        e = self._resolve(element_id)
+        x, y = int(e["px"]), int(e["py"])
         width, height = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
         if not 0 <= x < width or not 0 <= y < height:
-            raise RuntimeError(f"scroll coordinates ({x}, {y}) outside physical screen {width}x{height}")
+            raise RuntimeError(f"scroll point of {element_id} ({x}, {y}) outside physical screen {width}x{height}")
         if not user32.SetCursorPos(x, y):
             raise ctypes.WinError()
         user32.mouse_event(0x0800, 0, 0, amount * 120, 0)
-        return {"ok": True, "action": "scroll", "x": x, "y": y, "amount": amount, "hwnd": hwnd, "screen": {"width": width, "height": height}}
+        return {"ok": True, "action": "scroll", "id": str(element_id), "x": x, "y": y, "amount": amount, "screen": {"width": width, "height": height}}
 
     def open_url(self, browser: str = "default", url: str = "") -> dict[str, Any]:
         if not str(url or "").strip():
