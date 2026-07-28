@@ -456,7 +456,7 @@ class Transport:
             self._dump(api, "ask_model", {"prompt": prompt, "schema": schema}, raw, content, err)
 
     # ---- living-web tool  (distills web_search) ----
-    def web_search(self, query, allowed_domains=None):
+    def web_search(self, query):
         if not isinstance(query, str) or not query.strip():
             raise RuntimeError("web_search needeth a non-empty query string")
         if self._web_search_turn == self.turn_no:
@@ -465,9 +465,6 @@ class Transport:
                 "that whole result; let a later turn decide whether another question is needed.")
         if "responses" not in self.model:
             raise RuntimeError("web_search needeth the responses transport; it is not configured")
-        domains = list(allowed_domains or [])
-        if len(domains) > 5:
-            raise RuntimeError("web_search allowed_domains accepteth at most five domains; narrow the set")
         transport = self.model["responses"]
         url, body = transport["url"], dict(transport["request"])
         body.pop("previous_response_id", None)
@@ -477,11 +474,10 @@ class Transport:
         body["reasoning"] = {"effort": "low"}
         body["parallel_tool_calls"] = False
         body["max_tool_calls"] = int(self.cfg.get("web_search_max_tool_calls", 1))
-        body["input"] = [{"role": "user", "content": query}]
-        tool = {"type": "web_search"}
-        if domains:
-            tool["filters"] = {"allowed_domains": domains}
-        body["tools"] = [tool]
+        body["input"] = [{"role": "user", "content":
+            "Answer using a single web_search query; do not browse or open additional "
+            "pages beyond that one search. " + query}]
+        body["tools"] = [{"type": "web_search"}]
         headers = {"Content-Type": "application/json",
                    "Authorization": "Bearer " + os.environ["XAI_API_KEY"]}
         raw, result, err = None, None, None
