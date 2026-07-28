@@ -965,6 +965,7 @@ def _host_facts():
         "user: %s" % user,
         "cwd: %s" % os.getcwd(),
         "repo_root: %s" % ROOT,
+        "this is thy own directory - endgame-ai booted from here; write every file and script thou makest under repo_root, thy ground that endureth between lookings.",
         "python: %s" % _s.executable,
         "shell_tools: %s" % (", ".join(tools) or "(none found)"),
     ])
