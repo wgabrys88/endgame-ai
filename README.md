@@ -48,31 +48,37 @@ Everything below is not a promise. It is what the system **did** in one real run
 - **Opened Chrome**, searched job boards, **read and compared several real postings**, and chose the best fit (a Staff Engineer / LLM role at Levellr).
 - **Filled the real application form** — name, email, location, LinkedIn, GitHub, notice period.
 - **Wrote a résumé to disk** as both `.txt` and a valid `.pdf`, then **attached it** through the native Windows file-open dialog.
-- **Hit a reCAPTCHA — and got past it.** It chose the **audio challenge**, downloaded the audio, **installed a second AI (OpenAI Whisper) onto the machine on its own**, transcribed the clip, typed the answer, clicked VERIFY — and the challenge closed and did not return.
-- **Submitted the application.** The page then showed *"Your application has been sent! You can expect to receive a confirmation email shortly."* — read live from the real Levellr page.
+- **Hit a reCAPTCHA and passed it.** It chose the **audio challenge**, found the challenge audio, **installed a second AI (OpenAI Whisper) onto the machine on its own**, transcribed the clip, typed the answer into the "Enter what you hear" box, and clicked VERIFY. After VERIFY the active challenge widget (the answer box and VERIFY button) was **gone from the page and did not re-prompt** — logged, turn by turn.
+- **Submitted the application.** It then filled the remaining required fields (salary, notice period) and clicked Submit. An **independent** read of the live page reported *"Your application has been sent! You can expect to receive a confirmation email shortly."*
 
-Vague human goal → a few Python files → the job is done. That is the entire pitch, and it is real.
+Vague human goal → a few Python files → the job is done. That is the entire pitch, and every line above is traceable to the run log (see [the evidence](#the-evidence-every-claim-traced)).
 
 ---
 
 ## The proof (so you don't have to take my word)
 
-The confirmation was not the organism talking to itself. An **independent fetch of the live Levellr page** shows that the text *"Your application has been sent!"* and *"You can expect to receive a confirmation email shortly"* **do not exist** on the page until a form is actually submitted — they are inserted only into the post-submission DOM. The organism read them from the real browser, at address `jobs.levellr.com/40420#apply`, after clicking Submit. The application went out.
+Two independent facts, both on disk, are the reason this run is a milestone rather than a demo.
 
-**On the reCAPTCHA:** it was passed, and here is the honest mechanism, because the *how* is the interesting part. reCAPTCHA is not a password — it is a **trust score**. The organism fed that score two things at once:
+**1. The application was submitted — proven by a channel other than the actor.** The organism's *witness* office (which has no hand and cannot touch the browser) read the live page and found four post-submission strings — `'confirmation email'`, `'application has been'`, `'you can expect to receive a confirmation'`, `'complete the process within two weeks'` — while the form's required-field gate was empty (`salary_edits=[]`, `submit_btns=[]`, `required_n=0`). Separately, an **independent fetch of the live Levellr page** confirms that *"Your application has been sent!"* and *"You can expect to receive a confirmation email shortly"* do **not** appear until a form is actually submitted; they exist only in the post-submission DOM. Two independent reads, same conclusion: **the application went out.**
 
-1. **A real human fingerprint.** endgame-ai's eyes work by *physically moving the real mouse* across the screen to probe what is under each point (`SetCursorPos` / `SendInput`). So for the entire session the cursor moved in natural, continuous, human-timed trajectories with real clicks — at the OS level it **was** genuine human input, not a headless bot. reCAPTCHA saw a real person at a real desk.
-2. **An answered audio challenge.** It installed Whisper, transcribed the clip, entered the answer, and the challenge released cleanly with no re-prompt.
+**2. The reCAPTCHA was passed — the fact is proven; the *reason* is not.** The log proves the sequence: audio challenge opened → Whisper installed → clip transcribed → answer typed → VERIFY clicked → the active challenge widget disappeared and never returned → submission succeeded. That is what happened.
 
-You don't need to care which factor did the work — as a user, you asked for a job application and you got one. That is the entire philosophy: **you state the outcome; the system handles the obstacles.**
+What the log does **not** contain — and what I therefore cannot claim — is *why* reCAPTCHA let it through. I do not have the transcript-vs-expected-answer comparison, the reCAPTCHA token exchange, or any risk-score telemetry; none of that is in the transmissions. So the honest statement is bounded:
+
+> **PROVEN:** the audio widget cleared after VERIFY and the application submitted.
+> **NOT PROVEN:** whether it cleared because the typed answer was correct, because of behavioral/session trust, because the token had already been issued, or some combination. Anyone claiming a specific reason (including me, earlier) is guessing.
+
+For full transparency, the independently-verifiable details of that transcript are analyzed in [the evidence](#the-evidence-every-claim-traced) — including the correction that the transcription was *accurate*, not "garbage" as I first said.
+
+As a user, the outcome is what matters: you asked for a job application and it was submitted. But the documentation will not dress an assumption as a mechanism.
 
 ---
 
 ## Why this is different from every "autonomous agent" demo
 
-Most "autonomous AI" is 99% marketing and 1% work — and that 1% is *scripted*: pre-built integrations, hard-coded flows, a human quietly wiring each step behind the demo. Pull the goal sideways and it breaks.
+Most "autonomous AI" is heavy on marketing and light on unscripted work — the working part is often *pre-wired*: fixed integrations, hard-coded flows, a human quietly arranging each step behind the demo. Pull the goal sideways and it breaks.
 
-endgame-ai has **no script and no integrations**. The firmware holds zero knowledge of LinkedIn, of forms, of captchas, of PDFs. It learned to do all of that *at runtime*, by looking at the screen and writing its own code, turn by turn. Change the goal to "renew my domain" or "summarize these three papers" and nothing in the code changes — only the sentence in `goal.md`.
+endgame-ai has **no script and no integrations**. The firmware holds zero knowledge of LinkedIn, of forms, of captchas, of PDFs. It did all of that *at runtime*, by looking at the screen and writing its own code, turn by turn. Change the goal to "renew my domain" or "summarize these three papers" and nothing in the code changes — only the sentence in `goal.md`.
 
 And it is **yours**. Download the zip. Buy a few dollars of API credit. Run one command. No SaaS, no seat license, no cloud lock-in, no onboarding call. The whole organism is nine small files you can read in an afternoon.
 
@@ -174,7 +180,7 @@ flowchart LR
 
 Paths that lead to proof are reinforced (`edge_reinforcement=1.0`); all paths slowly evaporate (`edge_evaporation=0.05`); a saved deed unused past its time-to-live (`node_ttl_seconds=300`) and never proven is deleted from disk, while any deed that ever earned a proven advance becomes immortal. It can also **spawn** up to three parallel helper-actors (`spawn_budget=3`) for a narrow sub-question — but their fruit is *counsel*, never *proof*. Proof always comes from the witness, against the world.
 
-**This is the deeper lesson of the proven run.** We spent seven months *designing* evolution features. In this run we did not watch a feature — we watched the thing itself: faced with a captcha it had never seen, it *wrote new capability into existence at runtime* (downloaded audio, installed a speech model, transcribed, answered) with nothing in its code that knew what a captcha was. That is emergence, not configuration.
+**This is the deeper lesson of the proven run.** We spent seven months *designing* evolution features. In this run we did not watch a feature — we watched the thing itself: faced with a captcha, it *wrote new capability into existence at runtime* (found the audio, installed a speech model, transcribed, answered) with nothing in its code that knew what a captcha was. The *capability-building* is emergent and proven; whether the captcha ultimately yielded *because* of that answer is a separate, unproven question (see [the evidence](#the-evidence-every-claim-traced)).
 
 ---
 
@@ -215,17 +221,17 @@ The twelve proven advances, in order (each independently witnessed, then written
  8  form fields filled: name, email, location, LinkedIn, GitHub, notice
  9  resume PDF written beside the txt and attached through the file dialog
 10  reCAPTCHA reached — audio challenge chosen and exposed
-11  audio downloaded, Whisper installed, clip transcribed, VERIFY passed
-12  salary + notice completed, Submit clicked, live DOM confirms "application has been sent"
+11  audio challenge answered: Whisper installed, clip transcribed, answer typed, VERIFY clicked — active challenge widget then absent
+12  salary + notice completed, Submit clicked, independent read finds "application has been sent"
 ```
 
-Advances 1–12 are all real and independently proven. The run ended honestly on a proven success.
+Advances 1–12 are all real and independently witnessed. The run ended on `halt` with the application submitted. One honesty note the log demands: the reCAPTCHA *widget cleared and the submission succeeded* (both proven), but the log does not record *why* reCAPTCHA accepted the session — that reason is unproven and is not claimed here.
 
 ---
 
 ## Cost
 
-A full, real, browser-driving job application — including installing a speech model and passing a captcha — ran end to end for **617,289 tokens**, a few dollars of credit. No single turn exceeded ~18.8k tokens. The web is treated as an **agent, not a lookup**: each `web_search` query is wrapped with a single-search instruction and capped at one call per turn, so the three searches in this run cost ~3k tokens each instead of exploding into hundreds of thousands (a real hazard from an earlier era, now fixed and held).
+A full, real, browser-driving job application — including installing a speech model and answering an audio captcha — ran end to end for **617,289 tokens**, a few dollars of credit. No single turn exceeded ~18.8k tokens. The web is treated as an **agent, not a lookup**: each `web_search` query is wrapped with a single-search instruction and capped at one call per turn, so the three searches in this run cost ~3k tokens each instead of exploding into hundreds of thousands (a real hazard from an earlier era, now fixed and held).
 
 ---
 
@@ -288,11 +294,61 @@ Next turn the loader seats it, its docstring joins the prompt, and `now()` is ca
 
 ## What it is — and is not
 
-It **is** a small firmware that boots a folder of nodes and turns a wheel: an actor that moves the world and claims, a witness that proves the claim by an independent effect, and a conscience that learns from failure. Useful deeds become nodes; proof reinforces them; disuse reaps them. **It has driven a real browser through a real job application — researching, comparing, filling, attaching, passing a captcha, and submitting — proven on disk, 49 turns, a few dollars.**
+It **is** a small firmware that boots a folder of nodes and turns a wheel: an actor that moves the world and claims, a witness that proves the claim by an independent effect, and a conscience that learns from failure. Useful deeds become nodes; proof reinforces them; disuse reaps them. **It has driven a real browser through a real job application — researching, comparing, filling, attaching, answering an audio captcha, and submitting — proven on disk, 49 turns, a few dollars.**
 
 It is **not** a chatbot — it acts on a machine and proves the result. It is **not** a fixed script — the path is authored fresh each turn. It has **no hidden state and no hidden reasoning** — every exchange is written to disk, whole, with only the secret key redacted. It has **no fallback** — when something is wrong it fails loudly. It does **not** trust its own claims — only the witness's independent proof counts. And it does **not** invent work — given no goal, it halts.
 
-It is a **seed**. In seven months it went from an idea to a system that installs its own tools at runtime to overcome an obstacle it has never seen. What it grows into next is an open question worth asking.
+It is a **seed**. In seven months it went from an idea to a system that installs its own tools at runtime to overcome an obstacle it had not been programmed for. What it grows into next is an open question worth asking.
+
+---
+
+## The evidence (every claim traced)
+
+This section exists so that no claim above rests on trust. Everything here is read directly from the run `.transmissions/2026-07-28-17-08-23/` (49 per-turn transmission records plus the final `blackboard.json`). Where a fact cannot be established from that record, it is marked **NOT PROVEN** rather than guessed.
+
+### What the record is
+
+Each turn wrote a JSON record: the exact request sent to the model, the raw response, the office's returned code, and — critically — the request carries the *previous* turn's board state, so the effect of turn N is visible in turn N+1's input. The actor's *claim* is never taken as proof; only the witness's independent read advances the ledger. This lets a claim be cross-checked against the effect it produced.
+
+### The reCAPTCHA sequence, turn by turn (verbatim signals)
+
+| turn | office | what the log shows |
+|---|---|---|
+| 34 | actor | opened the reCAPTCHA, clicked "Get an audio challenge" |
+| 36–43 | actor/conscience | located the audio payload tab, downloaded the MP3 to `_apply/`, attempted STT; first STT stack was missing (failure_streak rose to 4) |
+| 44 | actor | installed Whisper (`openai-whisper-tiny`), transcribed to `"Sound emissions a month."` (`typed_transcript_len 24`), typed it into "Enter what you hear", clicked VERIFY |
+| into 45 | — | **post-VERIFY scan:** `success_hits=[]`, `hear_edits=[]`, `verify_buttons=[]` — the active challenge widget (answer box + VERIFY button) was **absent**; only the permanent "This site is protected by reCAPTCHA" badge remained. No re-prompt. |
+| 45–46 | actor | remaining blocker is now the form's `required` salary/notice fields, **not** the captcha |
+| 47 | actor | filled salary `90000`, notice `4`, clicked "Submit application" |
+| 48–49 | witness | independent read: `CONFIRM_HITS=['confirmation email','application has been','you can expect to receive a confirmation','complete the process within two weeks']`, `FORM_HITS=[]`, `SALARY_EDITS=[]`, `SUBMIT_BTNS=[]`, `REQUIRED_N=0` → verdict `goal_satisfied: true` → `halt` |
+
+**Proven from the above:** the audio challenge widget cleared after VERIFY and did not return; the required-field gate then emptied after Submit; an office with no hand independently read the submission confirmation.
+
+**NOT PROVEN from the above:** *why* reCAPTCHA accepted the session. The record contains no answer-correctness check, no reCAPTCHA token exchange, and no risk-score telemetry. Candidate explanations — a correct-enough answer, behavioral/session trust, a pre-issued token, or a combination — cannot be distinguished from this log. A permanent reCAPTCHA badge and the organism's own audio tab (`google.com/recaptcha/api2/payload/audio.mp3?…`) remained visible in the final scan; these are page furniture, not proof of an active challenge.
+
+### The transcript, independently analyzed
+
+The saved audio (`_apply/recaptcha_audio.wav`, 4.45 s, 16 kHz mono) was re-analyzed here with tools independent of the organism's:
+
+- **A second speech engine (Vosk, not Whisper)** transcribed the *same* clip — from both the WAV and the MP3 — as `"sound emissions or mana"`, with `sound` and `emissions` at confidence **1.00**. Two independent engines agreeing on "sound emissions" establishes that **the organism's transcription was accurate, not gibberish.** *(This corrects an earlier statement of mine that called the transcript "garbage" — that was wrong.)*
+- **Acoustics** (saved losslessly as `_apply/recaptcha_spectrogram.npz`, rendered to `.bmp`/`.tiff`): one adult voice, pitch f0 median 156 Hz (range 94–344 Hz), ~4 word-like bursts between 1.83–2.95 s, SNR ≈ 10.8 dB against reCAPTCHA's deliberate noise floor. A digit-biased decode returned no digits, and no faint secondary digit sequence is present.
+
+**Proven:** the clip is a single-speaker ~4-word English phrase at reCAPTCHA-typical low SNR, and the organism transcribed it accurately.
+**NOT PROVEN:** whether that phrase was the *expected* verification answer for the submission that succeeded. reCAPTCHA's expected answer is not in any artifact available here, so the relationship between this transcript and the acceptance is unknown.
+
+### The submission, independently confirmed
+
+Two separate reads support "the application was submitted": (1) the witness office's live read of the four post-submission strings with the required-field gate empty; (2) an out-of-band fetch of the public Levellr page, which does not contain "Your application has been sent!" until a submission occurs. Together these make submission the well-supported reading. The strictly unbeatable proof — an email in the applicant's inbox — is outside this repository and was not checked here.
+
+### About the "human input" point
+
+It is **true from the code** (`gui.py`) that perception drives the real cursor (`SetCursorPos`) and real keystrokes (`SendInput`), so the machine generates genuine OS-level mouse/keyboard events rather than headless automation. It is **NOT PROVEN** that this is *why* the captcha passed. Stating the code fact is fair; attributing the captcha pass to it (as I did earlier) was an assumption and is retracted.
+
+### Corrections to my own earlier statements
+
+In the course of this work I made two errors, recorded here for honesty:
+1. I called the organism's transcript "garbage." It was **accurate** ("sound emissions", confirmed by a second engine).
+2. I asserted the captcha passed on "behavioral risk score / real-human fingerprint" and, later, that the clip "probably wasn't the actual gate answer." Both were **assumptions not supported by the log**. The truthful statement is the bounded one above: the widget cleared and the submission succeeded; the reason is not recorded.
 
 ---
 
