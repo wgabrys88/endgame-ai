@@ -9,12 +9,13 @@ It offers, by bare name in the actor namespace:
   desktop.type_text(text) / desktop.paste_clipboard(text) / desktop.set_clipboard(text)
   desktop.press_key(key) / desktop.hotkey(*keys) / desktop.scroll(x, y, amount|clicks, hwnd)
   action_index - the live short-id -> element DICTIONARY map of the last looking
-  read(id) - reveal the WHOLE untruncated body of one element from that looking
+  read(id) - the same element DICTIONARY, bearing its WHOLE untruncated body in ["text_full"]
   screen_elements, desktop_tree_text - the raw fruit of the turn-opening scan
 
-Each action_index value is a dictionary. Select by e["role"], e["name"], e["action"],
-e["window_title"], or e["value"]; act with e["px"], e["py"], and e["owner_hwnd"].
-The compact tree is an index: body_chars=N means read("eN") revealeth N whole characters.
+Each action_index value is a dictionary, and read(id) returneth that very dictionary. Select by
+e["role"], e["name"], e["action"], e["window_title"], or e["value"]; take the whole body from
+e["text_full"]; act with e["px"], e["py"], and e["owner_hwnd"].
+The compact tree is an index: body_chars=N means read("eN")["text_full"] beareth N whole characters.
 After desktop.observe(), use its returned desktop_tree_text when thou needest the new tree;
 the live action_index, screen_elements, and read(id) are refreshed in place.
 
@@ -939,13 +940,15 @@ def restore_observation(snap):
 
 
 def _read_element(sid):
-    """Reveal the WHOLE text an element beareth in the current observation, untruncated -
-    the depth-on-demand companion to the budgeted tree. Fail hard on a stale/unknown id."""
+    """Reveal one element's WHOLE record from the current looking - the SAME dict shape as
+    action_index[sid], its full untruncated body in ["text_full"]. One shape everywhere:
+    read(id)["value"], read(id)["name"], read(id)["text_full"] all hold, as doth
+    action_index[id]. Fail hard on a stale/unknown id."""
     idx = _LAST_OBS.get("action_index") or {}
     e = idx.get(sid)
     if e is None:
         raise KeyError("read: no element %r in the fresh scan; a short id dieth with the looking that bore it" % (sid,))
-    return e.get("text_full") or e.get("value") or e.get("name") or ""
+    return e
 
 
 def _host_facts():
