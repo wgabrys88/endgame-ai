@@ -2,14 +2,21 @@
 hands upon the real Windows desktop; remove it and the organism simply has no hand (no flag).
 
 It offers, by bare name in the actor namespace:
-  desktop.observe(config=None) - a fresh in-process looking; returns the action_index and tree
+  desktop.observe(config=None) - take a fresh looking, refresh the live bare observation, and
+    return {"action_index", "screen_elements", "desktop_tree_text"}
   desktop.open_url(browser='default', url='') - open a known address in the Windows default browser; any other browser value is an exact executable path
   desktop.click(x, y, hwnd) - move and press upon an owned point
   desktop.type_text(text) / desktop.paste_clipboard(text) / desktop.set_clipboard(text)
   desktop.press_key(key) / desktop.hotkey(*keys) / desktop.scroll(x, y, amount|clicks, hwnd)
-  action_index - the fresh short-id -> element map of the last looking (iterate .values())
-  read(id) - the WHOLE untruncated text an element beareth
-  screen_elements, desktop_tree_text - the raw fruit of the last scan
+  action_index - the live short-id -> element DICTIONARY map of the last looking
+  read(id) - reveal the WHOLE untruncated body of one element from that looking
+  screen_elements, desktop_tree_text - the raw fruit of the turn-opening scan
+
+Each action_index value is a dictionary. Select by e["role"], e["name"], e["action"],
+e["window_title"], or e["value"]; act with e["px"], e["py"], and e["owner_hwnd"].
+The compact tree is an index: body_chars=N means read("eN") revealeth N whole characters.
+After desktop.observe(), use its returned desktop_tree_text when thou needest the new tree;
+the live action_index, screen_elements, and read(id) are refreshed in place.
 
 Bind an id, coordinate, or owner ONLY from a fresh scan; a short id dieth with the looking that
 bore it. The kernel calls environment(bb, cfg) each turn to refresh the [environment] section,
@@ -463,7 +470,7 @@ class UiaScanner:
             for pid, label in ((PID_VALUE_PATTERN, "Value"), (PID_LEGACY_PATTERN, "LegacyIAccessible")):
                 pattern_values.update(self._pattern_text(_pattern(element, pid), label))
             name = name or pattern_values.get("legacy_name") or ""
-            if role in WRITE_ROLES and not (pattern_values.get("value") or pattern_values.get("legacy_value")):
+            if role in WRITE_ROLES | READ_ROLES and not (pattern_values.get("value") or pattern_values.get("legacy_value")):
                 pattern_values.update(self._pattern_text(_pattern(element, PID_TEXT_PATTERN), "Text"))
             value = pattern_values.get("value") or pattern_values.get("legacy_value") or pattern_values.get("text") or ""
             text_full = value or name or pattern_values.get("legacy_description") or ""
@@ -692,14 +699,19 @@ def _render(windows: list[dict[str, Any]], screen: dict[str, int]) -> dict[str, 
             sid = f"e{counter['n']}"
             e["short_id"] = sid
             action = str(e.get("action", "")) if e.get("enabled") is not False else ""
+            raw_name = str(e.get("name", "") or "")
+            name = clean(raw_name)
+            body = str(e.get("text_full") or e.get("value") or raw_name)
+            body_marker = f"body_chars={len(body)}" if body and body != raw_name else ""
             parts = [p for p in (
-                sid, str(e.get("role", "")), clean(e.get("name", "") or ""),
-                f"[{action}]" if action else "",
+                sid, str(e.get("role", "")), name,
+                f"[{action}]" if action else "", body_marker,
             ) if p]
             lines.append("  " * indent + " ".join(parts))
             public = {**{k: v for k, v in e.items() if k != "children"},
                       "short_id": sid, "action_key": sid, "observation_id": observation_id,
-                      "window_id": wid, "window_title": window_title}
+                      "window_id": wid, "window_title": window_title,
+                      "body_chars": len(body)}
             action_index[sid] = public
             screen_elements.append({k: v for k, v in public.items() if k not in ("short_id", "action_key")})
             for child in action_children.get(id(e), []):
@@ -893,6 +905,23 @@ import types as _types
 _LAST_OBS = {"action_index": {}, "screen_elements": [], "desktop_tree_text": ""}
 
 
+def _remember_observation(snap):
+    """Install one looking without invalidating the live containers already seated in a deed."""
+    new_action_index = dict(snap.get("action_index", {}) or {})
+    new_screen_elements = list(snap.get("screen_elements", []) or [])
+    action_index = _LAST_OBS["action_index"]
+    action_index.clear()
+    action_index.update(new_action_index)
+    screen_elements = _LAST_OBS["screen_elements"]
+    screen_elements[:] = new_screen_elements
+    _LAST_OBS["desktop_tree_text"] = str(snap.get("desktop_tree_text", "") or "")
+    return {
+        "action_index": action_index,
+        "screen_elements": screen_elements,
+        "desktop_tree_text": _LAST_OBS["desktop_tree_text"],
+    }
+
+
 def snapshot_observation():
     return {
         "action_index": _LAST_OBS["action_index"],
@@ -902,9 +931,7 @@ def snapshot_observation():
 
 
 def restore_observation(snap):
-    _LAST_OBS["action_index"] = snap.get("action_index", {}) or {}
-    _LAST_OBS["screen_elements"] = snap.get("screen_elements", []) or []
-    _LAST_OBS["desktop_tree_text"] = snap.get("desktop_tree_text", "") or ""
+    _remember_observation(snap)
 
 
 # Windows DLLs are bound LAZILY on first get_desktop() — so this node imports on any OS and
@@ -948,10 +975,8 @@ def environment(bb, cfg=None):
     facts = _host_facts()
     d = get_desktop()
     obs_cfg = (cfg or {}).get("observation", {})
-    obs_result = d.observe(obs_cfg)
-    _LAST_OBS["action_index"] = obs_result.get("action_index", {}) or {}
-    _LAST_OBS["screen_elements"] = obs_result.get("screen_elements", []) or []
-    _LAST_OBS["desktop_tree_text"] = str(obs_result.get("desktop_tree_text") or "").strip()
+    obs_result = _remember_observation(d.observe(obs_cfg))
+    _LAST_OBS["desktop_tree_text"] = _LAST_OBS["desktop_tree_text"].strip()
     tree = _LAST_OBS["desktop_tree_text"] or "(no interactable elements observed)"
     bb.set("environment", facts + "\n\nSCREEN\n" + tree)
 
@@ -972,9 +997,13 @@ def namespace(context=None):
     if kind == "witness":
         return ns
     d = get_desktop()
+
+    def observe_live(config=None):
+        return _remember_observation(d.observe(config))
+
     ns["desktop"] = _types.SimpleNamespace(
         click=d.click, type_text=d.type_text, paste_clipboard=d.paste_clipboard,
         set_clipboard=d.set_clipboard, press_key=d.press_key, hotkey=d.hotkey,
-        scroll=d.scroll, open_url=d.open_url, observe=d.observe,
+        scroll=d.scroll, open_url=d.open_url, observe=observe_live,
     )
     return ns

@@ -308,6 +308,10 @@ Every turn is the same shape, whether the deed is a web search, a click, a file 
 
 When a hand-and-eyes node is seated, the organism sees the machine by **scanning geometry**, never by "focusing" a window — an act it does not perform. It walks each window's rectangle, probes points inside it, and assigns every element it finds to the window that owns it. The grouping of elements under windows **is** the depth-ordering — won by arithmetic over areas, not by any foreground call. And the screen is only *one* surface: the filesystem, processes, ports, and the network are surfaces too, and the witness may prove upon any of them.
 
+The environment tree is a **compact index, not a lossy copy of every body**. Each line gives a fresh short id, role, visible name, and available action. When an element bears additional text or a current field value not already visible in its name, the line adds `body_chars=N`. The actor then calls `read(id)` to reveal exactly that one body, whole and untruncated. This is depth on demand: the index says where information exists; the deed narrows the looking to the one element whose contents matter.
+
+`desktop.observe()` takes another complete looking during a deed. It refreshes the live bare `action_index`, `screen_elements`, and `read(id)` state in place, and returns the new tree. Every `action_index` value is an ordinary dictionary containing the element's `role`, `name`, `action`, `value`, `window_title`, `rect`, click point (`px`, `py`), and owning window (`owner_hwnd`). A fresh deed selects with dictionary keys and acts with that fresh geometry; it never has to guess an object shape from the compact tree.
+
 ---
 
 ## Two honesty laws that shape every deed

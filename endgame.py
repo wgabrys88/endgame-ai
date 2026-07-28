@@ -68,7 +68,7 @@ CONFIG = {
     # faults, while an overfull request switches to conscience before transport.
     "max_area_chars": 65536,
     "observation": {"step_px": 64, "max_subtree_nodes_per_point": 120,
-                    "depth_ceiling": 45, "min_window_area": 2500},
+                    "depth_ceiling": 65, "min_window_area": 2500},
     "transmission_log_dir": ".transmissions",
     "web_search_max_tool_calls": 1,  # one billable server-side search/browse call per web_search
     "deed_subprocess": True,
