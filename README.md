@@ -316,16 +316,16 @@ sequenceDiagram
     participant M as the mind
     participant N as namespace (gui seated)
     participant B as Blackboard
-    W->>W: seat cards; re-seat if a node file changed
+    W->>W: seat cards, re-seat if a node file changed
     W->>N: refresh perception (fresh geometry scan)
-    W->>P: system = stable law+schema+offices+tools · user = "I am [witness]" + read areas + budget
-    P->>W: measure the WHOLE request; guard it before transport
+    W->>P: system = stable law+schema+offices+tools, user = I am witness + read areas + budget
+    P->>W: measure the WHOLE request, guard it before transport
     W->>M: send (teed to disk AND screen, whole)
-    M-->>W: one record (five fields; code = a read-only proof)
+    M-->>W: one record (five fields, code = a read-only proof)
     W->>N: run the proof in the witness namespace (NO hand)
     N-->>W: printed address, checked against the area budget
-    W->>B: store evidence + verdict; write ledger (now 4 proven)
-    W->>W: signal=confirmed → route to execute; reinforce pheromone edges
+    W->>B: store evidence + verdict, write ledger (now 4 proven)
+    W->>W: signal confirmed, route to execute and reinforce pheromone edges
 ```
 
 That is the shape of *every* turn — web search, click, file written, or a new node saved. Only the office and the deed differ.
