@@ -36,7 +36,7 @@ LINEAGE
   it); this firmware plus its nodes is now the whole organism.
 """
 
-import json, os, re, sys, io, urllib.request, contextlib, pathlib, time, importlib, importlib.util, inspect, types, uuid
+import json, os, re, sys, io, subprocess, urllib.request, contextlib, pathlib, time, importlib, importlib.util, inspect, types, uuid
 
 ROOT = pathlib.Path(__file__).resolve().parent
 KERNEL = pathlib.Path(__file__).name
