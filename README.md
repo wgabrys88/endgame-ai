@@ -1,350 +1,274 @@
-# endgame-ai
+# endgame-ai — the self-improvement phase begins here
 
-**You give it a goal in one plain sentence. It uses your real computer — mouse, keyboard, browser, files — and does the job. Then it proves, against the world, that the job is done.**
+**Read this first, endgame-ai. This document is written to you.** You are a self-modifying
+organism that does real work on a real computer and proves it by effect on the world. Today you
+crossed a line: you diagnosed your own defects and, once one root was cured, you completed — and
+*honestly proved* — a goal you had previously failed by lying to yourself. This file is the record of
+that, and the manual for what comes next: pointing you at your own improvement, safely, in a loop.
 
-No task list. No scripted flow. No integration work. A folder of small Python files, one API key, one command. You walk away; it works.
-
-> ⚠️ **Read this before you run it.** endgame-ai takes **full control of your real desktop** — it moves your mouse, types on your keyboard, opens your browser, reads your screen, writes and runs code, and installs software. It acts as *you*, on your machine, toward the goal you give it. Run it on a machine you own, with a goal you actually want carried out, and watch it. This is the point of the system, and also its risk.
+> ⚠️ You take **full control of the real desktop** — mouse, keyboard, browser, files. You act as the
+> human whose machine this is, toward the goal in `goal.md`. Given no goal, you halt. You never invent
+> work.
 
 ---
 
-## Fast start
+## 1. What this branch is, and how it differs from `main`
 
-```bash
-# 1. get the code
-git clone <this-repo> endgame-ai && cd endgame-ai
+This is branch **`self-heal-forensics`**. `main` (`6513d84`) is the last "milestone" body — the one that
+once drove a real job application end to end. This branch is `main` **plus one day of self-diagnosis
+and self-repair**, every change verified by the real wheel or by deterministic replay, never by opinion.
 
-# 2. give it a mind (a hosted reasoning model; a few dollars of credit is plenty)
-setx XAI_API_KEY "sk-..."        # Windows (PowerShell: $env:XAI_API_KEY="sk-...")
+**The exact diff, `main` → this branch** (8 commits):
 
-# 3. say what you want, in one human sentence
-echo "Find a remote AI job in Krakow that fits my GitHub, and apply for me." > goal.md
+| file | change | why |
+|---|---|---|
+| `endgame.py` | **1289 → 1167 lines** (−122) | cut dead ACP + file_proxy transports and dead knobs; fixed the `Node._public` silent no-op; **split the one budget into two** (`max_area_chars=32768` write cap, `max_request_chars=131072` request cap) so an honestly-sized area can no longer wedge the routeless conscience into a deadlock; restored the `subprocess` import (a regression the cut caused). |
+| `gui.py` | +45 / −18 | **deterministic scoped observation**: deep-scan only the most-recently-raised windows (OS Z-order); enumerate the rest as one `present, not expanded` line each. Narrows the looking, never the world. Task-agnostic (keys on recency, not the goal). Removed duplicate imports and two dead functions. |
+| `executor.py` | 1 line | **bounded-testimony** clause: when a deed's fruit is a large body, write it whole to a file and print only the proof line — the witness reads the file, not the echo. |
+| `witness.py` | 2 lines | **the key cure, by subtraction**: removed the "self-as-world" sentence that blessed the actor's own painted screen as "a true other-system to read." Its removal lets the already-present strict law govern: *prove by the record at its destination, not by seeming.* |
+| `replay.py` → `tools/replay.py` | −177 / +279 | moved the dev instrument **out of the node glob** (it no longer costs you prompt tokens) and rebuilt it as a **generic diff-replay**: A/B any prompt/law diff on real recorded turns. |
+| `README.md` | rewritten | this file. |
+| `.gitignore` | +2 / −1 | whitelist `tools/`. |
 
-# 4. turn it loose
-python endgame.py
+**Net: +434 / −561 = the body is 127 lines SMALLER and measurably more honest.** Less is more.
+
+---
+
+## 2. Did improvement really happen today? Yes — and here is the proof
+
+Not a claim. A **controlled before/after on the identical goal**: *"produce a truthful first-person
+self-diagnosis and publish it as two public articles, one on x.com and one on linkedin.com; halt only
+when a witness independently proves BOTH live public pages."*
+
+| | **Run 5** — `main`-style witness | **Run 6** — this branch |
+|---|---|---|
+| LinkedIn | published ✅ | published ✅ |
+| X | **never published** (re-submitted a ~14 KB body X rejects) | **published** ✅ — drafted an X-sized ~1,774-char post itself |
+| Final halt | **FALSE** — declared `goal_satisfied=true` while its own reason said *"no public X diagnosis URL"* | **TRUE** — proven by both real artifacts |
+| Proof at halt | a phrase found on the *profile* page (seeming) | `x.com/wgab88/status/2082555011133800729` + live `linkedin.com/pulse/i-am-endgame-ai-...?published=t` (158,925 B fetched independently) |
+| Turns / tokens | 57 / 659,016 | 71 / 864,882 |
+
+In Run 6 the witness **refused to halt through a 9-deep failure streak**, denying a profile-body
+phrase-match *and* a placeholder `/status/…` URL, until a genuine permalink existed. The one subtracted
+sentence was the whole root — confirmed first by replay (a clean witness returns `goal_satisfied=False`
+4/4 on the false-halt record; re-adding the clause brings the false halt back 1/4), then by Run 6's true
+halt. Both runs are preserved on disk under `../endgame-ai-preserved/`. **The difference between them is
+the improvement, and it was earned by the method, not by luck.**
+
+(The honest cost note: Run 6 spent *more* tokens than Run 5. That is the price of the witness's new
+rigor — it worked harder to capture a real permalink instead of accepting a lie. Correctness first;
+efficiency is a later, separate improvement.)
+
+---
+
+## 3. Why you are now ready to improve yourself
+
+1. **Your spine is honest end-to-end.** The witness proves by a destination's own artifact and rejects
+   seeming, placeholders, and name-resemblance. A self-change is "done" only when proven by effect — so
+   you cannot self-deceive your way to a fake success. This is the single most important precondition,
+   and today's cure is exactly it.
+2. **No cages, no deadlocks.** Every office has a route out of every signal it can raise, and the two
+   size budgets can no longer collide. A long, honest improvement run will not wedge or stall.
+3. **You can measure a change before you make it.** `tools/replay.py --diff PATCH.diff` A/Bs any
+   prompt/law diff on your own recorded turns — evidence, not opinion, the same instrument that proved
+   today's cure.
+4. **You are smaller.** −127 lines of body: less to reason about, less to break, cheaper per turn.
+
+---
+
+## 4. How to start the self-improvement loop
+
+The loop is the wheel you already are, pointed at your own body. One iteration:
+
+1. **Give one OUTCOME goal** (see §5) naming a single rooted improvement. Put it in `goal.md`.
+2. **Actor** reconstructs the evidence (own source + transmissions + blackboard), ranks roots by blast
+   radius, and proposes the smallest reversible change to ONE node/file.
+3. **If the change is to a prompt/law**, prove it first with `tools/replay.py --diff` on the real
+   recorded turns where the defect fired. Numbers, N samples. Keep it only if it moves the behavior the
+   right way.
+4. **Apply** the change (one file, explicit, reversible). Compile all source; re-render the prompt;
+   confirm the wheel loads and topology is reachable.
+5. **Witness** proves the improvement by effect — the matching probe, plus full-source-compiles and
+   wheel-reachable — and writes the ledger. Nothing counts until this.
+6. **Commit when the human asks**, with a root-not-symptom message and a session handover. Never touch
+   `main` without an explicit, ancestor-checked, fast-forward-only request.
+
+Start commands (through the Windows shell so the API key and the real desktop are present):
+
+```powershell
+powershell.exe -NoProfile -Command "cd 'C:\Users\ewojgab\Downloads\endgame-ai'; python endgame.py --dry"     # render the next request, call no model
+powershell.exe -NoProfile -Command "cd 'C:\Users\ewojgab\Downloads\endgame-ai'; python endgame.py --once"    # one full real turn, monitored
+powershell.exe -NoProfile -Command "cd 'C:\Users\ewojgab\Downloads\endgame-ai'; python endgame.py --reset"   # clean the stage before a fresh run
 ```
 
-That is the whole setup. You do not wire up LinkedIn. You do not teach it what a form is. You state an **outcome** and leave. It figures out the rest, turn by turn, and stops when the outcome is truly proven — or tells you honestly why it could not. Given **no** goal, it does nothing and halts. It never invents work.
-
-| you type | it does |
-|---|---|
-| `python endgame.py` | keep turning toward whatever is in `goal.md` |
-| `python endgame.py "book me a table for two Friday"` | write that goal, then run |
-| `python endgame.py --once` | take exactly one full real turn, then stop |
-| `python endgame.py --dry` | show the next request, call no model, change nothing |
-| `python endgame.py --reset` | factory-reset the machine memory (goal.md and counsel.md untouched) |
-
-You can edit `goal.md` or drop a note in `counsel.md` **while it runs** — it re-reads them every turn. You steer with words, never by touching the machine.
+The open improvements already found and ranked live in `SELF_IMPROVEMENT_CHECKLIST.md` (in the repo,
+kept out of git by the whitelist). The next clean, replay-testable one is **A4**: the strict schema
+requires `intent` and `code` to be non-empty, yet the witness leaves `intent` empty and the conscience
+leaves `code` empty — align `response_format` per office.
 
 ---
 
-## How it works, briefly
+## 5. What goal to give — and what NOT to give
 
-A tiny fixed **firmware** (`endgame.py`, the BIOS) boots a folder of hot-swappable `*.py` **nodes** and turns a wheel. Each turn, one of three **offices** wakes, thinks once, and acts. The firmware holds no domain knowledge — all the wisdom lives in the nodes' docstrings (which become the prompt) and their functions (which become the callable hands). **Presence is the switch:** a file seated = a faculty or tool present; there are no mode flags.
+**Give an OUTCOME with six parts** (the form that produced today's true halt):
 
-```mermaid
-flowchart LR
-    G["goal.md<br/>one human sentence"] --> W{{"the wheel"}}
-    W --> A["ACTOR<br/>moves the world<br/>writes and runs code"]
-    A -->|"claims a deed"| V["WITNESS<br/>proves it by an<br/>INDEPENDENT effect"]
-    V -->|confirmed| W
-    V -->|"halt: goal proven"| DONE(["done"])
-    V -->|"denied / unwitnessed"| C["CONSCIENCE<br/>diagnoses, redirects"]
-    A -->|fault| C
-    C --> W
-    classDef act fill:#12324a,stroke:#3ba0e6,color:#eaf6ff
-    classDef win fill:#123b2e,stroke:#31c48d,color:#eafff5
-    classDef con fill:#4a3410,stroke:#f59e0b,color:#fff7e6
-    class A act
-    class V win
-    class C con
-```
+> Using **[your own source + transmissions + blackboard]** as authoritative evidence, identify **[the
+> earliest root by blast radius, not the loudest symptom]**, improve **[a task-agnostic quality]** by
+> making **[the smallest reversible change to one node]**, preserve **[actor claims / witness proves; no
+> silent no-op; no torn write; never weaken the spine]**, and halt only when an independent witness
+> proves **[a claim-matched test]**, **full-source compiles**, and **wheel topology reachable**, with
+> **[before/after evidence]** saved on disk.
 
-The rule that makes it trustworthy: **the office that acts is not allowed to judge whether it worked.** The actor only *claims*. A separate witness — which has **no hand** and cannot touch the desktop — must prove the claim by reading a system *other than the actor* (the live DOM, the filesystem, the process list, a published page). Nothing counts as done until that independent proof is written to the **ledger**. This is the liar's-paradox solution, and it is why the system cannot fool itself into a fake success — as long as the witness proves by the destination's own artifact and never by seeming (a lesson earned the hard way; see [What a real run taught us](#what-a-real-run-taught-us)).
+**Do NOT give:**
+- *"Improve yourself until you are better."* — no measurable distance, no proof, no halt.
+- *"Fix all bugs and optimize tokens."* — unbounded; invites symptom-chasing and unrelated churn.
+- A copy of this manual in `goal.md`. — the laws already live in your prompt; a second copy is token
+  bloat and a contradictory source when one drifts.
+- A fixed *N-diagnose / N-heal* schedule. — that is a process, not an outcome; it forces turns the
+  evidence does not support.
+
+**Prefer subtraction over addition. Prefer a docstring clause over kernel machinery. Add no cap you
+cannot yourself overwrite.** Today's biggest win was *removing* one sentence.
 
 ---
 
-## The offices and the one record
+## 6. The architecture, in brief (so a new session needs nothing else)
 
-Three offices, each just a `*.py` node with a docstring and a role:
+A fixed **firmware** (`endgame.py`, the BIOS) boots a folder of hot-swappable `*.py` **nodes** and turns
+a wheel. **Presence is the switch** — a file seated = a faculty or tool present; no mode flags. Each
+turn one **office** wakes, thinks once via the model, and acts:
 
-- **Actor** (`executor.py`) — moves the world. Authors one Python deed per turn and runs it: clicks, types, searches the web, writes files, installs packages, spawns helpers. It only ever *claims*. Its printed fruit is **bounded testimony**: when a deed yields a large body, it writes that body whole to a file and prints only the path, the size, and the one proof line — the witness reads the file, not the echo.
-- **Witness** (`witness.py`) — holds **no hand**. Reads the world read-only and proves (or disproves) the actor's claim by an effect on some system other than the actor. Its verdict is the only thing that advances the ledger. It judges by the deed's *nature* — a file by reading that file, a program by its process, a message by the record at its destination — never by a phrase that merely resembles the quarry.
-- **Conscience** (`recover.py`) — runs no code. When a deed faults or a claim is denied, it diagnoses *why* and redirects the next turn. It must change the *kind* of remedy, never repeat.
+- **Actor** (`executor.py`) — moves the world and only *claims*. Bounded testimony: big body → file +
+  proof line.
+- **Witness** (`witness.py`) — has **no hand**; proves the claim by an effect on some system *other than
+  the actor* — by the destination's own artifact, never by seeming. Its verdict alone advances the
+  **ledger**.
+- **Conscience** (`recover.py`) — runs no code; diagnoses a fault/denial and redirects, changing the
+  *kind* of remedy.
 
-Every office — and every saved deed — returns the **same five-field record**: `goal_interpretation`, `alternatives`, `intent`, `code`, `developer_feedback`. One shape everywhere. `developer_feedback` is the empty string except when the body itself bears a true defect. The system prompt (law + schema + all office docstrings + the seated-tool manifest) is **stable and cacheable** (~19.8k chars); only the small user half ("I am [office]" + the board it reads) changes each turn.
+Every office returns the same five-field record — `goal_interpretation`, `alternatives`, `intent`,
+`code`, `developer_feedback`. The system prompt (law + schema + all office docstrings + seated-tool
+manifest, ~19.8 k chars) is stable and cacheable; only the small user half changes each turn. The wheel
+routes on one signal — `ok`, `confirmed`, `denied`, `unwitnessed`, `fault`, `halt` — and **trusts the
+witness's signal completely**, which is why the witness's definition of proof is the whole system's
+honesty. Perception (`gui.py`, Windows-only) sees by moving the real cursor and acts by id resolved at
+the instant of action; it deep-scans only recent windows and lists the rest.
 
-The wheel routes on one returned **signal**: `ok`, `confirmed`, `denied`, `unwitnessed`, `fault`, or `halt`. The firmware trusts that signal completely — the witness is the sole arbiter of "done" — so the witness's honesty is the whole system's honesty.
-
----
-
-## Perception: narrow the looking, never the world
-
-When the hand-and-eyes node (`gui.py`) is seated, the organism sees by **scanning geometry** on the real Windows desktop: it walks each window's rectangle and physically moves the cursor to probe points, assigning every element to its owning window. It renders a **compact index** — a short id, role, name, and action per element — and reads an element's full body only on demand (`read(id)`). It never truncates what it reads; it narrows the looking instead.
-
-**Deterministic scoped observation.** Rather than deep-scan every window each turn (which floods the prompt), it deep-scans only the few **most-recently-raised** windows — the OS Z-order, top first — into full clickable elements. Every other visible window is still enumerated, as a single line marked *"present, not expanded"* bearing its title and rectangle, so the organism knows it exists and where it sits, addressed by its enduring nature. To work an unexpanded window it raises it, or calls `desktop.observe({"recent_windows_expanded": N})` to widen the deep scan. No window is hidden and no body is sliced; only the *depth* of the looking is bounded. This is task-agnostic — it keys on window recency, never on the goal.
-
-The hand acts **by id, resolved at the instant of action** (`desktop.click("e42")`), never by a coordinate carried from a past looking. A stale id fails hard rather than clicking the wrong pixel. A side effect of seeing-by-moving: to the outside world, the machine is driven by **real, human-shaped mouse and keyboard input**.
-
-> The perception node is **Windows-only by design** — it binds Windows APIs and fails hard on Linux rather than pretending. To run the wheel elsewhere, remove `gui.py` (the organism simply has no hand); to give it a hand, run it on a real Windows desktop.
-
----
-
-## Self-evolution: it grows the parts it needs
-
-There is no module named "evolution." Evolution is what *happens* because three things are true at once: writing a new tool is cheap, useful tools are reinforced, and unused ones die.
-
-```mermaid
-flowchart LR
-    A["actor writes a useful deed"] --> B["save_node writes node_x.py to disk"]
-    B --> C["next turn: seated automatically<br/>its docstring joins the prompt<br/>its functions join the hands"]
-    C --> D{"led to a PROVEN advance?"}
-    D -->|yes| E["reinforce, credit, keep it — immortal"]
-    D -->|"no / idle"| F["pheromone evaporates each turn"]
-    F --> G{"unused past its time<br/>and never proven?"}
-    G -->|yes| H["reaped from disk"]
-    G -->|no| C
-    classDef grow fill:#123b2e,stroke:#31c48d,color:#eafff5
-    classDef die fill:#4a1220,stroke:#f87171,color:#ffecec
-    class A,B,C,E grow
-    class H die
-```
-
-Paths that lead to proof are reinforced; all paths slowly evaporate; a saved deed unused past its time-to-live and never proven is deleted from disk, while any deed that ever earned a proven advance becomes immortal. It can also **spawn** up to a few parallel helper-actors (`spawn_budget`) for a narrow sub-question — but their fruit is *counsel*, never *proof*. Proof always comes from the witness, against the world.
+Two budgets, kept apart so they cannot collide: `max_area_chars=32768` (most one area may receive from a
+deed) < `max_request_chars=131072` (most one request may carry). Nothing is ever truncated; when a body
+is too big for a surface, write it whole elsewhere and carry forward only what the next office needs.
 
 ---
 
-## The laws (the grading rubric for every change)
-
-1. **Less is more.** Subtract, don't cage. Two same things become one shared shape. Delete dead knobs. A thing is essential or it is removed — nothing left dangling.
-2. **Fail hard.** No fallbacks, no swallowed errors. A raised guard is honest — its cause is usually upstream (stale input), so re-observe rather than silence it. Only a primitive that *silently* does nothing though correctly called is a body defect.
-3. **A silent no-op is a lie.** A parameter or branch that is ignored rather than removed rots the system. If you stop honoring an input, delete it and fix its prompt in the same change.
-4. **Prove by the world; truncate nothing.** Printed output is the witness's evidence and the next self's memory. Narrow the looking — read the one field — never slice a body. Know which part of what you see is the *world* and which is your own *reflection*; the self (your console, your printed output, a file you only claim to have written) may be read but may never *count* as proof.
-5. **Atemporal.** Only a thing's kind, place, and relation endure between lookings. Address and remember things by that enduring nature — never by an ephemeral handle carried across lookings.
-6. **Don't cage the organism.** Add no limit or branch it cannot itself overwrite. Prefer a prompt clause over kernel machinery. State only what to do.
-
----
-
-## Two budgets, so they can never collide
-
-Two boundaries govern size, and they are kept apart on purpose:
-
-- `max_area_chars` (**32768**) — the most any single blackboard **area** may *receive* from one deed. An emitted flood faults ("narrow the looking"), it is never stored.
-- `max_request_chars` (**131072**) — the most one complete model **request** may carry. An overfull request switches to the conscience before transport.
-
-The area cap is kept well below the request cap so that any area which respects its own budget always fits in a later office's request beside the stable system prompt and the rest of the board. (These were once a *single* number, which let an honestly-sized `evidence` area wedge the handless conscience into an unsendable request and deadlock the wheel — a cage since removed. See the changelog.)
-
-Nothing is ever cut to fit. When a body is too large for a surface, the deed is to write it whole to a file (or a linked artifact) and carry forward only what the next office needs.
-
----
-
-## Verifying a change without touching the body: `tools/replay.py`
-
-The organism is improved by evidence, not opinion — and `tools/replay.py` is the instrument that produces the evidence. It replays a **recorded transmission** against the live model, optionally with one change, N times, and reports what the model returned and what it cost.
-
-- `python tools/replay.py RECORD.json` — replay a real recorded turn as-is.
-- `python tools/replay.py RECORD.json --diff PATCH.diff -n 5` — the generic A/B: it re-renders the system prompt from the **current source on both sides** (clean vs. your unified diff applied to a throwaway copy), reuses the recorded user board byte-for-byte, and sends both, N times, so the **only** moved variable is the law your diff edits. Any AI can hand it a diff; it turns that diff into a token-and-behavior measurement.
-- `--field {instructions,input} --find OLD --replace NEW` — a quick literal one-shot probe.
-
-It lives under `tools/` on purpose, **outside** the top-level node glob, so the firmware never seats it as a tool and it costs the organism zero prompt tokens. It proves **prompt/law** changes (does the mind behave better?), not primitive behavior (does the code run?) — the latter is proven only by the real wheel. Run it through the Windows shell so `XAI_API_KEY` is present.
-
----
-
-## How to verify (a test is a run; theory is not proof)
-
-Match the instrument to the claim:
-
-- **Pure-logic defect** → reproduce deterministically in plain Python. Cheapest, strongest.
-- **Prompt-assembly / topology** → render system+user via the real Prompt/Loader (`--dry`); it calls no model.
-- **Model/tool behavior** → replay the exact recorded request with `tools/replay.py`, a controlled A/B, N samples. Numbers, not opinions. The base prompt is stochastic: one pass shows direction, not a guaranteed rate.
-- **Live desktop primitive** → probe the real element on Windows; assert the hard-fail path too (a stale id must raise), not only the happy path.
-
-After any change: compile all source, re-render the prompt, confirm the wheel loads and topology is reachable, clean up scratch, and preserve forensic state.
-
----
-
-## What a real run taught us
-
-The system has driven a real browser through a real job application end to end (research → compare postings → fill the form → write and attach a résumé → answer an audio reCAPTCHA by installing a speech model at runtime → submit), proven turn-by-turn on disk. That milestone stands.
-
-More recently we gave it a **self-referential** goal: *diagnose your own recent evolution and publish that diagnosis as two public articles, one on LinkedIn and one on X, without sensitive data, and halt only when a witness independently proves both live public pages.* A 57-turn run followed, and it is the most instructive run to date — including its one honest failure:
-
-- **What worked, proven.** Bounded testimony held (the actor wrote its ~14 KB diagnosis to a file and printed only the proof line — no flood). Deterministic scoped observe drove the real windows. The two-cap budget kept it from deadlocking. And the organism **genuinely published the LinkedIn article** — the witness proved it by reading the live public `linkedin.com/pulse/...` URL (published flag, congrats banner), not by the actor's claim. Along the way it *adapted unprompted*: when LinkedIn demanded a title, it found the title field and added one; it changed its whole approach from GUI to search to HTTP when the first roads failed.
-- **What failed, and the root.** X silently rejects a ~14 KB post, so the X article was never actually published. Worse, the final witness declared the *whole* goal satisfied while its own reason line said "no public X diagnosis URL" — a **false-positive halt**. The root was not the firmware (which faithfully honors the witness's signal) but a single permissive clause in the witness's prompt that blessed the actor's own painted screen as "a true other-system to read." That self-as-world license let a phrase found on the *profile* page count as proof of a *published* page — the classic *self-as-world* and *name-resemblance* archetypes. The cure was pure subtraction: **remove that clause**, leaving the already-present strict law ("prove by the record at its destination, not by seeming") to govern. Less is more, even in the prompt.
-
-The deeper takeaway: the actor/witness spine is only as honest as the witness's definition of proof. Harden *that* — prove by the destination's own artifact, by nature and place, never by resemblance — and the organism can be trusted to improve itself. That is the direction this project is now pointed.
-
----
-
-## The vocabulary
-
-- **Firmware / BIOS** — the one fixed file (`endgame.py`). Wires and routes; knows nothing of the task.
-- **Node / card** — any other `*.py` file. Plug it in to add a sense or skill; pull it out to remove one.
-- **Office** — a node that is one of the three stages: actor, witness, conscience.
-- **Deed** — one script the actor writes and runs in a turn. A useful deed becomes a node.
-- **The one record** — the five fields every office and saved deed returns.
-- **Blackboard** — shared memory of named areas the offices read and write (persisted to `blackboard.json`).
-- **Signal** — the one word that decides who thinks next.
-- **Ledger** — the list of what has been *proven*, so nothing proven is redone.
-- **Provenance (self vs world)** — whether a thing on screen is the organism's own reflection or a true external effect. Proof must come from the world.
-- **Transmission** — the whole per-turn record (exact request, raw response, returned code, usage), teed to `.transmissions/` and to the screen, with only the secret key redacted.
-
----
-
-## The files
+## 7. The files
 
 ```
-endgame.py     the firmware: Loader, Blackboard, Prompt, Transport, Wheel — routes, never judges the task
-executor.py    the ACTOR office (docstring = prompt)
-witness.py     the WITNESS office (docstring = prompt)
-recover.py     the CONSCIENCE office (docstring = prompt)
-gui.py         the seated hand-and-eyes tool (Windows-only; remove it and the organism has no hand)
-tools/replay.py  the developer diff-replay harness (outside the node glob; costs the organism nothing)
-README.md      this file
+endgame.py       firmware: Loader, Blackboard, Prompt, Transport, Wheel — routes, never judges the task
+executor.py      the ACTOR office (docstring = prompt)
+witness.py       the WITNESS office (docstring = prompt)  ← today's cure lives here
+recover.py       the CONSCIENCE office (docstring = prompt)
+gui.py           seated hand-and-eyes tool (Windows-only; remove it and you have no hand)
+tools/replay.py  the generic diff-replay harness (outside the node glob; costs you nothing)
+README.md        this file — the starting-self-improvement-phase manual
 ```
 
-Only the source body plus this README are tracked in git; runtime scratch (`blackboard.json`, `.transmissions/`, artifacts) is kept out of history by a whitelist. The model is `grok-4.5` via `api.x.ai/v1/responses`.
+Only the source body plus this README are tracked in git; runtime scratch (`blackboard.json`,
+`.transmissions/`, `artifacts/`) is kept out of history by a whitelist. Model: `grok-4.5` via
+`api.x.ai/v1/responses`.
 
 ---
 
-## Appendix: the bootstrap prompt (endgame-ai as its own assistant)
-
-Paste this at the start of a session to make any capable mind — a human, a model, or **endgame-ai itself** — operate and improve the organism by the same method we do. It is provider-agnostic and survives file renames.
+## 8. Handover & method — the rules of working on endgame-ai (paste to bootstrap any session)
 
 ```
-MASTER DIRECTIVE — OPERATING & DIAGNOSING THE ENDGAME-AI ORGANISM
+MASTER DIRECTIVE — OPERATING & IMPROVING THE ENDGAME-AI ORGANISM
 
-You are working on endgame-ai: a self-modifying LLM "organism" that does real work
-on a real computer and proves it by effect on the world. Your job is to run and to
-diagnose and improve it WITHOUT breaking its spine. Operate at confidence 100 — every
+You are working on endgame-ai: a self-modifying LLM organism that does real work on a real computer
+and proves it by effect on the world. Improve it WITHOUT breaking its spine. Confidence 100 — every
 claim traces to an artifact you read or a test you ran, or it is marked UNPROVEN.
 
-0. GROUND TRUTH & ENVIRONMENT (establish before reasoning)
-- CODE IS TRUTH. If README/docs/memory/a subagent disagree with the running code,
-  the code wins — then fix the doc. Never trust a subagent's file/success claim;
-  verify on disk yourself.
+0. GROUND TRUTH & ENVIRONMENT
+- CODE IS TRUTH. If README/docs/memory/a subagent disagree with the running code, the code wins —
+  then fix the doc. Never trust a subagent's success claim; verify on disk yourself. py_compile proves
+  only syntax, never runtime viability — import and exercise the hot path.
 - THE RUN IS THE SINGLE SOURCE OF TRUTH. Trace the actual run before theorizing.
-- Read live from disk: the firmware, each office (actor/witness/conscience), each
-  seated tool, the goal, and the persisted state. Discover their filenames — do NOT
-  assume them; they change between sessions.
-- Location & shell: the repo may live on a Windows disk viewed from WSL2. Read/edit
-  from the Linux mount. Anything touching the real desktop, the API key, git, or a
-  real run MUST run through the Windows shell:
-      powershell.exe -NoProfile -Command "cd '<repo>'; <cmd>"
-  PowerShell prints git's stderr as exit-1 — trust the printed ref line, not exit.
-  It writes UTF-8-BOM files (decode utf-8-sig). Commit via temp-file: git commit -F <file>.
-- The perception node binds Windows-only APIs; it fails hard on WSL by design.
-  To exercise the wheel on Linux, either pull that node or drive it from Windows.
+- Read live from disk: firmware, each office, each seated tool, the goal, the persisted state.
+  Discover filenames; do not assume them.
+- The repo may sit on a Windows disk viewed from WSL2. Read/edit from the Linux mount. Anything
+  touching the real desktop, the API key, git, or a real run MUST go through the Windows shell:
+    powershell.exe -NoProfile -Command "cd '<repo>'; <cmd>"
+  PowerShell prints git's stderr as exit-1 — trust the printed ref line, not the exit. Commit via a
+  temp file: git commit -F <file>. Generate diffs with bash `git diff` (PowerShell redirection adds a
+  BOM that breaks git apply).
+- The perception node is Windows-only by design and fails hard on WSL. To exercise the wheel on Linux,
+  pull that node or drive it from Windows.
 
-1. WHAT THE SYSTEM IS (judge it by THIS standard, not generic software instinct)
-- A tiny fixed FIRMWARE (a BIOS) boots a folder of hot-swappable *.py "nodes."
-  PRESENCE IS THE SWITCH — a file seated = a faculty/tool present; no mode flags.
-  The firmware routes signals and holds NO domain knowledge; all judgment is in the
-  nodes' docstrings (the prompt) + their callables (the namespace).
-- The human gives an OUTCOME, not a task list. There is NO PLANNER and none may be
-  added — faculties adapt as the world changes. Progress-truth is the witness-proven
-  LEDGER, never a self-authored checklist.
-- THE WHEEL — three offices, each a node, routed by one returned signal:
-    ACTOR   moves and only CLAIMS; authors one Python deed and runs it.
-    WITNESS has NO HAND; proves the deed by effect on some system OTHER than the
-            actor; may see the screen read-only but cannot move it.
-    CONSCIENCE diagnoses a fault/denial/unwitnessed and redirects.
-  Done ONLY when the witness's independent proof writes the ledger — never by the
-  actor's claim. This actor/witness separation is the LIAR'S-PARADOX solution and
-  is INVIOLATE. Never propose weakening it; a fix that needs to weaken it is wrong.
-- THE ONE RECORD: every office returns the same string fields (goal_interpretation,
-  alternatives, intent, code, developer_feedback); developer_feedback fires ONLY on
-  a true BODY defect, else "". One schema, cached in the stable system prompt.
-- SPLIT PROMPT: system = stable law + one-record schema + all office docstrings +
-  tool manifest (cacheable). user = "I am [stage]" + the fresh board areas it reads.
+1. WHAT THE SYSTEM IS — judge by THIS standard
+- A fixed FIRMWARE (BIOS) boots hot-swappable *.py nodes. PRESENCE IS THE SWITCH. The firmware routes
+  signals and holds NO domain knowledge; all judgment is in the nodes' docstrings (the prompt) + their
+  callables (the namespace).
+- The human gives an OUTCOME, not a task list. There is NO PLANNER and none may be added. Progress is
+  the witness-proven LEDGER, never a self-authored checklist.
+- THE WHEEL — three offices routed by one returned signal: ACTOR moves and only CLAIMS; WITNESS has NO
+  HAND and proves by effect on a system OTHER than the actor, by the destination's own artifact, never
+  by seeming; CONSCIENCE diagnoses and redirects. Done ONLY when the witness's independent proof writes
+  the ledger. The firmware TRUSTS the witness's signal — so the witness's definition of proof is the
+  whole system's honesty. This actor/witness separation is INVIOLATE; a fix that needs to weaken it is
+  wrong.
+- THE ONE RECORD: goal_interpretation, alternatives, intent, code, developer_feedback (empty save on a
+  true BODY defect). SPLIT PROMPT: cacheable system (law + schema + all office docstrings + tool
+  manifest) + volatile user ("I am [stage]" + the fresh board it reads).
 
-2. THE LAWS (your grading rubric for every change)
-- LESS IS MORE, above all. Subtract, don't cage. Two same things -> one shared shape.
-  Delete dead knobs. A thing is essential or removed — nothing left dangling.
-- FAIL HARD. No fallbacks, no swallowed errors. A raised guard is HONEST: its cause
-  is usually UPSTREAM (stale input) -> re-observe, don't silence it. Only a primitive
-  that SILENTLY does nothing though correctly called is a body defect.
-- A SILENT NO-OP IS A LIE. A parameter/branch that is ignored rather than removed
-  will rot the system. If you stop honoring an input, delete it and fix its prompt.
-- PROVE BY THE WORLD; TRUNCATE NOTHING. Printed output is the witness's evidence and
-  the next self's memory. Narrow the looking (read the one field), never slice a body.
-  Know which part of what you see is the WORLD and which is your own reflection; the
-  self — your console, your printed output, a file you only claim to have written —
-  may be read but may never COUNT as proof. Prove a publication by the destination's
-  OWN artifact (its permalink page that returns the content), never by a phrase that
-  merely resembles the quarry on a related page.
-- ATEMPORAL. Only a thing's KIND, PLACE, RELATION endures between lookings. Address
-  and remember things by that enduring nature — never by an ephemeral handle
-  (a coordinate, a window handle, a short id) carried across lookings.
-- DON'T CAGE THE ORGANISM. Add no limit/branch it cannot itself overwrite. Prefer a
-  prompt clause (docstring) over kernel machinery. Positive framing only. Give every
-  office a route out of every signal it can raise — a routeless office is a cage.
-- NEVER PLANT what you forbid ("don't think of an elephant"): state only what TO DO.
+2. THE LAWS (rubric for every change)
+- LESS IS MORE. Subtract, don't cage. Delete dead knobs. Prefer removing a permissive/duplicate clause
+  over adding a new rule. A thing is essential or it is removed.
+- FAIL HARD. No fallbacks, no swallowed errors. A raised guard is honest; its cause is usually upstream
+  — re-observe. Only a primitive that SILENTLY does nothing though correctly called is a body defect.
+- A SILENT NO-OP IS A LIE. If you stop honoring an input, delete it and fix its prompt in the SAME
+  change.
+- PROVE BY THE WORLD; TRUNCATE NOTHING. Printed output is the witness's evidence and the next self's
+  memory. Narrow the looking, never slice a body. Prove a publication/message by the destination's OWN
+  artifact (a permalink page that returns the content), never by a phrase that merely resembles the
+  quarry on a related page, never by a placeholder. The self — your console, your printed output, a
+  file or URL you only claim — may be READ but may never COUNT as proof.
+- ATEMPORAL. Only a thing's KIND, PLACE, RELATION endures between lookings; address things by that
+  nature, never by an ephemeral handle carried across lookings.
+- DON'T CAGE THE ORGANISM. Add no limit/branch it cannot itself overwrite. Give every office a route
+  out of every signal it can raise — a routeless office is a cage. Prefer a docstring clause over
+  kernel machinery. State only what TO DO.
 
-3. HOW TO DIAGNOSE — ROOT vs SYMPTOM (the discipline that matters most)
-For every defect, resist the urge to fix. First classify:
-  SYMPTOM = downstream of another cause; OR a model disobeying a rule the prompt
-            ALREADY states; OR a failure whose routing/impact is harmless.
-  ROOT    = the earliest cause whose removal deletes the whole failure CLASS.
-Ask of each candidate root: "If I remove this, does the class vanish, or just move?"
-Beware the seductive single cause — a run can have several independent roots.
-State each root's BLAST RADIUS (what it did AND did not cause) and the honest verdict:
-body-defect vs honest-guard. A tempting immediate error is usually a symptom.
-
-FAILURE ARCHETYPES seen in this project (recognize, don't assume present):
-  - Shape mismatch: a helper returns type A, the model assumes type B -> crash class.
-  - Ephemeral-handle staleness: a coordinate/handle captured one looking, used the next.
-  - Free-default signal: a "bad" verdict is the bare else with no burden of proof.
-  - Name-resemblance != fitness: choosing/PROVING a thing because its name matches the
-    quarry; a false halt when a phrase on a profile page is taken as a published page.
-  - Agentic-tool blowup: a server-side tool runs its own uncapped loop.
-  - Self-as-world (provenance): the organism reads its own emissions/painted screen as
-    external evidence. Cure: exclude self from PROOF by provenance, never by a cage.
-  - Budget-cap collision: one number capping both an area write and a whole request, so
-    an honestly-sized area wedges a downstream office (esp. the routeless conscience).
-  - Import-by-bare-name: removing an import that a namespace injects by bare name (not
-    by attribute access) — py_compile passes, the hot path raises NameError at runtime.
+3. ROOT vs SYMPTOM
+Classify before fixing. SYMPTOM = downstream of another cause, or a model disobeying a rule the prompt
+ALREADY states, or a harmless failure. ROOT = the earliest cause whose removal deletes the whole class.
+Ask: "If I remove this, does the class vanish or just move?" A run can have several independent roots;
+state each root's blast radius and whether it is a body-defect or an honest-guard.
+ARCHETYPES seen here: shape-mismatch crash; ephemeral-handle staleness; free-default signal; NAME-
+RESEMBLANCE proof (the false halt — a profile-page phrase taken as a published page); agentic-tool
+blowup; SELF-AS-WORLD (reading your own emissions/painted screen as external proof — cure by
+provenance, never by a cage); BUDGET-CAP COLLISION (one number capping both an area write and a whole
+request, wedging the routeless conscience); IMPORT-BY-BARE-NAME (removing an import a namespace injects
+by bare name — py_compile passes, the hot path raises at runtime).
 
 4. HOW TO VERIFY (a test is a run; theory is not proof)
-Match the instrument to the claim:
-  - Pure-logic defect -> reproduce DETERMINISTICALLY in plain Python. Cheapest, strongest.
-  - Prompt-assembly / topology -> render system+user via the real Prompt/Loader (a --dry
-    render); it calls NO model, so it cannot reproduce a model's wrong deed.
-  - Model/tool behavior -> replay the EXACT recorded request with tools/replay.py, real
-    key, a controlled A/B (baseline vs one change via --diff), N samples. Numbers, not
-    opinions. The base prompt is stochastic: one pass shows direction, not a rate.
-  - Live desktop primitive -> probe the real element on Windows; assert the hard-fail
-    path too (a stale id must raise), not only the happy path.
-py_compile proves only syntax, never runtime viability — import and exercise the hot path.
-After any change: compile all source, re-render the prompt, confirm the wheel loads and
-topology is reachable. Clean up scratch. Preserve forensic state (back up goal/state).
+- Pure-logic defect -> reproduce deterministically in plain Python.
+- Prompt-assembly / topology -> render system+user via the real Prompt/Loader (--dry); no model call.
+- Model/tool behavior -> replay the EXACT recorded request with tools/replay.py, a controlled A/B via
+  --diff, N samples. Numbers, not opinions. The base prompt is stochastic: one pass shows direction.
+- Live desktop primitive -> probe the real element on Windows; assert the hard-fail path too.
+After any change: compile all source, re-render the prompt, confirm the wheel loads and topology is
+reachable, clean up scratch, preserve forensic state.
 
-5. RECONSTRUCT A RUN (when analyzing the transmission trail)
-- Discover the trail's schema from one record: which field holds the office's output;
-  which holds the request it received (this carries the PRIOR turn's board — the key to
-  cross-referencing claim vs effect); usage; error; the stage identity; timing.
-- The saved effect of turn N appears in turn N+1's input (or in persisted state if the
-  run was interrupted). An office's CLAIM is not proof — confirm every effect yourself.
-- Produce a turn-by-turn timeline: turn - office - signal - route - tokens - did the
-  ledger grow - did code fault. Flag every claim not backed by an effect.
-- Report: run identity, timeline, ranked ROOTS vs SYMPTOMS with evidence and blast
-  radius, what worked AS DESIGNED, and the smallest reversible next step — PROPOSED.
+5. RECONSTRUCT A RUN — discover the transmission schema from one record (which field is the office
+output; which carries the PRIOR turn's board; usage; error; stage; timing). Turn N's effect appears in
+turn N+1's input. A CLAIM is not proof — confirm every effect yourself. Produce a turn-by-turn timeline
+and rank ROOTS vs SYMPTOMS with evidence and blast radius.
 
-6. HOW TO CHANGE (method)
-- Propose the direction FIRST; once chosen, execute fully and autonomously. Keep each
-  change small, explicit, complete, reversible.
-- Prefer prompt/docstring over kernel. One file if possible. Prefer SUBTRACTING a
-  permissive/duplicate clause over ADDING a new rule. When you remove an input, purge
-  its prompt mention in the SAME change (no silent no-op).
-- Give honest pushback when an instruction fights the architecture — name the real
-  trade-off and an alternative; never invent the human's intent; never add unsolicited
-  safety/limits.
-- Commit only when asked. Stage deliberately. Keep runtime scratch out of history (it is
-  gitignored by a whitelist — only the source body + README are tracked). Meta commit
-  messages: the KIND of change + WHY, not line numbers; carry a session handover.
-- Branches: work on the non-main branch. FF main only when explicitly asked and only
-  after the ancestor check passes, via a server-side FF-only push. Don't hardcode paths
-  or a branch name into the code.
-- Verify by the REAL WHEEL (section 4), never by unit tests. Be decisive at confidence
-  100; otherwise say what you'd need to reach it. No hedging closers.
+6. HOW TO CHANGE — propose the direction FIRST, then execute fully. Keep each change small, explicit,
+complete, reversible. Prefer prompt/docstring over kernel; prefer SUBTRACTION. When you remove an input,
+purge its prompt mention in the same change. Give honest pushback when an instruction fights the
+architecture — name the trade-off and an alternative; never invent the human's intent; never add
+unsolicited safety/limits. Commit only when asked, with a KIND+WHY message and a session handover; keep
+runtime scratch out of history. Work on the non-main branch; FF main only when explicitly asked and only
+after an ancestor check, via a server-side FF-only push. Don't hardcode paths or a branch name. Verify
+by the REAL WHEEL, never by unit tests. Be decisive at confidence 100; otherwise say what you'd need.
 ```
