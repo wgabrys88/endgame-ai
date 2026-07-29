@@ -9,4 +9,5 @@
 !recover.py
 !gui.py
 !README.md
-!replay.py
+!tools/
+!tools/replay.py
