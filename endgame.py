@@ -36,7 +36,7 @@ LINEAGE
   it); this firmware plus its nodes is now the whole organism.
 """
 
-import json, os, re, sys, io, subprocess, urllib.request, contextlib, pathlib, queue, threading, time, importlib, importlib.util, inspect, types, uuid
+import json, os, re, sys, io, urllib.request, contextlib, pathlib, time, importlib, importlib.util, inspect, types, uuid
 
 ROOT = pathlib.Path(__file__).resolve().parent
 KERNEL = pathlib.Path(__file__).name
@@ -60,19 +60,16 @@ CONFIG = {
             "url": "http://localhost:1234/v1/chat/completions",
             "request": {"model": "local-model", "temperature": 0.2, "stream": False},
         },
-        "acp": {"command": ["grok", "agent", "--no-leader", "stdio"], "timeout": 240},
-        "file_proxy": {"request_path": "runtime_request.json", "response_path": "runtime_response.json"},
     },
     # ONE crossing budget, one source of truth: the most any single blackboard AREA may receive,
     # and the most one complete model request may carry. Nothing is cut to fit: an emitted flood
     # faults, while an overfull request switches to conscience before transport.
     "max_area_chars": 65536,
     "observation": {"step_px": 64, "max_subtree_nodes_per_point": 120,
-                    "depth_ceiling": 65, "min_window_area": 2500},
+                    "depth_ceiling": 65, "min_window_area": 2500,
+                    "recent_windows_expanded": 3},
     "transmission_log_dir": ".transmissions",
     "web_search_max_tool_calls": 1,  # one billable server-side search/browse call per web_search
-    "deed_subprocess": True,
-    "deed_timeout": 360,
     "node_budget": 64,
     "edge_evaporation": 0.05,
     "edge_reinforcement": 1.0,
@@ -165,7 +162,7 @@ class Node:
                 continue
             if getattr(obj, "__module__", self.name) not in (self.name, None):
                 if not (inspect.isclass(obj) or inspect.isfunction(obj)):
-                    pass
+                    continue
             out[n] = obj
         return out
 
@@ -277,10 +274,10 @@ class _RequestBudget(Exception):
 
 # ════════════════════════════════════════════════════════════════════════════════════
 #  TRANSPORT — the one mind, many mouths  (distills: call_llm, _build_transport_request,
-#  ask_model, web_search, _call_acp, file_proxy, _record_response_format, _dump_transmission)
+#  ask_model, web_search, _record_response_format, _dump_transmission)
 # ════════════════════════════════════════════════════════════════════════════════════
 class Transport:
-    """Speaks to the model over responses(x.ai)/chat_completions/acp/file_proxy; builds a
+    """Speaks to the model over responses(x.ai)/chat_completions; builds a
     strict json_schema response_format from the one universal record; tees every exchange to
     .transmissions AND to the screen in full (no truncation — the record is the proof)."""
 
@@ -406,18 +403,6 @@ class Transport:
     def call(self, system_text, user_text, fields, api=None) -> str:
         api = api or self.model.get("api", "responses")
         fmt = self.response_format(fields)
-        if api == "acp":
-            content, err = None, None
-            try:
-                content = self._call_acp(system_text + "\n\n" + user_text, fmt)
-                return content
-            except Exception as e:
-                err = repr(e); raise
-            finally:
-                self._dump(api, "record", {"command": self.model.get("acp", {}).get("command"),
-                                           "system": system_text, "user": user_text}, None, content, err)
-        if api == "file_proxy":
-            return self._file_proxy(fmt, system_text, user_text)
         url, body, headers = self._build_request(api, system_text, user_text, fmt)
         raw, content, err = None, None, None
         try:
@@ -442,12 +427,9 @@ class Transport:
                               "properties": {"answer": {"type": "string"}}, "required": ["answer"]}}
         raw, content, err = None, None, None
         try:
-            if api == "acp":
-                content = self._call_acp(prompt, fmt)
-            else:
-                url, body, headers = self._build_request(api, "", prompt, fmt)
-                raw = self._http(url, body, headers)
-                content = self._extract(json.loads(raw))
+            url, body, headers = self._build_request(api, "", prompt, fmt)
+            raw = self._http(url, body, headers)
+            content = self._extract(json.loads(raw))
             parsed = json.loads(content)
             return parsed if schema is not None else parsed.get("answer", content)
         except Exception as e:
@@ -519,102 +501,6 @@ class Transport:
             self._dump("responses", "web_search", {"url": url, "headers": headers, "body": body},
                        raw, json.dumps(result) if result is not None else None, err)
 
-    # ---- ACP subprocess transport  (distills _call_acp) ----
-    def _call_acp(self, prompt_text, fmt):
-        acp = self.model.get("acp", {})
-        proc = subprocess.Popen(acp.get("command", ["grok", "agent", "--no-leader", "stdio"]),
-            cwd=str(self.root), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL, text=True, encoding="utf-8", bufsize=1,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        lines, rid = queue.Queue(), 0
-        def read_lines():
-            for line in proc.stdout:
-                lines.put(line)
-            lines.put(None)
-        threading.Thread(target=read_lines, daemon=True).start()
-        def rpc(method, params, capture=False):
-            nonlocal rid
-            rid += 1
-            proc.stdin.write(json.dumps({"jsonrpc": "2.0", "id": rid, "method": method,
-                                         "params": params}, separators=(",", ":")) + "\n")
-            proc.stdin.flush()
-            chunks, deadline = [], time.monotonic() + float(acp.get("timeout", 240))
-            while True:
-                try:
-                    line = lines.get(timeout=max(0.01, deadline - time.monotonic()))
-                except queue.Empty:
-                    raise RuntimeError("ACP timed out at " + method)
-                if line is None:
-                    raise RuntimeError("ACP process exited at " + method)
-                msg = json.loads(line)
-                if msg.get("method") == "session/update" and capture:
-                    update = (msg.get("params") or {}).get("update") or {}
-                    content = update.get("content") or {}
-                    if update.get("sessionUpdate") == "agent_message_chunk" and content.get("type") == "text":
-                        chunks.append(str(content.get("text") or ""))
-                elif msg.get("method") == "session/request_permission":
-                    options = (msg.get("params") or {}).get("options") or []
-                    denied = next((o.get("optionId") for o in options
-                                   if str(o.get("kind", "")).startswith(("reject", "deny"))), None)
-                    outcome = ({"outcome": "selected", "optionId": denied}
-                               if denied else {"outcome": "cancelled"})
-                    proc.stdin.write(json.dumps({"jsonrpc": "2.0", "id": msg["id"],
-                                                 "result": {"outcome": outcome}}) + "\n")
-                    proc.stdin.flush()
-                elif msg.get("id") == rid:
-                    if "error" in msg:
-                        raise RuntimeError("ACP error at %s: %s" % (method, msg["error"]))
-                    return msg.get("result") or {}, "".join(chunks)
-        try:
-            rpc("initialize", {"protocolVersion": 1, "clientCapabilities": {
-                "fs": {"readTextFile": False, "writeTextFile": False}, "terminal": False}})
-            session, _ = rpc("session/new", {"cwd": str(self.root), "mcpServers": [],
-                "_meta": {"systemPromptOverride":
-                "Thou art a stateless record compiler. Use no tools. Return only the JSON value required by the user's schema."}})
-            sid = session.get("sessionId")
-            if not isinstance(sid, str):
-                raise RuntimeError("ACP session/new returned no sessionId")
-            schema_first = "Return only JSON matching this schema:\n" + json.dumps(
-                fmt["schema"], ensure_ascii=False, separators=(",", ":")) + "\n\n" + prompt_text
-            _result, content = rpc("session/prompt", {"sessionId": sid,
-                "prompt": [{"type": "text", "text": schema_first}]}, True)
-            return content
-        finally:
-            proc.terminate()
-            try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                proc.kill(); proc.wait(timeout=5)
-
-    # ---- human-in-the-loop transport  (distills file_proxy) ----
-    def _file_proxy(self, fmt, system_text, user_text):
-        fp = self.model.get("file_proxy", {})
-        request = (self.root / fp.get("request_path", "runtime_request.json")).resolve()
-        response = (self.root / fp.get("response_path", "runtime_response.json")).resolve()
-        if not response.exists():
-            if request.exists():
-                rid = json.loads(request.read_text(encoding="utf-8")).get("id")
-            else:
-                rid = "egai-%s-%s" % (os.getpid(), time.time_ns())
-                self._atomic_json(request, {
-                    "schema": "endgame-ai.file-proxy.request.v4", "response_format": fmt,
-                    "system": system_text, "user": user_text, "id": rid, "created_at": time.time()})
-            raise _AwaitProxy(request.name, response.name, rid)
-        pending = json.loads(request.read_text(encoding="utf-8"))
-        obj = json.loads(response.read_text(encoding="utf-8"))
-        if obj.get("id") != pending.get("id"):
-            raise RuntimeError("file_proxy response id %r does not match pending %r" % (obj.get("id"), pending.get("id")))
-        record = obj["record"]
-        request.unlink(missing_ok=True); response.unlink(missing_ok=True)
-        return json.dumps(record, ensure_ascii=False, separators=(",", ":"))
-
-    @staticmethod
-    def _atomic_json(path, obj):
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(path.name + ".tmp.%s.%s" % (os.getpid(), time.time_ns()))
-        tmp.write_text(json.dumps(obj, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-        os.replace(tmp, path)
-
     # ---- the tee: same object to disk AND screen, whole  (distills _dump_transmission) ----
     def _transmission_root(self):
         base = self.cfg.get("transmission_log_dir")
@@ -650,15 +536,6 @@ class Transport:
         os.replace(tmp, path)
         self.console.write("\n===== transmission %s =====\n%s\n" % (path.name, payload))
         self.console.flush()
-
-
-class _AwaitProxy(Exception):
-    """Raised by the file_proxy transport when a human record is awaited; the Wheel catches it,
-    prints the instruction, and stops this turn cleanly (distills the legacy stderr prompt)."""
-    def __init__(self, request_name, response_name, rid):
-        self.request_name, self.response_name = request_name, response_name
-        self.rid = rid
-        super().__init__("awaiting human record %s" % rid)
 
 
 # ════════════════════════════════════════════════════════════════════════════════════
@@ -1131,11 +1008,6 @@ class Wheel:
             if dry:
                 raise
             return self._budget_switch(stage_name, faculty, budget)
-        except _AwaitProxy as ap:
-            sys.stderr.write("[endgame-ai] A mind is needed. Request at %s; write your record to %s "
-                             "as {\"id\": \"%s\", \"record\": {...the five fields...}} and re-run.\n"
-                             % (ap.request_name, ap.response_name, ap.rid))
-            return None, True
 
         if not (reply or "").strip():
             raise RuntimeError("model returned no text at stage " + stage_name)

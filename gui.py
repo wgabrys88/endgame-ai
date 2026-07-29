@@ -13,6 +13,14 @@ It offers, by bare name in the actor namespace:
   read(id) - the same element DICTIONARY, bearing its WHOLE untruncated body in ["text_full"]
   screen_elements, desktop_tree_text - the raw fruit of the turn-opening scan
 
+THE LOOKING IS NARROWED, NEVER THE WORLD: each looking deep-scans only the few MOST RECENTLY
+RAISED windows (the OS Z-order, top first) into full clickable elements; every other visible
+window is still enumerated, as one line marked "present, not expanded" bearing its title, id, and
+rect - so thou KNOWEST it exists and where it sitteth, addressed by its enduring nature. To work
+an unexpanded window, raise it (a deed upon a control that brings it forward) or call
+desktop.observe({"recent_windows_expanded": N}) to widen the deep scan; the count is thine to
+overwrite. No window is hidden and no body is sliced; only the depth of the looking is bounded.
+
 Each action_index value is a dictionary, and read(id) returneth that very dictionary. Select an
 element by its e["role"], e["name"], e["action"], e["window_title"], or e["value"], and ACT upon
 it by its short id (e.g. desktop.click("e42")) - the hand resolveth the point and window from the
@@ -576,13 +584,21 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
     screen = {"width": sw, "height": sh}
 
     windows = enum_windows(int(cfg.get("min_window_area", 2500)))
+    # DETERMINISTIC, TASK-AGNOSTIC EXPANSION: enum_windows returns windows in the OS Z-order
+    # (top-most first = most recently raised). Deep-scan only the K most-recent windows with the
+    # full UIA probe; the rest are enumerated as a single presence line each so the organism knows
+    # they exist and where, and may widen the scan to work one. This narrows the LOOKING, never the
+    # world - no window is hidden, and K is a knob the organism can overwrite. No goal-specific branching.
+    expand_n = int(cfg.get("recent_windows_expanded", 3))
+    to_scan = windows if expand_n < 0 else windows[:expand_n]
+    listed_only = [] if expand_n < 0 else windows[expand_n:]
 
     scanner = UiaScanner(cfg, desktop)
     saved = wintypes.POINT()
     had_cursor = bool(user32.GetCursorPos(ctypes.byref(saved)))
     windows_out: list[dict[str, Any]] = []
     try:
-        for win in windows:
+        for win in to_scan:
             hwnd, rect = win["hwnd"], win["rect"]
             kept: dict[str, dict[str, Any]] = {}
             for x, y in _probe_points(rect, step_px):
@@ -627,7 +643,10 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
             except Exception:
                 pass
 
-    result = _render(windows_out, screen)
+    for win in listed_only:
+        win["elements"] = []
+
+    result = _render(windows_out, screen, listed_only)
     observed_at = time.time()
     return {
         "observed_at": observed_at,
@@ -638,7 +657,8 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
     }
 
 
-def _render(windows: list[dict[str, Any]], screen: dict[str, int]) -> dict[str, Any]:
+def _render(windows: list[dict[str, Any]], screen: dict[str, int],
+            listed_only: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     def clean(v: Any) -> str:
         return " ".join(str(v or "").replace("\r", " ").replace("\n", " ").split())
 
@@ -726,6 +746,28 @@ def _render(windows: list[dict[str, Any]], screen: dict[str, int]) -> dict[str, 
         for e in roots:
             emit(e, 1)
 
+    # The remaining windows (not among the recently-raised, deep-scanned set) are enumerated as
+    # ONE presence line each: the organism KNOWS they exist and their place. They are not offered
+    # as click targets (an occluded window has no honest click-point - promise equals provision);
+    # to work one, re-observe with a higher recent_windows_expanded, a knob the organism owns.
+    # Nothing is hidden; the LOOKING is narrowed, not the world. Zero goal-specific branching.
+    next_wi = len(windows) + 1
+    for offset, win in enumerate(listed_only or []):
+        wid = f"W{next_wi + offset}"
+        title = win["title"] or f"Window_{win['hwnd']}"
+        window_title = clean(title)
+        window_rect = win["rect"]
+        lines.append(f"{wid} Window {window_title} rect=({window_rect['left']},{window_rect['top']},{window_rect['right']},{window_rect['bottom']}) present, not expanded")
+        screen_elements.append({
+            "id": wid, "observation_id": observation_id, "role": "Window",
+            "name": window_title, "title": window_title, "text": window_title,
+            "rect": window_rect,
+            "px": (window_rect["left"] + window_rect["right"]) // 2,
+            "py": (window_rect["top"] + window_rect["bottom"]) // 2,
+            "hwnd": win["hwnd"], "owner_hwnd": win["hwnd"], "visible": True,
+            "expanded": False,
+        })
+
     return {
         "action_index": action_index,
         "screen_elements": screen_elements,
@@ -733,11 +775,8 @@ def _render(windows: list[dict[str, Any]], screen: dict[str, int]) -> dict[str, 
     }
 
 
-import ctypes
 import os
 import subprocess
-from ctypes import wintypes
-from typing import Any
 
 ROOT = __import__("pathlib").Path(__file__).resolve().parent
 DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = ctypes.c_void_p(-4)
@@ -941,18 +980,6 @@ def _remember_observation(snap):
         "screen_elements": screen_elements,
         "desktop_tree_text": _LAST_OBS["desktop_tree_text"],
     }
-
-
-def snapshot_observation():
-    return {
-        "action_index": _LAST_OBS["action_index"],
-        "screen_elements": _LAST_OBS["screen_elements"],
-        "desktop_tree_text": _LAST_OBS["desktop_tree_text"],
-    }
-
-
-def restore_observation(snap):
-    _remember_observation(snap)
 
 
 # Windows DLLs are bound LAZILY on first get_desktop() — so this node imports on any OS and
