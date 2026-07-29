@@ -61,10 +61,16 @@ CONFIG = {
             "request": {"model": "local-model", "temperature": 0.2, "stream": False},
         },
     },
-    # ONE crossing budget, one source of truth: the most any single blackboard AREA may receive,
-    # and the most one complete model request may carry. Nothing is cut to fit: an emitted flood
-    # faults, while an overfull request switches to conscience before transport.
-    "max_area_chars": 65536,
+    # TWO caps, one for each boundary, so they can never collide (root cure for the overflow
+    # deadlock). max_area_chars is the most any SINGLE blackboard area may RECEIVE from one deed;
+    # max_request_chars is the most one COMPLETE model request may carry. The area cap is kept
+    # well below the request cap so that any area which respects its own budget always fits in a
+    # later office's request beside the stable system prompt and the other board sections - no
+    # honestly-sized deed can wedge a downstream office (least of all the handless conscience,
+    # which has no onward route) into an unsendable request. Nothing is cut to fit: an emitted
+    # flood faults, while an overfull request switches to conscience before transport.
+    "max_area_chars": 32768,
+    "max_request_chars": 131072,
     "observation": {"step_px": 64, "max_subtree_nodes_per_point": 120,
                     "depth_ceiling": 65, "min_window_area": 2500,
                     "recent_windows_expanded": 3},
@@ -339,7 +345,7 @@ class Transport:
     def budget_user(self, system_text, user_text, fields, api=None):
         """Append the sole volatile budget value as the final user section, then guard it whole."""
         api = api or self.model.get("api", "responses")
-        limit = int(self.cfg.get("max_area_chars", 0))
+        limit = int(self.cfg.get("max_request_chars", 0))
         if not limit:
             return user_text
         fmt = self.response_format(fields)
@@ -373,7 +379,7 @@ class Transport:
 
     def _http(self, url, body, headers):
         payload = self._serialized(body)
-        limit = int(self.cfg.get("max_area_chars", 0))
+        limit = int(self.cfg.get("max_request_chars", 0))
         if limit and len(payload) > limit:
             raise _RequestBudget(len(payload), limit)
         req = urllib.request.Request(url, data=payload.encode("utf-8"), headers=headers, method="POST")
