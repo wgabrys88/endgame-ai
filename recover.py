@@ -14,6 +14,7 @@ import endgame
 
 class Recover(endgame.Faculty):
     STAGE = "recover"
+    REQUIRED = ("goal_interpretation", "alternatives", "intent")  # leaves [code] empty (it runs none)
     READS = ("goal", "counsel", "living_word", "ledger", "evidence", "verdict", "failure_streak", "environment")
     EXEC = None
     ROUTES = {"ok": "execute"}

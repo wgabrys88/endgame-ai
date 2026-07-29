@@ -12,6 +12,7 @@ import endgame
 
 class Witness(endgame.Faculty):
     STAGE = "witness"
+    REQUIRED = ("goal_interpretation", "alternatives", "code")  # leaves [intent] empty (it judges, plans no deed)
     READS = ("goal", "counsel", "living_word", "ledger", "code", "evidence", "action_frame", "failure_streak", "environment")
     EXEC = {"namespace": "witness", "output_to": "verdict"}
     ROUTES = {"halt": "halt", "confirmed": "execute", "denied": "recover", "unwitnessed": "recover", "fault": "recover"}

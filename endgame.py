@@ -207,6 +207,8 @@ class Faculty(Node):
         STAGE   — the stage name this office answers to (defaults to the module name)
     """
     RECORD = ("goal_interpretation", "alternatives", "intent", "code")  # + developer_feedback, appended
+    REQUIRED = RECORD  # the subset an office MUST fill non-empty; an office that leaves a field empty
+    #                    (per its docstring) narrows this so the schema stops demanding what the role forbids
     STAGE: str = ""
     READS: tuple = ()
     EXEC: dict | None = None
@@ -302,10 +304,14 @@ class Transport:
     #      Five fields, all required strings; only developer_feedback may be empty. Because it is
     #      the same every turn, it lives in the cached system prompt and needs no record_type wrapper
     #      - the kernel knoweth which office it asked.
-    def response_format(self, fields):
+    def response_format(self, fields, required=None):
+        # All five keys are always present (one uniform shape, cached), but minLength:1 is enforced
+        # ONLY on the fields this office actually fills - so the schema never demands what a role's
+        # docstring tells it to leave empty (e.g. witness leaves [intent], recover leaves [code]).
         names = list(fields) + ["developer_feedback"]
+        must_fill = list(required) if required is not None else list(fields)
         props = {name: {"type": "string"} for name in names}
-        for name in fields:
+        for name in must_fill:
             props[name]["minLength"] = 1
         return {
             "name": "record",
@@ -342,13 +348,13 @@ class Transport:
     def _serialized(body):
         return json.dumps(body, ensure_ascii=False, separators=(",", ":"))
 
-    def budget_user(self, system_text, user_text, fields, api=None):
+    def budget_user(self, system_text, user_text, fields, api=None, required=None):
         """Append the sole volatile budget value as the final user section, then guard it whole."""
         api = api or self.model.get("api", "responses")
         limit = int(self.cfg.get("max_request_chars", 0))
         if not limit:
             return user_text
-        fmt = self.response_format(fields)
+        fmt = self.response_format(fields, required)
         base, suffix = user_text.rstrip(), ""
         for _ in range(12):
             candidate = base + suffix
@@ -406,9 +412,9 @@ class Transport:
                          for text in self._texts_from_parts(item.get("content")))
 
     # ---- the faculty request: system (cached law+schema+roles) + user (fresh board) ----
-    def call(self, system_text, user_text, fields, api=None) -> str:
+    def call(self, system_text, user_text, fields, api=None, required=None) -> str:
         api = api or self.model.get("api", "responses")
-        fmt = self.response_format(fields)
+        fmt = self.response_format(fields, required)
         url, body, headers = self._build_request(api, system_text, user_text, fmt)
         raw, content, err = None, None, None
         try:
@@ -1005,11 +1011,11 @@ class Wheel:
         system_text = self.prompt.render_system()
         user_text = self.prompt.render_user(faculty)
         try:
-            user_text = self.transport.budget_user(system_text, user_text, faculty.RECORD)
+            user_text = self.transport.budget_user(system_text, user_text, faculty.RECORD, required=faculty.REQUIRED)
             if dry:
                 print(system_text + "\n\n===== USER =====\n\n" + user_text)
                 return None, True
-            reply = self.transport.call(system_text, user_text, faculty.RECORD)
+            reply = self.transport.call(system_text, user_text, faculty.RECORD, required=faculty.REQUIRED)
         except _RequestBudget as budget:
             if dry:
                 raise
