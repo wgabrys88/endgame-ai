@@ -12,11 +12,10 @@ No task list. No scripted flow. No integration work. A folder of small Python fi
 
 ```bash
 # 1. get the code
-#    download the zip and unpack it, or:
 git clone <this-repo> endgame-ai && cd endgame-ai
 
 # 2. give it a mind (a hosted reasoning model; a few dollars of credit is plenty)
-setx XAI_API_KEY "sk-..."        # Windows        (PowerShell: $env:XAI_API_KEY="sk-...")
+setx XAI_API_KEY "sk-..."        # Windows (PowerShell: $env:XAI_API_KEY="sk-...")
 
 # 3. say what you want, in one human sentence
 echo "Find a remote AI job in Krakow that fits my GitHub, and apply for me." > goal.md
@@ -25,9 +24,7 @@ echo "Find a remote AI job in Krakow that fits my GitHub, and apply for me." > g
 python endgame.py
 ```
 
-That is the whole setup. You do not wire up LinkedIn. You do not teach it what a form is. You do not write a single automation step. You state an **outcome** and leave. It figures out the rest, turn by turn, and stops when the outcome is truly proven — or tells you honestly why it could not.
-
-Given **no** goal, it does nothing and halts. It never invents work.
+That is the whole setup. You do not wire up LinkedIn. You do not teach it what a form is. You state an **outcome** and leave. It figures out the rest, turn by turn, and stops when the outcome is truly proven — or tells you honestly why it could not. Given **no** goal, it does nothing and halts. It never invents work.
 
 | you type | it does |
 |---|---|
@@ -35,60 +32,15 @@ Given **no** goal, it does nothing and halts. It never invents work.
 | `python endgame.py "book me a table for two Friday"` | write that goal, then run |
 | `python endgame.py --once` | take exactly one full real turn, then stop |
 | `python endgame.py --dry` | show the next request, call no model, change nothing |
+| `python endgame.py --reset` | factory-reset the machine memory (goal.md and counsel.md untouched) |
 
 You can edit `goal.md` or drop a note in `counsel.md` **while it runs** — it re-reads them every turn. You steer with words, never by touching the machine.
 
 ---
 
-## What it can actually do — proven, on the record
-
-Everything below is not a promise. It is what the system **did** in one real run, logged turn-by-turn on disk, from the single goal *"use LinkedIn to apply for a remote AI job in Kraków based on my GitHub — find the best-fit offer and apply on my behalf."*
-
-- **Researched the web** for the applicant's real skills (Python, LangChain/CrewAI, RAG, agent orchestration).
-- **Opened Chrome**, searched job boards, **read and compared several real postings**, and chose the best fit (a Staff Engineer / LLM role at Levellr).
-- **Filled the real application form** — name, email, location, LinkedIn, GitHub, notice period.
-- **Wrote a résumé to disk** as both `.txt` and a valid `.pdf`, then **attached it** through the native Windows file-open dialog.
-- **Hit a reCAPTCHA and passed it.** It chose the **audio challenge**, found the challenge audio, **installed a second AI (OpenAI Whisper) onto the machine on its own**, transcribed the clip, typed the answer into the "Enter what you hear" box, and clicked VERIFY. After VERIFY the active challenge widget (the answer box and VERIFY button) was **gone from the page and did not re-prompt** — logged, turn by turn.
-- **Submitted the application.** It then filled the remaining required fields (salary, notice period) and clicked Submit. An **independent** read of the live page reported *"Your application has been sent! You can expect to receive a confirmation email shortly."*
-
-Vague human goal → a few Python files → the job is done. That is the entire pitch, and every line above is traceable to the run log (see [the evidence](#the-evidence-every-claim-traced)).
-
----
-
-## The proof (so you don't have to take my word)
-
-Two independent facts, both on disk, are the reason this run is a milestone rather than a demo.
-
-**1. The application was submitted — proven by a channel other than the actor.** The organism's *witness* office (which has no hand and cannot touch the browser) read the live page and found four post-submission strings — `'confirmation email'`, `'application has been'`, `'you can expect to receive a confirmation'`, `'complete the process within two weeks'` — while the form's required-field gate was empty (`salary_edits=[]`, `submit_btns=[]`, `required_n=0`). Separately, an **independent fetch of the live Levellr page** confirms that *"Your application has been sent!"* and *"You can expect to receive a confirmation email shortly"* do **not** appear until a form is actually submitted; they exist only in the post-submission DOM. Two independent reads, same conclusion: **the application went out.**
-
-**2. The reCAPTCHA was passed — the fact is proven; the *reason* is not.** The log proves the sequence: audio challenge opened → Whisper installed → clip transcribed → answer typed → VERIFY clicked → the active challenge widget disappeared and never returned → submission succeeded. That is what happened.
-
-What the log does **not** contain — and what I therefore cannot claim — is *why* reCAPTCHA let it through. I do not have the transcript-vs-expected-answer comparison, the reCAPTCHA token exchange, or any risk-score telemetry; none of that is in the transmissions. So the honest statement is bounded:
-
-> **PROVEN:** the audio widget cleared after VERIFY and the application submitted.
-> **NOT PROVEN:** whether it cleared because the typed answer was correct, because of behavioral/session trust, because the token had already been issued, or some combination. Anyone claiming a specific reason (including me, earlier) is guessing.
-
-For full transparency, the independently-verifiable details of that transcript are analyzed in [the evidence](#the-evidence-every-claim-traced) — including the correction that the transcription was *accurate*, not "garbage" as I first said.
-
-As a user, the outcome is what matters: you asked for a job application and it was submitted. But the documentation will not dress an assumption as a mechanism.
-
----
-
-## Why this is different from every "autonomous agent" demo
-
-Most "autonomous AI" is heavy on marketing and light on unscripted work — the working part is often *pre-wired*: fixed integrations, hard-coded flows, a human quietly arranging each step behind the demo. Pull the goal sideways and it breaks.
-
-endgame-ai has **no script and no integrations**. The firmware holds zero knowledge of LinkedIn, of forms, of captchas, of PDFs. It did all of that *at runtime*, by looking at the screen and writing its own code, turn by turn. Change the goal to "renew my domain" or "summarize these three papers" and nothing in the code changes — only the sentence in `goal.md`.
-
-And it is **yours**. Download the zip. Buy a few dollars of API credit. Run one command. No SaaS, no seat license, no cloud lock-in, no onboarding call. The whole organism is nine small files you can read in an afternoon.
-
-That is the line: **others sell a polished cage; this is a seed you own.**
-
----
-
 ## How it works, briefly
 
-A tiny fixed **firmware** (`endgame.py`, the BIOS) boots a folder of hot-swappable `*.py` **nodes** and turns a wheel. Each turn, one of three **offices** wakes, thinks once, and acts. The firmware holds no domain knowledge — all the wisdom lives in the nodes' docstrings (which become the prompt) and their functions (which become the callable hands).
+A tiny fixed **firmware** (`endgame.py`, the BIOS) boots a folder of hot-swappable `*.py` **nodes** and turns a wheel. Each turn, one of three **offices** wakes, thinks once, and acts. The firmware holds no domain knowledge — all the wisdom lives in the nodes' docstrings (which become the prompt) and their functions (which become the callable hands). **Presence is the switch:** a file seated = a faculty or tool present; there are no mode flags.
 
 ```mermaid
 flowchart LR
@@ -97,7 +49,7 @@ flowchart LR
     A -->|"claims a deed"| V["WITNESS<br/>proves it by an<br/>INDEPENDENT effect"]
     V -->|confirmed| W
     V -->|"halt: goal proven"| DONE(["done"])
-    V -->|"denied / unproven"| C["CONSCIENCE<br/>diagnoses, redirects"]
+    V -->|"denied / unwitnessed"| C["CONSCIENCE<br/>diagnoses, redirects"]
     A -->|fault| C
     C --> W
     classDef act fill:#12324a,stroke:#3ba0e6,color:#eaf6ff
@@ -108,29 +60,7 @@ flowchart LR
     class C con
 ```
 
-The rule that makes it trustworthy: **the office that acts is not allowed to judge whether it worked.** The actor only *claims*. A separate witness — which has **no hand** and cannot touch the desktop — must prove the claim by reading a system *other than the actor* (the live DOM, the filesystem, the process list). Nothing counts as done until that independent proof is written to the **ledger**. This is the liar's-paradox solution, and it is why the system cannot fool itself into a fake success.
-
-```mermaid
-sequenceDiagram
-    participant H as Human (goal.md)
-    participant K as Firmware (the wheel)
-    participant M as The mind (one model)
-    participant D as The real desktop
-    H->>K: a plain-sentence outcome
-    loop every turn until proven
-        K->>M: system law plus the fresh board, I am [office]
-        M-->>K: one record (plan, intent, code)
-        alt actor turn
-            K->>D: run the code, move mouse, type, click, read
-            D-->>K: what actually happened
-        else witness turn
-            K->>D: read an INDEPENDENT surface (DOM, files, processes)
-            D-->>K: the world's own answer
-            K->>K: write proof to the ledger or send back to conscience
-        end
-    end
-    K-->>H: halt, the outcome is proven
-```
+The rule that makes it trustworthy: **the office that acts is not allowed to judge whether it worked.** The actor only *claims*. A separate witness — which has **no hand** and cannot touch the desktop — must prove the claim by reading a system *other than the actor* (the live DOM, the filesystem, the process list, a published page). Nothing counts as done until that independent proof is written to the **ledger**. This is the liar's-paradox solution, and it is why the system cannot fool itself into a fake success — as long as the witness proves by the destination's own artifact and never by seeming (a lesson earned the hard way; see [What a real run taught us](#what-a-real-run-taught-us)).
 
 ---
 
@@ -138,21 +68,23 @@ sequenceDiagram
 
 Three offices, each just a `*.py` node with a docstring and a role:
 
-- **Actor** (`executor.py`) — moves the world. Authors one Python deed per turn and runs it: clicks, types, searches the web, writes files, installs packages, spawns helpers. It only ever *claims*.
-- **Witness** (`witness.py`) — holds **no hand**. Reads the world read-only and proves (or disproves) the actor's claim by an effect on some system other than the actor. Its verdict is the only thing that advances the ledger.
+- **Actor** (`executor.py`) — moves the world. Authors one Python deed per turn and runs it: clicks, types, searches the web, writes files, installs packages, spawns helpers. It only ever *claims*. Its printed fruit is **bounded testimony**: when a deed yields a large body, it writes that body whole to a file and prints only the path, the size, and the one proof line — the witness reads the file, not the echo.
+- **Witness** (`witness.py`) — holds **no hand**. Reads the world read-only and proves (or disproves) the actor's claim by an effect on some system other than the actor. Its verdict is the only thing that advances the ledger. It judges by the deed's *nature* — a file by reading that file, a program by its process, a message by the record at its destination — never by a phrase that merely resembles the quarry.
 - **Conscience** (`recover.py`) — runs no code. When a deed faults or a claim is denied, it diagnoses *why* and redirects the next turn. It must change the *kind* of remedy, never repeat.
 
-Every office — and every saved deed — returns the **same five-field record**: `goal_interpretation`, `alternatives`, `intent`, `code`, `developer_feedback`. One shape everywhere. The system prompt (law + schema + all office docstrings + the tool manifest) is **stable and cacheable**; only the small user half ("I am [office]" + the board it reads) changes each turn.
+Every office — and every saved deed — returns the **same five-field record**: `goal_interpretation`, `alternatives`, `intent`, `code`, `developer_feedback`. One shape everywhere. `developer_feedback` is the empty string except when the body itself bears a true defect. The system prompt (law + schema + all office docstrings + the seated-tool manifest) is **stable and cacheable** (~19.8k chars); only the small user half ("I am [office]" + the board it reads) changes each turn.
+
+The wheel routes on one returned **signal**: `ok`, `confirmed`, `denied`, `unwitnessed`, `fault`, or `halt`. The firmware trusts that signal completely — the witness is the sole arbiter of "done" — so the witness's honesty is the whole system's honesty.
 
 ---
 
-## Perception, and why it looks human
+## Perception: narrow the looking, never the world
 
 When the hand-and-eyes node (`gui.py`) is seated, the organism sees by **scanning geometry** on the real Windows desktop: it walks each window's rectangle and physically moves the cursor to probe points, assigning every element to its owning window. It renders a **compact index** — a short id, role, name, and action per element — and reads an element's full body only on demand (`read(id)`). It never truncates what it reads; it narrows the looking instead.
 
-The hand acts **by id, resolved at the instant of action** (`desktop.click("e42")`), never by a coordinate carried from a past looking. A stale id fails hard rather than clicking the wrong pixel. In the proven run this held perfectly: **zero geometry faults across 49 turns.**
+**Deterministic scoped observation.** Rather than deep-scan every window each turn (which floods the prompt), it deep-scans only the few **most-recently-raised** windows — the OS Z-order, top first — into full clickable elements. Every other visible window is still enumerated, as a single line marked *"present, not expanded"* bearing its title and rectangle, so the organism knows it exists and where it sits, addressed by its enduring nature. To work an unexpanded window it raises it, or calls `desktop.observe({"recent_windows_expanded": N})` to widen the deep scan. No window is hidden and no body is sliced; only the *depth* of the looking is bounded. This is task-agnostic — it keys on window recency, never on the goal.
 
-A side effect of seeing-by-moving: to the outside world, the machine is driven by **real, human-shaped mouse and keyboard input** — which is exactly why anti-bot systems treated the session as a genuine person.
+The hand acts **by id, resolved at the instant of action** (`desktop.click("e42")`), never by a coordinate carried from a past looking. A stale id fails hard rather than clicking the wrong pixel. A side effect of seeing-by-moving: to the outside world, the machine is driven by **real, human-shaped mouse and keyboard input**.
 
 > The perception node is **Windows-only by design** — it binds Windows APIs and fails hard on Linux rather than pretending. To run the wheel elsewhere, remove `gui.py` (the organism simply has no hand); to give it a hand, run it on a real Windows desktop.
 
@@ -178,102 +110,69 @@ flowchart LR
     class H die
 ```
 
-Paths that lead to proof are reinforced (`edge_reinforcement=1.0`); all paths slowly evaporate (`edge_evaporation=0.05`); a saved deed unused past its time-to-live (`node_ttl_seconds=300`) and never proven is deleted from disk, while any deed that ever earned a proven advance becomes immortal. It can also **spawn** up to three parallel helper-actors (`spawn_budget=3`) for a narrow sub-question — but their fruit is *counsel*, never *proof*. Proof always comes from the witness, against the world.
-
-**This is the deeper lesson of the proven run.** We spent seven months *designing* evolution features. In this run we did not watch a feature — we watched the thing itself: faced with a captcha, it *wrote new capability into existence at runtime* (found the audio, installed a speech model, transcribed, answered) with nothing in its code that knew what a captcha was. The *capability-building* is emergent and proven; whether the captcha ultimately yielded *because* of that answer is a separate, unproven question (see [the evidence](#the-evidence-every-claim-traced)).
+Paths that lead to proof are reinforced; all paths slowly evaporate; a saved deed unused past its time-to-live and never proven is deleted from disk, while any deed that ever earned a proven advance becomes immortal. It can also **spawn** up to a few parallel helper-actors (`spawn_budget`) for a narrow sub-question — but their fruit is *counsel*, never *proof*. Proof always comes from the witness, against the world.
 
 ---
 
-## The two honesty laws
+## The laws (the grading rubric for every change)
 
-1. **Truncate nothing.** A printed result becomes the witness's evidence and the next self's memory. Slicing it to a head would be a lie in the record. When data is too big to hold, narrow the looking — read the one field, grep the one marker — and print *that* whole. (This is enforced by one budget, `max_area_chars=65536`, applied only where data *crosses* into shared memory or into a request; code and data *inside* a deed are never capped.)
-2. **Fail hard.** No fallbacks, no swallowed errors. A raised guard is honest — its cause is usually upstream, so re-observe rather than silence it. The proven run surfaced 11 recovery turns; every fault was visible and drove a change of tack. Nothing was hidden.
-
----
-
-## The proven run, turn by turn
-
-One real run. `.transmissions/2026-07-28-17-08-23/` on disk. Read straight from the logs:
-
-| fact | value |
-|---|---|
-| turns | **49** — 23 actor · 15 witness · 11 conscience |
-| total tokens | **617,289** across the whole run |
-| per-turn tokens | min 6,915 · max 18,824 · no runaway |
-| system prompt | **~21,085 chars, stable every turn** (cacheable) |
-| web_search calls | 3 (turns 0, 8, 10), each **~2,750–3,084 tokens** — no blow-up |
-| proven advances (ledger) | **12** |
-| peak failure-streak | 4, then recovered — no infinite loop |
-| geometry / transport faults | **0** |
-| model | grok-4.5 via `api.x.ai/v1/responses`, temperature 0.4 |
-| ending | `halt` on turn 49 — **goal proven, application submitted** |
-
-The twelve proven advances, in order (each independently witnessed, then written to the ledger):
-
-```
- 1  skills researched via web_search (Python, LangChain/CrewAI, RAG, agents)
- 2  Chrome open on the Kraków remote-AI jobs surface
- 3  Staff Engineer (AI/LLM) at Levellr posting opened and read
- 4  external application form detected (email, resume, notice, github, linkedin, phone)
- 5  resume artifact written to disk (.txt) with real skills
- 6  public-identity checkpoint (contact fields) gathered
- 7  local contact discovery confirmed against disk and git config
- 8  form fields filled: name, email, location, LinkedIn, GitHub, notice
- 9  resume PDF written beside the txt and attached through the file dialog
-10  reCAPTCHA reached — audio challenge chosen and exposed
-11  audio challenge answered: Whisper installed, clip transcribed, answer typed, VERIFY clicked — active challenge widget then absent
-12  salary + notice completed, Submit clicked, independent read finds "application has been sent"
-```
-
-Advances 1–12 are all real and independently witnessed. The run ended on `halt` with the application submitted. One honesty note the log demands: the reCAPTCHA *widget cleared and the submission succeeded* (both proven), but the log does not record *why* reCAPTCHA accepted the session — that reason is unproven and is not claimed here.
+1. **Less is more.** Subtract, don't cage. Two same things become one shared shape. Delete dead knobs. A thing is essential or it is removed — nothing left dangling.
+2. **Fail hard.** No fallbacks, no swallowed errors. A raised guard is honest — its cause is usually upstream (stale input), so re-observe rather than silence it. Only a primitive that *silently* does nothing though correctly called is a body defect.
+3. **A silent no-op is a lie.** A parameter or branch that is ignored rather than removed rots the system. If you stop honoring an input, delete it and fix its prompt in the same change.
+4. **Prove by the world; truncate nothing.** Printed output is the witness's evidence and the next self's memory. Narrow the looking — read the one field — never slice a body. Know which part of what you see is the *world* and which is your own *reflection*; the self (your console, your printed output, a file you only claim to have written) may be read but may never *count* as proof.
+5. **Atemporal.** Only a thing's kind, place, and relation endure between lookings. Address and remember things by that enduring nature — never by an ephemeral handle carried across lookings.
+6. **Don't cage the organism.** Add no limit or branch it cannot itself overwrite. Prefer a prompt clause over kernel machinery. State only what to do.
 
 ---
 
-## Cost
+## Two budgets, so they can never collide
 
-A full, real, browser-driving job application — including installing a speech model and answering an audio captcha — ran end to end for **617,289 tokens**, a few dollars of credit. No single turn exceeded ~18.8k tokens. The web is treated as an **agent, not a lookup**: each `web_search` query is wrapped with a single-search instruction and capped at one call per turn, so the three searches in this run cost ~3k tokens each instead of exploding into hundreds of thousands (a real hazard from an earlier era, now fixed and held).
+Two boundaries govern size, and they are kept apart on purpose:
 
----
+- `max_area_chars` (**32768**) — the most any single blackboard **area** may *receive* from one deed. An emitted flood faults ("narrow the looking"), it is never stored.
+- `max_request_chars` (**131072**) — the most one complete model **request** may carry. An overfull request switches to the conscience before transport.
 
-## Changelog: root, not symptom
+The area cap is kept well below the request cap so that any area which respects its own budget always fits in a later office's request beside the stable system prompt and the rest of the board. (These were once a *single* number, which let an honestly-sized `evidence` area wedge the handless conscience into an unsendable request and deadlock the wheel — a cage since removed. See the changelog.)
 
-The discipline is to fix the earliest cause whose removal deletes a whole failure *class*, never the surface symptom. Small, reversible, and never weakening the actor/witness spine.
-
-**Fixed and proven**
-
-- **Shape mismatch** — `read(id)` once returned a string while `action_index[id]` was a dict; unified to one dict shape everywhere.
-- **web_search blow-up** — a server-side search agent once ran ~19 sub-searches for 522k tokens; cured by a single-search instruction, **validated in this run** (3 clean searches).
-- **Over-cautious witness** — `denied` was a free default; now a bad verdict must be positively disproven, else it routes to "unproven."
-- **Fitness by name** — chose a file by name resemblance, not by goal need; corrected by a law clause.
-- **Stale hand** — the hand once took a carried coordinate; now it resolves geometry at act-time by id, **zero faults in this run**.
-- **Anchoring + no-truncation** — the environment names the organism's own ground, and no-truncation is hard law.
-
-**Open — named, reproduced, not yet fixed**
-
-- **Self mistaken for world (provenance).** The organism's perception is one flat field in which its *own* emissions (its console echo, its own printed output) are indistinguishable from the world. In an earlier run this caused a false victory: the witness matched confirmation words inside the organism's own terminal window. The deterministic fix — tag each perceived element by provenance so the witness may *read* self-authored text but it may never *count as proof* — is designed and awaiting measurement. It must never become a cage (a future goal may be *about* a terminal), so it keys on the process that authored the text, not on the kind of window.
+Nothing is ever cut to fit. When a body is too large for a surface, the deed is to write it whole to a file (or a linked artifact) and carry forward only what the next office needs.
 
 ---
 
-## How a new part is born
+## Verifying a change without touching the body: `tools/replay.py`
 
-Because the firmware routes by header and never reads a payload, adding a sense or a skill is the same act whether a human does it in an editor or the organism does it mid-run: **write one `*.py` file with a docstring and some functions, and drop it in the folder.**
+The organism is improved by evidence, not opinion — and `tools/replay.py` is the instrument that produces the evidence. It replays a **recorded transmission** against the live model, optionally with one change, N times, and reports what the model returned and what it cost.
 
-```python
-"""A reader of the local clock. Offers, by bare name:
-  now() -> ISO-8601 timestamp of this moment
-  today() -> today's date as YYYY-MM-DD
-Use when the deed dependeth on the present time, which the screen may not show."""
+- `python tools/replay.py RECORD.json` — replay a real recorded turn as-is.
+- `python tools/replay.py RECORD.json --diff PATCH.diff -n 5` — the generic A/B: it re-renders the system prompt from the **current source on both sides** (clean vs. your unified diff applied to a throwaway copy), reuses the recorded user board byte-for-byte, and sends both, N times, so the **only** moved variable is the law your diff edits. Any AI can hand it a diff; it turns that diff into a token-and-behavior measurement.
+- `--field {instructions,input} --find OLD --replace NEW` — a quick literal one-shot probe.
 
-import datetime
+It lives under `tools/` on purpose, **outside** the top-level node glob, so the firmware never seats it as a tool and it costs the organism zero prompt tokens. It proves **prompt/law** changes (does the mind behave better?), not primitive behavior (does the code run?) — the latter is proven only by the real wheel. Run it through the Windows shell so `XAI_API_KEY` is present.
 
-def now():
-    return datetime.datetime.now().isoformat(timespec="seconds")
+---
 
-def today():
-    return datetime.date.today().isoformat()
-```
+## How to verify (a test is a run; theory is not proof)
 
-Next turn the loader seats it, its docstring joins the prompt, and `now()` is callable. Delete it and the ability is simply gone — nothing else mentions it. A new *office* of thought is the same, plus a one-line subclass declaring which stage it answers.
+Match the instrument to the claim:
+
+- **Pure-logic defect** → reproduce deterministically in plain Python. Cheapest, strongest.
+- **Prompt-assembly / topology** → render system+user via the real Prompt/Loader (`--dry`); it calls no model.
+- **Model/tool behavior** → replay the exact recorded request with `tools/replay.py`, a controlled A/B, N samples. Numbers, not opinions. The base prompt is stochastic: one pass shows direction, not a guaranteed rate.
+- **Live desktop primitive** → probe the real element on Windows; assert the hard-fail path too (a stale id must raise), not only the happy path.
+
+After any change: compile all source, re-render the prompt, confirm the wheel loads and topology is reachable, clean up scratch, and preserve forensic state.
+
+---
+
+## What a real run taught us
+
+The system has driven a real browser through a real job application end to end (research → compare postings → fill the form → write and attach a résumé → answer an audio reCAPTCHA by installing a speech model at runtime → submit), proven turn-by-turn on disk. That milestone stands.
+
+More recently we gave it a **self-referential** goal: *diagnose your own recent evolution and publish that diagnosis as two public articles, one on LinkedIn and one on X, without sensitive data, and halt only when a witness independently proves both live public pages.* A 57-turn run followed, and it is the most instructive run to date — including its one honest failure:
+
+- **What worked, proven.** Bounded testimony held (the actor wrote its ~14 KB diagnosis to a file and printed only the proof line — no flood). Deterministic scoped observe drove the real windows. The two-cap budget kept it from deadlocking. And the organism **genuinely published the LinkedIn article** — the witness proved it by reading the live public `linkedin.com/pulse/...` URL (published flag, congrats banner), not by the actor's claim. Along the way it *adapted unprompted*: when LinkedIn demanded a title, it found the title field and added one; it changed its whole approach from GUI to search to HTTP when the first roads failed.
+- **What failed, and the root.** X silently rejects a ~14 KB post, so the X article was never actually published. Worse, the final witness declared the *whole* goal satisfied while its own reason line said "no public X diagnosis URL" — a **false-positive halt**. The root was not the firmware (which faithfully honors the witness's signal) but a single permissive clause in the witness's prompt that blessed the actor's own painted screen as "a true other-system to read." That self-as-world license let a phrase found on the *profile* page count as proof of a *published* page — the classic *self-as-world* and *name-resemblance* archetypes. The cure was pure subtraction: **remove that clause**, leaving the already-present strict law ("prove by the record at its destination, not by seeming") to govern. Less is more, even in the prompt.
+
+The deeper takeaway: the actor/witness spine is only as honest as the witness's definition of proof. Harden *that* — prove by the destination's own artifact, by nature and place, never by resemblance — and the organism can be trusted to improve itself. That is the direction this project is now pointed.
 
 ---
 
@@ -284,77 +183,33 @@ Next turn the loader seats it, its docstring joins the prompt, and `now()` is ca
 - **Office** — a node that is one of the three stages: actor, witness, conscience.
 - **Deed** — one script the actor writes and runs in a turn. A useful deed becomes a node.
 - **The one record** — the five fields every office and saved deed returns.
-- **Blackboard** — shared memory of named areas the offices read and write.
-- **Signal** — the one word (`ok`, `confirmed`, `denied`, `unwitnessed`, `fault`, `halt`) that decides who thinks next.
+- **Blackboard** — shared memory of named areas the offices read and write (persisted to `blackboard.json`).
+- **Signal** — the one word that decides who thinks next.
 - **Ledger** — the list of what has been *proven*, so nothing proven is redone.
-- **Pheromone path** — reinforcement of routes that led to proof, evaporation of the rest.
 - **Provenance (self vs world)** — whether a thing on screen is the organism's own reflection or a true external effect. Proof must come from the world.
+- **Transmission** — the whole per-turn record (exact request, raw response, returned code, usage), teed to `.transmissions/` and to the screen, with only the secret key redacted.
 
 ---
 
-## What it is — and is not
+## The files
 
-It **is** a small firmware that boots a folder of nodes and turns a wheel: an actor that moves the world and claims, a witness that proves the claim by an independent effect, and a conscience that learns from failure. Useful deeds become nodes; proof reinforces them; disuse reaps them. **It has driven a real browser through a real job application — researching, comparing, filling, attaching, answering an audio captcha, and submitting — proven on disk, 49 turns, a few dollars.**
+```
+endgame.py     the firmware: Loader, Blackboard, Prompt, Transport, Wheel — routes, never judges the task
+executor.py    the ACTOR office (docstring = prompt)
+witness.py     the WITNESS office (docstring = prompt)
+recover.py     the CONSCIENCE office (docstring = prompt)
+gui.py         the seated hand-and-eyes tool (Windows-only; remove it and the organism has no hand)
+tools/replay.py  the developer diff-replay harness (outside the node glob; costs the organism nothing)
+README.md      this file
+```
 
-It is **not** a chatbot — it acts on a machine and proves the result. It is **not** a fixed script — the path is authored fresh each turn. It has **no hidden state and no hidden reasoning** — every exchange is written to disk, whole, with only the secret key redacted. It has **no fallback** — when something is wrong it fails loudly. It does **not** trust its own claims — only the witness's independent proof counts. And it does **not** invent work — given no goal, it halts.
-
-It is a **seed**. In seven months it went from an idea to a system that installs its own tools at runtime to overcome an obstacle it had not been programmed for. What it grows into next is an open question worth asking.
-
----
-
-## The evidence (every claim traced)
-
-This section exists so that no claim above rests on trust. Everything here is read directly from the run `.transmissions/2026-07-28-17-08-23/` (49 per-turn transmission records plus the final `blackboard.json`). Where a fact cannot be established from that record, it is marked **NOT PROVEN** rather than guessed.
-
-### What the record is
-
-Each turn wrote a JSON record: the exact request sent to the model, the raw response, the office's returned code, and — critically — the request carries the *previous* turn's board state, so the effect of turn N is visible in turn N+1's input. The actor's *claim* is never taken as proof; only the witness's independent read advances the ledger. This lets a claim be cross-checked against the effect it produced.
-
-### The reCAPTCHA sequence, turn by turn (verbatim signals)
-
-| turn | office | what the log shows |
-|---|---|---|
-| 34 | actor | opened the reCAPTCHA, clicked "Get an audio challenge" |
-| 36–43 | actor/conscience | located the audio payload tab, downloaded the MP3 to `_apply/`, attempted STT; first STT stack was missing (failure_streak rose to 4) |
-| 44 | actor | installed Whisper (`openai-whisper-tiny`), transcribed to `"Sound emissions a month."` (`typed_transcript_len 24`), typed it into "Enter what you hear", clicked VERIFY |
-| into 45 | — | **post-VERIFY scan:** `success_hits=[]`, `hear_edits=[]`, `verify_buttons=[]` — the active challenge widget (answer box + VERIFY button) was **absent**; only the permanent "This site is protected by reCAPTCHA" badge remained. No re-prompt. |
-| 45–46 | actor | remaining blocker is now the form's `required` salary/notice fields, **not** the captcha |
-| 47 | actor | filled salary `90000`, notice `4`, clicked "Submit application" |
-| 48–49 | witness | independent read: `CONFIRM_HITS=['confirmation email','application has been','you can expect to receive a confirmation','complete the process within two weeks']`, `FORM_HITS=[]`, `SALARY_EDITS=[]`, `SUBMIT_BTNS=[]`, `REQUIRED_N=0` → verdict `goal_satisfied: true` → `halt` |
-
-**Proven from the above:** the audio challenge widget cleared after VERIFY and did not return; the required-field gate then emptied after Submit; an office with no hand independently read the submission confirmation.
-
-**NOT PROVEN from the above:** *why* reCAPTCHA accepted the session. The record contains no answer-correctness check, no reCAPTCHA token exchange, and no risk-score telemetry. Candidate explanations — a correct-enough answer, behavioral/session trust, a pre-issued token, or a combination — cannot be distinguished from this log. A permanent reCAPTCHA badge and the organism's own audio tab (`google.com/recaptcha/api2/payload/audio.mp3?…`) remained visible in the final scan; these are page furniture, not proof of an active challenge.
-
-### The transcript, independently analyzed
-
-The saved audio (`_apply/recaptcha_audio.wav`, 4.45 s, 16 kHz mono) was re-analyzed here with tools independent of the organism's:
-
-- **A second speech engine (Vosk, not Whisper)** transcribed the *same* clip — from both the WAV and the MP3 — as `"sound emissions or mana"`, with `sound` and `emissions` at confidence **1.00**. Two independent engines agreeing on "sound emissions" establishes that **the organism's transcription was accurate, not gibberish.** *(This corrects an earlier statement of mine that called the transcript "garbage" — that was wrong.)*
-- **Acoustics** (saved losslessly as `_apply/recaptcha_spectrogram.npz`, rendered to `.bmp`/`.tiff`): one adult voice, pitch f0 median 156 Hz (range 94–344 Hz), ~4 word-like bursts between 1.83–2.95 s, SNR ≈ 10.8 dB against reCAPTCHA's deliberate noise floor. A digit-biased decode returned no digits, and no faint secondary digit sequence is present.
-
-**Proven:** the clip is a single-speaker ~4-word English phrase at reCAPTCHA-typical low SNR, and the organism transcribed it accurately.
-**NOT PROVEN:** whether that phrase was the *expected* verification answer for the submission that succeeded. reCAPTCHA's expected answer is not in any artifact available here, so the relationship between this transcript and the acceptance is unknown.
-
-### The submission, independently confirmed
-
-Two separate reads support "the application was submitted": (1) the witness office's live read of the four post-submission strings with the required-field gate empty; (2) an out-of-band fetch of the public Levellr page, which does not contain "Your application has been sent!" until a submission occurs. Together these make submission the well-supported reading. The strictly unbeatable proof — an email in the applicant's inbox — is outside this repository and was not checked here.
-
-### About the "human input" point
-
-It is **true from the code** (`gui.py`) that perception drives the real cursor (`SetCursorPos`) and real keystrokes (`SendInput`), so the machine generates genuine OS-level mouse/keyboard events rather than headless automation. It is **NOT PROVEN** that this is *why* the captcha passed. Stating the code fact is fair; attributing the captcha pass to it (as I did earlier) was an assumption and is retracted.
-
-### Corrections to my own earlier statements
-
-In the course of this work I made two errors, recorded here for honesty:
-1. I called the organism's transcript "garbage." It was **accurate** ("sound emissions", confirmed by a second engine).
-2. I asserted the captcha passed on "behavioral risk score / real-human fingerprint" and, later, that the clip "probably wasn't the actual gate answer." Both were **assumptions not supported by the log**. The truthful statement is the bounded one above: the widget cleared and the submission succeeded; the reason is not recorded.
+Only the source body plus this README are tracked in git; runtime scratch (`blackboard.json`, `.transmissions/`, artifacts) is kept out of history by a whitelist. The model is `grok-4.5` via `api.x.ai/v1/responses`.
 
 ---
 
 ## Appendix: the bootstrap prompt (endgame-ai as its own assistant)
 
-Paste this at the start of a session to make any capable mind — a human, a model, or **endgame-ai itself** — operate and improve the organism by the same method we do. It is provider-agnostic and survives file renames. When endgame-ai reads this, it *is* itself talking to itself, under the rules that built it.
+Paste this at the start of a session to make any capable mind — a human, a model, or **endgame-ai itself** — operate and improve the organism by the same method we do. It is provider-agnostic and survives file renames.
 
 ```
 MASTER DIRECTIVE — OPERATING & DIAGNOSING THE ENDGAME-AI ORGANISM
@@ -415,12 +270,15 @@ claim traces to an artifact you read or a test you ran, or it is marked UNPROVEN
   the next self's memory. Narrow the looking (read the one field), never slice a body.
   Know which part of what you see is the WORLD and which is your own reflection; the
   self — your console, your printed output, a file you only claim to have written —
-  may be read but may never COUNT as proof.
+  may be read but may never COUNT as proof. Prove a publication by the destination's
+  OWN artifact (its permalink page that returns the content), never by a phrase that
+  merely resembles the quarry on a related page.
 - ATEMPORAL. Only a thing's KIND, PLACE, RELATION endures between lookings. Address
   and remember things by that enduring nature — never by an ephemeral handle
   (a coordinate, a window handle, a short id) carried across lookings.
 - DON'T CAGE THE ORGANISM. Add no limit/branch it cannot itself overwrite. Prefer a
-  prompt clause (docstring) over kernel machinery. Positive framing only.
+  prompt clause (docstring) over kernel machinery. Positive framing only. Give every
+  office a route out of every signal it can raise — a routeless office is a cage.
 - NEVER PLANT what you forbid ("don't think of an elephant"): state only what TO DO.
 
 3. HOW TO DIAGNOSE — ROOT vs SYMPTOM (the discipline that matters most)
@@ -437,21 +295,27 @@ FAILURE ARCHETYPES seen in this project (recognize, don't assume present):
   - Shape mismatch: a helper returns type A, the model assumes type B -> crash class.
   - Ephemeral-handle staleness: a coordinate/handle captured one looking, used the next.
   - Free-default signal: a "bad" verdict is the bare else with no burden of proof.
-  - Name-resemblance != fitness: choosing a thing because its name matches the quarry.
+  - Name-resemblance != fitness: choosing/PROVING a thing because its name matches the
+    quarry; a false halt when a phrase on a profile page is taken as a published page.
   - Agentic-tool blowup: a server-side tool runs its own uncapped loop.
-  - Self-as-world (provenance): the organism reads its own emissions as external evidence.
-    Cure: exclude self from PROOF by provenance, never by hiding a window (a cage).
+  - Self-as-world (provenance): the organism reads its own emissions/painted screen as
+    external evidence. Cure: exclude self from PROOF by provenance, never by a cage.
+  - Budget-cap collision: one number capping both an area write and a whole request, so
+    an honestly-sized area wedges a downstream office (esp. the routeless conscience).
+  - Import-by-bare-name: removing an import that a namespace injects by bare name (not
+    by attribute access) — py_compile passes, the hot path raises NameError at runtime.
 
 4. HOW TO VERIFY (a test is a run; theory is not proof)
 Match the instrument to the claim:
   - Pure-logic defect -> reproduce DETERMINISTICALLY in plain Python. Cheapest, strongest.
   - Prompt-assembly / topology -> render system+user via the real Prompt/Loader (a --dry
     render); it calls NO model, so it cannot reproduce a model's wrong deed.
-  - Model/tool behavior -> replay the EXACT recorded request with replay.py, real key,
-    a controlled A/B (baseline vs one change), N samples. Numbers, not opinions. The base
-    prompt is stochastic: one pass shows direction, not a guaranteed rate.
+  - Model/tool behavior -> replay the EXACT recorded request with tools/replay.py, real
+    key, a controlled A/B (baseline vs one change via --diff), N samples. Numbers, not
+    opinions. The base prompt is stochastic: one pass shows direction, not a rate.
   - Live desktop primitive -> probe the real element on Windows; assert the hard-fail
     path too (a stale id must raise), not only the happy path.
+py_compile proves only syntax, never runtime viability — import and exercise the hot path.
 After any change: compile all source, re-render the prompt, confirm the wheel loads and
 topology is reachable. Clean up scratch. Preserve forensic state (back up goal/state).
 
@@ -469,14 +333,15 @@ topology is reachable. Clean up scratch. Preserve forensic state (back up goal/s
 6. HOW TO CHANGE (method)
 - Propose the direction FIRST; once chosen, execute fully and autonomously. Keep each
   change small, explicit, complete, reversible.
-- Prefer prompt/docstring over kernel. One file if possible. When you remove an input,
-  purge its prompt mention in the SAME change (no silent no-op).
+- Prefer prompt/docstring over kernel. One file if possible. Prefer SUBTRACTING a
+  permissive/duplicate clause over ADDING a new rule. When you remove an input, purge
+  its prompt mention in the SAME change (no silent no-op).
 - Give honest pushback when an instruction fights the architecture — name the real
   trade-off and an alternative; never invent the human's intent; never add unsolicited
   safety/limits.
 - Commit only when asked. Stage deliberately. Keep runtime scratch out of history (it is
   gitignored by a whitelist — only the source body + README are tracked). Meta commit
-  messages: the KIND of change + WHY, not line numbers.
+  messages: the KIND of change + WHY, not line numbers; carry a session handover.
 - Branches: work on the non-main branch. FF main only when explicitly asked and only
   after the ancestor check passes, via a server-side FF-only push. Don't hardcode paths
   or a branch name into the code.
