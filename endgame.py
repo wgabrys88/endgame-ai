@@ -1115,7 +1115,8 @@ class Wheel:
             return
         prior = self.bb.get("developer_feedback") or ""
         entry = json.dumps({stage_name: feedback}, ensure_ascii=False, separators=(",", ":"))
-        self.bb.set("developer_feedback", prior + ("\n" if prior else "") + entry)
+        if entry not in prior.split("\n"):  # dedup like the ledger: a repeated defect-claim is not new evidence
+            self.bb.set("developer_feedback", prior + ("\n" if prior else "") + entry)
 
     def _set_living_word_row(self, faculty_name, sentence):
         rows = self.bb.get("living_word") or {"execute": "", "witness": "", "recover": ""}
