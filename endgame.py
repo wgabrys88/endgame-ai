@@ -71,6 +71,12 @@ CONFIG = {
     # flood faults, while an overfull request switches to conscience before transport.
     "max_area_chars": 32768,
     "max_request_chars": 131072,
+    # SCAN KNOBS — the whole perception looking is tuned here (gui.observe reads these). step_px is
+    # the probe grid spacing; max_subtree_nodes_per_point caps nodes harvested per hit point;
+    # depth_ceiling caps UIA tree depth; min_window_area drops slivers; recent_windows_expanded is
+    # how many top-Z-order windows get the full deep scan (the rest are listed "present, not
+    # expanded"). Tune these and run `python endgame.py --dry-crash` to see the exact assembled
+    # request they produce, logged to .transmissions, with NO LLM call and NO cost.
     "observation": {"step_px": 64, "max_subtree_nodes_per_point": 120,
                     "depth_ceiling": 65, "min_window_area": 2500,
                     "recent_windows_expanded": 3},
@@ -410,6 +416,21 @@ class Transport:
         return "\n".join(text for item in obj.get("output", []) if isinstance(item, dict)
                          and item.get("type") != "reasoning"
                          for text in self._texts_from_parts(item.get("content")))
+
+    # ---- assemble + log the EXACT request, then send NOTHING (for --dry-crash) ----
+    #      Same body the model would receive (same schema, same cached system, same fresh board),
+    #      teed to .transmissions with error="dry-crash: not sent" so knobs can be tuned against the
+    #      real assembled request for free. Needs no API key: the auth header is never added.
+    def dump_only(self, system_text, user_text, fields, api=None, required=None) -> dict:
+        api = api or self.model.get("api", "responses")
+        fmt = self.response_format(fields, required)
+        url = self.model[api]["url"]
+        body = self._request_body(api, system_text, user_text, fmt)
+        headers = {"Content-Type": "application/json"}  # no Authorization: nothing is sent
+        payload = self._serialized(body)
+        self._dump(api, "record", {"url": url, "headers": headers, "body": body},
+                   None, None, "dry-crash: request assembled and logged; not sent")
+        return {"url": url, "chars": len(payload)}
 
     # ---- the faculty request: system (cached law+schema+roles) + user (fresh board) ----
     def call(self, system_text, user_text, fields, api=None, required=None) -> str:
@@ -993,7 +1014,7 @@ class Wheel:
         return nxt, (nxt == "halt")
 
     # ---- the turn (distills turn()) ----
-    def turn(self, dry=False):
+    def turn(self, dry=False, dry_crash=False):
         if self.loader.changed():
             sys.stderr.write("heal: a node file changed on disk; re-seating the cards\n")
             self.loader.reload()
@@ -1015,9 +1036,18 @@ class Wheel:
             if dry:
                 print(system_text + "\n\n===== USER =====\n\n" + user_text)
                 return None, True
+            if dry_crash:
+                # The REAL scan already ran (self._refresh_environment above), so knob changes show
+                # in the logged request. Assemble + tee the EXACT request the model would receive,
+                # then DIE before any billable transmission. No API key, no tokens, no cost.
+                info = self.transport.dump_only(system_text, user_text, faculty.RECORD, required=faculty.REQUIRED)
+                sys.stderr.write("dry-crash: stage=%s request assembled (%d chars) and logged to "
+                                 ".transmissions; NOT sent. Killing before any LLM call.\n"
+                                 % (stage_name, info["chars"]))
+                os._exit(0)  # hard stop before transport, by design — nothing is sent
             reply = self.transport.call(system_text, user_text, faculty.RECORD, required=faculty.REQUIRED)
         except _RequestBudget as budget:
-            if dry:
+            if dry or dry_crash:
                 raise
             return self._budget_switch(stage_name, faculty, budget)
 
@@ -1125,9 +1155,9 @@ class Wheel:
         rows[faculty_name] = str(sentence or "").strip().replace("\n", " ")
         self.bb.set("living_word", rows)
 
-    def run(self, once=False, dry=False):
+    def run(self, once=False, dry=False, dry_crash=False):
         while True:
-            nxt, stop = self.turn(dry=dry)
+            nxt, stop = self.turn(dry=dry, dry_crash=dry_crash)
             if dry or once or stop:
                 break
 
@@ -1167,7 +1197,7 @@ def main():
         if goal_text:
             (ROOT / "goal.md").write_text(goal_text, encoding="utf-8")
             sys.stderr.write("goal set from command line into goal.md (%d chars)\n" % len(goal_text))
-    wheel.run(once=flag("--once"), dry=flag("--dry"))
+    wheel.run(once=flag("--once"), dry=flag("--dry"), dry_crash=flag("--dry-crash"))
 
 
 if __name__ == "__main__":

@@ -190,10 +190,10 @@ sequenceDiagram
     W-->>A: confirmed — Easy Apply offer selected [ledger 4]
     A->>W: start Easy Apply, fill contact → resume
     W-->>A: confirmed — form advancing 25% → 50% [ledger 6-7]
-    Note over A,C: RESUME-ATTACH STALL (t26-44): native file dialog + occlusion
+    Note over A,C: RESUME-ATTACH STALL t26-44 — native file dialog plus occlusion
     A->>W: climb 50% → 75% → 100% questions
     W-->>A: confirmed — 100% review reached [ledger 10]
-    Note over A,C: SUBMIT STALL (t51-77): Submit off-screen; required message hidden
+    Note over A,C: SUBMIT STALL t51-77 — Submit off-screen, required message hidden
     A->>W: fill required message, reveal & click Submit application
     W-->>A: HALT — "Your application was sent to Chekin!" [ledger 11]
 ```
@@ -205,6 +205,14 @@ sequenceDiagram
   lines were printed. No overflow, no wedged office.
 - The organism *adapted unprompted* to real-world friction: a required application message it was
   never told about, a title-required gate, multi-step form pagination.
+
+**How the perception that made this possible is tuned.** Every turn, the firmware runs one fresh
+desktop scan for the waking office (no LLM action needed) governed by five knobs in
+`CONFIG["observation"]`: `step_px` (probe-grid spacing), `max_subtree_nodes_per_point`,
+`depth_ceiling`, `min_window_area`, and `recent_windows_expanded` (how many top-Z-order windows get
+the full deep scan). These are the exact knobs the two stalls in §4 pressure — and you can now tune
+them and see the resulting request for free with `python endgame.py --dry-crash` (§6), which runs the
+real scan, logs the exact assembled request, and dies before any billable call.
 
 ---
 
@@ -219,7 +227,7 @@ flowchart TD
         R1["native Windows file-open dialog +<br/>transient popups occluding the target"]
     end
     subgraph S2["STALL 2 — final submit (t51-77, ledger frozen at 10, streak→10)"]
-        R2A["ROOT A · PERCEPTION (body edge):<br/>Submit button & required 'message' field sat<br/>BELOW the scanned region; the message field<br/>only became visible at t72"]
+        R2A["ROOT A · PERCEPTION (body edge):<br/>Submit button and required 'message' field sat<br/>BELOW the scanned region — the message field<br/>only became visible at t72"]
         R2B["ROOT B · CONSCIENCE (model):<br/>slow to reinterpret 'reveal the control' into<br/>'the required field is unfilled' — a rule its<br/>docstring already states"]
     end
     R1 --> COST
@@ -270,7 +278,9 @@ mechanical repetition.** That is the root this commit removes.
 
 ---
 
-## 5. What this commit changed (the fix)
+## 5. What this commit changed
+
+### 5a. The fix — dedup `developer_feedback` like the `ledger`
 
 **One defect, one node (the firmware), by making `developer_feedback` behave like the `ledger`:
 DEDUPLICATE on append.** The two methods sat side by side in `Wheel` — `_append_ledger` already guards
@@ -301,6 +311,16 @@ def _append_developer_feedback(self, stage_name, data):
    reachable, halt reachable, system prompt unchanged at ~19,800 chars (the fix touches runtime state,
    not the prompt), and one turn assembles for every office via `--dry`.
 
+### 5b. New instrument — the `--dry-crash` free knob-tuning harness
+
+Added a `--dry-crash` CLI flag (and `Transport.dump_only`) so the scan knobs can be tuned and
+inspected **without spending a single token**. It runs the REAL perception scan (so
+`CONFIG["observation"]` changes take effect), assembles the EXACT request the model would receive,
+tees it whole to `.transmissions/` (`error="dry-crash: … not sent"`, `raw_response=null`, no
+`Authorization` header), then hard-exits before transport. Verified on Windows via WSL: a full
+~34 KB request was logged with nothing sent. This exists because the open perception root (§4, off-fold
+controls) will need repeated knob experiments, and paying the model to see what a knob does is waste.
+
 **What was deliberately NOT changed** (naming the rest honestly):
 - The witness getting no `desktop` is the spine working, not a bug — untouched.
 - The perception edge (Submit / required field below the scanned fold; occlusion eating the K=3
@@ -316,14 +336,25 @@ def _append_developer_feedback(self, stage_name, data):
 Run through the Windows shell so the API key and the real desktop are present:
 
 ```powershell
-powershell.exe -NoProfile -Command "cd 'C:\Users\ewojgab\Downloads\endgame-ai'; python endgame.py --dry"    # render next request, call no model
-powershell.exe -NoProfile -Command "cd 'C:\Users\ewojgab\Downloads\endgame-ai'; python endgame.py --reset"  # clean the stage before a fresh run
-powershell.exe -NoProfile -Command "cd 'C:\Users\ewojgab\Downloads\endgame-ai'; python endgame.py --once"   # one full real turn, monitored
+powershell.exe -NoProfile -Command "cd 'C:\Users\ewojgab\Downloads\endgame-ai'; python endgame.py --dry"        # render next request to the console, call no model
+powershell.exe -NoProfile -Command "cd 'C:\Users\ewojgab\Downloads\endgame-ai'; python endgame.py --dry-crash"  # RUN the real scan, LOG the exact request, then DIE before any LLM call (free)
+powershell.exe -NoProfile -Command "cd 'C:\Users\ewojgab\Downloads\endgame-ai'; python endgame.py --reset"      # clean the stage before a fresh run
+powershell.exe -NoProfile -Command "cd 'C:\Users\ewojgab\Downloads\endgame-ai'; python endgame.py --once"       # one full real turn, monitored
 ```
 
+> **`--dry-crash` — the free knob-tuning harness.** It behaves almost exactly like `--dry`, but
+> instead of printing to the console it (1) runs the REAL perception scan — so any change to the scan
+> knobs in `CONFIG["observation"]` (`step_px`, `max_subtree_nodes_per_point`, `depth_ceiling`,
+> `min_window_area`, `recent_windows_expanded`) shows up in the output — (2) assembles the EXACT
+> request the model would receive and tees it whole to `.transmissions/<run>/` (with
+> `error="dry-crash: … not sent"`, `raw_response=null`, and no `Authorization` header), then (3)
+> hard-exits before transport. **No token is ever spent.** This is how you release the scan
+> constraints and see precisely what would cross the wire, for free, before committing to a knob
+> change. It needs no `XAI_API_KEY`.
+
 > Note: after a TRUE halt the board is parked at `stage='halt'` (which has no faculty — correct).
-> `--dry` or a fresh run will raise *"no faculty node seated for stage 'halt'"* until you `--reset`.
-> That is an honest guard, not a fault.
+> `--dry`, `--dry-crash`, or a fresh run will raise *"no faculty node seated for stage 'halt'"* until
+> you `--reset`. That is an honest guard, not a fault.
 
 One self-improvement iteration:
 
