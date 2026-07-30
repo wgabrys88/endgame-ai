@@ -1,40 +1,21 @@
-"""The desktop hand — a seated tool node. When this file is present the actor gains eyes and
-hands upon the real Windows desktop; remove it and the organism simply has no hand (no flag).
+"""The desktop hand (seated tool). When present, the actor gains eyes and hands on the real Windows
+desktop; remove the file and the organism has no hand. A fresh scan of the screen is laid before you
+EVERY turn in [environment] — you need not ask for it.
 
-It offers, by bare name in the actor namespace:
-  desktop.observe(config=None) - take a fresh looking, refresh the live bare observation, and
-    return {"action_index", "screen_elements", "desktop_tree_text"}
-  desktop.open_url(browser='default', url='') - open a known address in the Windows default browser; any other browser value is an exact executable path
-  desktop.click(id) - press upon the element bearing that short id in the CURRENT looking
-  desktop.scroll(id, amount|clicks=...) - scroll upon that element
+Offered by bare name in the actor namespace:
+  desktop.observe(config=None) - re-scan now; pass {"recent_windows_expanded": N} to deep-scan more
+    windows (windows past the top N are listed "present, not expanded" — raise or widen to work one)
+  desktop.open_url(browser='default', url='') - open a URL (any browser value must be an exact path)
+  desktop.click(id) / desktop.scroll(id, clicks=...) - act on the element with that short id NOW
   desktop.type_text(text) / desktop.paste_clipboard(text) / desktop.set_clipboard(text)
   desktop.press_key(key) / desktop.hotkey(*keys)
-  action_index - the live short-id -> element DICTIONARY map of the last looking
-  read(id) - the same element DICTIONARY, bearing its WHOLE untruncated body in ["text_full"]
-  screen_elements, desktop_tree_text - the raw fruit of the turn-opening scan
+  action_index - live short-id -> element dict map;  read(id) - that dict, whole body in ["text_full"]
+  screen_elements, desktop_tree_text - raw fruit of the turn-opening scan
 
-THE LOOKING IS NARROWED, NEVER THE WORLD: each looking deep-scans only the few MOST RECENTLY
-RAISED windows (the OS Z-order, top first) into full clickable elements; every other visible
-window is still enumerated, as one line marked "present, not expanded" bearing its title, id, and
-rect - so thou KNOWEST it exists and where it sitteth, addressed by its enduring nature. To work
-an unexpanded window, raise it (a deed upon a control that brings it forward) or call
-desktop.observe({"recent_windows_expanded": N}) to widen the deep scan; the count is thine to
-overwrite. No window is hidden and no body is sliced; only the depth of the looking is bounded.
-
-Each action_index value is a dictionary, and read(id) returneth that very dictionary. Select an
-element by its e["role"], e["name"], e["action"], e["window_title"], or e["value"], and ACT upon
-it by its short id (e.g. desktop.click("e42")) - the hand resolveth the point and window from the
-CURRENT looking at act-time, so thou never carriest a pixel or a handle thyself. A short id is
-atemporal-safe within one deed only: it dieth with the looking that bore it, so bind it from a
-FRESH scan and never store nor emit it. Should the id be stale, the hand faileth hard - re-observe
-and bind anew, never force a coordinate.
-The compact tree is an index: body_chars=N means read("eN")["text_full"] beareth N whole characters.
-After desktop.observe(), use its returned desktop_tree_text when thou needest the new tree;
-the live action_index, screen_elements, and read(id) are refreshed in place.
-
-Bind an id ONLY from a fresh scan; a short id dieth with the looking that
-bore it. The kernel calls environment(bb, cfg) each turn to refresh the [environment] section,
-and namespace(context) to inject the hand into the actor's exec namespace.
+Select an element by its role/name/action/window_title/value and act by its short id (e.g.
+desktop.click("e42")); the hand resolves point and window at act-time. A short id lives only within
+the current looking — bind it from a FRESH scan, never store or emit it; a stale id fails hard, so
+re-scan and re-select. The witness receives eyes-only (screen_elements/action_index/read) — no hand.
 """
 
 import ctypes
