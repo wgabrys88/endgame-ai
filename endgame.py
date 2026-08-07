@@ -40,6 +40,7 @@ import json, os, re, sys, io, subprocess, urllib.request, contextlib, pathlib, t
 
 ROOT = pathlib.Path(__file__).resolve().parent
 KERNEL = pathlib.Path(__file__).name
+XAI_API_KEY_FILE = pathlib.Path(r"C:\Users\eb-wjt\Downloads\grok-key\key-DO-NOT-SHARE.txt")
 
 
 # ════════════════════════════════════════════════════════════════════════════════════
@@ -386,7 +387,7 @@ class Transport:
         url, body = transport["url"], self._request_body(api, system_text, user_text, fmt)
         headers = {"Content-Type": "application/json"}
         if api == "responses":
-            headers["Authorization"] = "Bearer " + os.environ["XAI_API_KEY"]
+            headers["Authorization"] = "Bearer " + XAI_API_KEY_FILE.read_text(encoding="utf-8").strip()
         return url, body, headers
 
     def _http(self, url, body, headers):
@@ -494,7 +495,7 @@ class Transport:
             "pages beyond that one search. " + query}]
         body["tools"] = [{"type": "web_search"}]
         headers = {"Content-Type": "application/json",
-                   "Authorization": "Bearer " + os.environ["XAI_API_KEY"]}
+                   "Authorization": "Bearer " + XAI_API_KEY_FILE.read_text(encoding="utf-8").strip()}
         raw, result, err = None, None, None
         self._web_search_turn = self.turn_no
         try:
