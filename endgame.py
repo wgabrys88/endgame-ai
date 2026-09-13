@@ -82,7 +82,8 @@ CONFIG = {
     # request they produce, logged to .transmissions, with NO LLM call and NO cost.
     "observation": {"step_px": 64, "max_subtree_nodes_per_point": 120,
                     "depth_ceiling": 65, "min_window_area": 2500,
-                    "recent_windows_expanded": 3},
+                    "recent_windows_expanded": 3,
+                    "vision_target_w": 1280, "vision_target_h": 720},
     "transmission_log_dir": ".transmissions",
     "web_search_max_tool_calls": 1,  # one billable server-side search/browse call per web_search
     "node_budget": 64,

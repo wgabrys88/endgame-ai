@@ -171,6 +171,12 @@ for _name, _args, _ret in _user32_sigs:
     _fn.argtypes = _args
     _fn.restype = _ret
 
+# PER-MONITOR-AWARE-V2 (context -4). Set at IMPORT time, before any DPI-sensitive call, so the
+# process never locks into the DPI-unaware default (which would DPI-virtualize GetSystemMetrics,
+# SetCursorPos, and SendInput and break the 0..1000 <-> physical-pixel mapping). Idempotent: if
+# awareness is already set the call simply returns FALSE and the physical mapping is kept.
+user32.SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)
+
 user32.LoadCursorW.argtypes = [wintypes.HINSTANCE, ctypes.c_void_p]
 user32.LoadCursorW.restype = wintypes.HCURSOR
 user32.IsWindowVisible.argtypes = [wintypes.HWND]

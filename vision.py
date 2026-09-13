@@ -3,9 +3,8 @@ turn in [environment] as an image attached to THIS request: the full desktop, wi
 cursor painted onto it. Remove this file and the organism loses its eyes.
 
 Offered by bare name in the actor namespace (coordinates are the SAME 0..1000 grid as the
-cursor xn/yn reported in [environment]; the taskbar is the strip along the bottom edge, its
-left end x~0; the Start button is the leftmost icon on that strip, its centre near
-xn~15, yn~975 on a 1920x1080 screen):
+cursor xn/yn reported in [environment], spanning the FULL screen regardless of the image's
+pixel size; the taskbar is the strip along the bottom edge of the screen):
   vision.click(xn, yn) - move the cursor to (xn, yn) and left-click there NOW
   vision.move(xn, yn)  - move the cursor to (xn, yn) without clicking
   vision.scroll(clicks=1, down=True) - wheel-scroll in place (down/up)
