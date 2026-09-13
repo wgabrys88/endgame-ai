@@ -50,15 +50,16 @@ KERNEL = pathlib.Path(__file__).name
 CONFIG = {
     "start": "execute",
     "model": {
-        "api": "responses",
+        "api": "chat_completions",
         "responses": {
             "url": "https://api.x.ai/v1/responses",
             "request": {"model": "grok-4.5", "temperature": 0.4,
                         "reasoning": {"effort": "high"}, "store": False},
         },
         "chat_completions": {
-            "url": "http://localhost:1234/v1/chat/completions",
-            "request": {"model": "local-model", "temperature": 0.2, "stream": False},
+            "url": "http://127.0.0.1:8080/v1/chat/completions",
+            "request": {"model": "gemma4", "temperature": 0.2, "stream": False,
+                        "max_tokens": 4096},
         },
     },
     # TWO caps, one for each boundary, so they can never collide (root cure for the overflow
@@ -329,7 +330,7 @@ class Transport:
         }
 
     # ---- shared request builder: STABLE system + VOLATILE user (KV-cache friendly) ----
-    def _request_body(self, api, system_text, user_text, fmt):
+    def _request_body(self, api, system_text, user_text, fmt, images=None):
         body = dict(self.model[api]["request"])
         if api == "responses":
             body.pop("previous_response_id", None)
@@ -343,7 +344,11 @@ class Transport:
             msgs = []
             if system_text:
                 msgs.append({"role": "system", "content": system_text})
-            msgs.append({"role": "user", "content": user_text})
+            user_content = user_text
+            if images:
+                # multimodal: image parts first (full + crop), then the volatile text as input_text
+                user_content = list(images) + [{"type": "text", "text": user_text}]
+            msgs.append({"role": "user", "content": user_content})
             body["messages"] = msgs
             body["response_format"] = {"type": "json_schema", "json_schema": fmt}
         else:
@@ -381,18 +386,18 @@ class Transport:
             suffix = new_suffix
         raise RuntimeError("request budget line did not settle")
 
-    def _build_request(self, api, system_text, user_text, fmt):
+    def _build_request(self, api, system_text, user_text, fmt, images=None):
         transport = self.model[api]
-        url, body = transport["url"], self._request_body(api, system_text, user_text, fmt)
+        url, body = transport["url"], self._request_body(api, system_text, user_text, fmt, images)
         headers = {"Content-Type": "application/json"}
         if api == "responses":
             headers["Authorization"] = "Bearer " + os.environ["XAI_API_KEY"]
         return url, body, headers
 
-    def _http(self, url, body, headers):
+    def _http(self, url, body, headers, skip_char_limit=False):
         payload = self._serialized(body)
         limit = int(self.cfg.get("max_request_chars", 0))
-        if limit and len(payload) > limit:
+        if limit and not skip_char_limit and len(payload) > limit:
             raise _RequestBudget(len(payload), limit)
         req = urllib.request.Request(url, data=payload.encode("utf-8"), headers=headers, method="POST")
         with urllib.request.urlopen(req, timeout=240) as r:
@@ -421,11 +426,11 @@ class Transport:
     #      Same body the model would receive (same schema, same cached system, same fresh board),
     #      teed to .transmissions with error="dry-crash: not sent" so knobs can be tuned against the
     #      real assembled request for free. Needs no API key: the auth header is never added.
-    def dump_only(self, system_text, user_text, fields, api=None, required=None) -> dict:
+    def dump_only(self, system_text, user_text, fields, api=None, required=None, images=None) -> dict:
         api = api or self.model.get("api", "responses")
         fmt = self.response_format(fields, required)
         url = self.model[api]["url"]
-        body = self._request_body(api, system_text, user_text, fmt)
+        body = self._request_body(api, system_text, user_text, fmt, images)
         headers = {"Content-Type": "application/json"}  # no Authorization: nothing is sent
         payload = self._serialized(body)
         self._dump(api, "record", {"url": url, "headers": headers, "body": body},
@@ -433,13 +438,13 @@ class Transport:
         return {"url": url, "chars": len(payload)}
 
     # ---- the faculty request: system (cached law+schema+roles) + user (fresh board) ----
-    def call(self, system_text, user_text, fields, api=None, required=None) -> str:
+    def call(self, system_text, user_text, fields, api=None, required=None, images=None) -> str:
         api = api or self.model.get("api", "responses")
         fmt = self.response_format(fields, required)
-        url, body, headers = self._build_request(api, system_text, user_text, fmt)
+        url, body, headers = self._build_request(api, system_text, user_text, fmt, images)
         raw, content, err = None, None, None
         try:
-            raw = self._http(url, body, headers)
+            raw = self._http(url, body, headers, skip_char_limit=bool(images))
             content = self._extract(json.loads(raw))
             return content
         except Exception as e:
@@ -662,7 +667,10 @@ class Prompt:
         "state what you learned, the obstacle, the distance left, and the next move; weigh forsaken "
         "roads in [alternatives]. When the [ledger] grows but the distance does not, change the KIND of "
         "approach — a renamed repeat is the same road. Leave [developer_feedback] empty unless the BODY "
-        "itself (prompt, namespace, or a tool) is truly defective; then name the defect and least fix."
+        "itself (prompt, namespace, or a tool) is truly defective; then name the defect and least fix.\n\n"
+        "A screen PHOTOGRAPH (with the cursor painted on) is attached to [environment] each turn when "
+        "eyes are seated. Read it for what the UI tree misses — especially controls scrolled BELOW the "
+        "visible fold, which the tree lists as absent. If the target is off-fold, SCROLL then re-look."
     )
 
     def __init__(self, blackboard, loader, config=CONFIG):
@@ -757,6 +765,19 @@ class Wheel:
             fn = getattr(node.module, "environment", None)
             if callable(fn):
                 fn(self.bb, self.cfg)
+
+    # ---- perception: a seated tool node may offer vision images for the request ----
+    def _collect_vision_input(self):
+        for node in self.loader.tools():
+            fn = getattr(node.module, "vision_input", None)
+            if callable(fn):
+                try:
+                    imgs = fn()
+                except Exception:
+                    continue
+                if imgs:
+                    return imgs
+        return None
 
     # ---- namespace: stdlib + seated tool nodes + transport tools + node tools + spawn ----
     def build_namespace(self, kind) -> dict:
@@ -997,6 +1018,7 @@ class Wheel:
 
         system_text = self.prompt.render_system()
         user_text = self.prompt.render_user(faculty)
+        images = self._collect_vision_input()
         try:
             user_text = self.transport.budget_user(system_text, user_text, faculty.RECORD, required=faculty.REQUIRED)
             if dry:
@@ -1006,12 +1028,12 @@ class Wheel:
                 # The REAL scan already ran (self._refresh_environment above), so knob changes show
                 # in the logged request. Assemble + tee the EXACT request the model would receive,
                 # then DIE before any billable transmission. No API key, no tokens, no cost.
-                info = self.transport.dump_only(system_text, user_text, faculty.RECORD, required=faculty.REQUIRED)
+                info = self.transport.dump_only(system_text, user_text, faculty.RECORD, required=faculty.REQUIRED, images=images)
                 sys.stderr.write("dry-crash: stage=%s request assembled (%d chars) and logged to "
                                  ".transmissions; NOT sent. Killing before any LLM call.\n"
                                  % (stage_name, info["chars"]))
                 os._exit(0)  # hard stop before transport, by design — nothing is sent
-            reply = self.transport.call(system_text, user_text, faculty.RECORD, required=faculty.REQUIRED)
+            reply = self.transport.call(system_text, user_text, faculty.RECORD, required=faculty.REQUIRED, images=images)
         except _RequestBudget as budget:
             if dry or dry_crash:
                 raise

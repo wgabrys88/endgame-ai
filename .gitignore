@@ -8,6 +8,9 @@
 !witness.py
 !recover.py
 !gui.py
+!vision.py
+!vision_chat/
+!vision_chat/*.py
 !README.md
 !tools/
 !tools/replay.py
