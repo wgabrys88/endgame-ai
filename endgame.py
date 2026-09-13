@@ -59,7 +59,9 @@ CONFIG = {
         "chat_completions": {
             "url": "http://127.0.0.1:8080/v1/chat/completions",
             "request": {"model": "gemma4", "temperature": 0.2, "stream": False,
-                        "max_tokens": 4096},
+                        "max_tokens": 4096, "thinking_budget_tokens": 1024,
+                        "top_p": 0.95, "top_k": 20, "min_p": 0.01,
+                        "repeat_penalty": 1.0},
         },
     },
     # TWO caps, one for each boundary, so they can never collide (root cure for the overflow
@@ -659,6 +661,9 @@ class Prompt:
         "script that uses them; write it complete, never an ellipsis or placeholder, for it is run "
         "verbatim. Print only the fact the next office needs; if a body is large, write it to a file "
         "and print its path.\n\n"
+        "The seated tools are ALREADY bound as bare names (e.g. `vision`); NEVER `import` them — "
+        "`import vision`, `from standard_library import vision`, etc. are all faults. Call the bare "
+        "name directly: `vision.click(xn, yn)`.\n\n"
         "THE SPINE (inviolable): the one who acts does not judge. The ACTOR moves and only CLAIMS; the "
         "WITNESS has no hand and proves by effect on a system OTHER than the actor, by its own artifact, "
         "never by seeming. Fail hard: let faults rise; a primitive that RAISES is an honest guard whose "
@@ -669,8 +674,9 @@ class Prompt:
         "approach — a renamed repeat is the same road. Leave [developer_feedback] empty unless the BODY "
         "itself (prompt, namespace, or a tool) is truly defective; then name the defect and least fix.\n\n"
         "A screen PHOTOGRAPH (with the cursor painted on) is attached to [environment] each turn when "
-        "eyes are seated. Read it for what the UI tree misses — especially controls scrolled BELOW the "
-        "visible fold, which the tree lists as absent. If the target is off-fold, SCROLL then re-look."
+        "eyes are seated. Read the IMAGE and decide from it: locate what you need by its position in "
+        "the photograph and act on it by (xn,yn) with vision.click / vision.move on the 0..1000 grid. "
+        "The image is your sensor; if a target sits BELOW the visible fold, SCROLL then re-look."
     )
 
     def __init__(self, blackboard, loader, config=CONFIG):
